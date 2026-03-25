@@ -1,0 +1,25 @@
+{
+  "name": "Designless Plugins",
+  "description": "Expression infrastructure agents for the agentic era. Design judgment encoded into infrastructure — not tools, not templates.",
+  "plugins": [
+    {
+      "name": "designless",
+      "description": "Expression infrastructure agent — routes user intent through a 12-mode lifecycle to the right MCP tools, sub-agents, and workflows.",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/designlesshq/designless-agent"
+      },
+      "category": "Design Infrastructure",
+      "tags": [
+        "expression-infrastructure",
+        "design-system",
+        "brand",
+        "orchestrator",
+        "mcp",
+        "tokens",
+        "accessibility",
+        "content"
+      ]
+    }
+  ]
+}
