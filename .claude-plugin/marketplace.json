@@ -1,24 +1,31 @@
 {
-  "name": "Designless Plugins",
-  "description": "Expression infrastructure agents for the agentic era. Design judgment encoded into infrastructure — not tools, not templates.",
+  "name": "designless-plugins",
+  "owner": {
+    "name": "Designless",
+    "email": "ashutoshxupadhyay@gmail.com"
+  },
+  "metadata": {
+    "description": "Expression infrastructure agents for the agentic era. Design judgment encoded into infrastructure — not tools, not templates."
+  },
   "plugins": [
     {
       "name": "designless",
+      "source": "./",
       "description": "Expression infrastructure agent — routes user intent through a 12-mode lifecycle to the right MCP tools, sub-agents, and workflows.",
-      "source": {
-        "type": "git",
-        "url": "https://github.com/designlesshq/designless-agent"
+      "version": "0.1.0",
+      "author": {
+        "name": "Designless"
       },
-      "category": "Design Infrastructure",
+      "homepage": "https://designless.studio",
+      "repository": "https://github.com/designlesshq/designless-agent",
+      "license": "Apache-2.0",
+      "category": "design-infrastructure",
       "tags": [
         "expression-infrastructure",
         "design-system",
         "brand",
         "orchestrator",
-        "mcp",
-        "tokens",
-        "accessibility",
-        "content"
+        "mcp"
       ]
     }
   ]
