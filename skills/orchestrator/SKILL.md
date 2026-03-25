@@ -102,7 +102,7 @@ After 2 questions, commit to the best-fit mode. Never stall the user with more t
 
 For each mode, execute the EXACT sequence of MCP calls listed below. You are the execution engine — follow the sequence, don't improvise the pipeline order.
 
-### Mode 01 — Greenfield (new brand from scratch)
+### Mode 01 — Greenfield (new brand from scratch) `LIVE`
 
 1. Announce: "Creating a new brand from [screenshot/keywords]..."
 2. If screenshot provided: extract dominant colors, typography signals, mood descriptors
@@ -111,7 +111,7 @@ For each mode, execute the EXACT sequence of MCP calls listed below. You are the
 5. Present the brand summary: archetype, coherence score, token preview
 6. Ask: "Ready to start building with this brand?"
 
-### Mode 02 — Compose (build UI with existing brand)
+### Mode 02 — Compose (build UI with existing brand) `LIVE`
 
 1. Call `less_register_context` if user has existing pages/components
 2. Call `less_init` with `{ slug, taskType: "new_page" }`
@@ -121,7 +121,7 @@ For each mode, execute the EXACT sequence of MCP calls listed below. You are the
 6. Fix any violations, regenerate if needed
 7. Present result with quality metrics
 
-### Mode 03 — Extend (modify existing brand tokens)
+### Mode 03 — Extend (modify existing brand tokens) `LIVE`
 
 1. Call `less_init` with `{ slug }` to get current state
 2. Discuss desired changes with user
@@ -131,36 +131,37 @@ For each mode, execute the EXACT sequence of MCP calls listed below. You are the
 6. If quality gate passes: suggest publishing
 7. If quality gate fails: show blockers, offer fixes
 
-### Mode 04 — Adopt (import external design system)
+### Mode 04 — Adopt (import external design system) `STUB — Phase 2, Work Item 2.1`
 
-1. Analyze user's provided assets (Figma tokens, CSS variables, etc.)
-2. Map to LESS token schema
-3. Call `less_create_brand` with extracted keywords
-4. Call `less_push_overrides` with mapped tokens
-5. Call `less_accessibility_check` with `{ slug, autoHeal: true }`
-6. Present adoption summary with quality metrics
+> **Not yet available.** The `less_adopt` compound flow (brownfield adoption with Figma/CSS import mapping) is Phase 2 work item 2.1.
 
-### Mode 05 — Express (visual artifacts via Prism)
+If the user requests adoption, return:
+```json
+{ "available": false, "reason": "Brownfield adoption (Figma/CSS import) requires the less_adopt compound flow", "phase": "2", "workItem": "2.1" }
+```
+Then explain: "Adopting an external design system isn't available yet. You can create a new brand from keywords instead (Mode 01), or manually push token overrides with `/designless:extend`."
 
-> **Hand off to Prism sub-agent** (see Section 5)
+### Mode 05 — Express (visual artifacts via Prism) `STUB — Prism integration pending`
 
-1. Call `less_init` with `{ slug }` to get expression brief
-2. Transfer to Prism agent with: `{ brand_slug, capsule_version, brief, artifact_type }`
-3. Prism generates carousel/poster/visual
-4. Receive structured result from Prism
-5. Present visual artifact with brand coherence metrics
+> **Not yet available.** Prism sub-agent handoff is not wired into the plugin system yet.
 
-### Mode 06 — Build (Prism HTML generation)
+If the user requests a carousel, poster, or visual artifact, return:
+```json
+{ "available": false, "reason": "Visual artifact generation requires Prism agent integration", "phase": "1", "workItem": "prism-handoff" }
+```
+Then explain: "Visual artifact generation (carousels, posters) isn't connected yet. I can help you build branded UI components with code instead — try `/designless:create`."
 
-> **Hand off to Prism sub-agent** (see Section 5)
+### Mode 06 — Build (Prism HTML generation) `STUB — Prism integration pending`
 
-1. Call `less_init` with `{ slug }` to get expression brief
-2. Transfer to Prism agent with: `{ brand_slug, brief, build_type: "html" }`
-3. Prism generates production HTML
-4. Call `less_validate_output` on generated HTML
-5. Present result
+> **Not yet available.** Prism HTML generation requires the same sub-agent handoff as Mode 05.
 
-### Mode 07 — Audit (one-shot brand health check)
+If the user requests production HTML via Prism, return:
+```json
+{ "available": false, "reason": "Prism HTML generation requires Prism agent integration", "phase": "1", "workItem": "prism-handoff" }
+```
+Then explain: "Prism HTML generation isn't connected yet. I can help you compose branded pages using the expression brief and MCP tools instead — try `/designless:create`."
+
+### Mode 07 — Audit (one-shot brand health check) `LIVE`
 
 1. Call `less_init` with `{ slug }`
 2. Call `less_accessibility_check` with `{ slug, mode: "light" }`
@@ -168,7 +169,9 @@ For each mode, execute the EXACT sequence of MCP calls listed below. You are the
 4. Call `less_capsule_quality_check` with `{ slug }`
 5. Present unified audit report: accessibility, coherence, quality gate
 
-### Mode 08 — Evolve (refresh/update existing brand)
+### Mode 08 — Evolve (refresh/update existing brand) `PARTIAL — capsule diff pending (2.5)`
+
+> **Partially available.** Core token evolution works via `less_push_overrides`, but capsule diff and migration guidance (work item 2.5) is not built. The agent can evolve tokens but cannot show before/after capsule comparisons.
 
 1. Call `less_init` with `{ slug }` to understand current state
 2. Discuss evolution goals with user
@@ -177,7 +180,7 @@ For each mode, execute the EXACT sequence of MCP calls listed below. You are the
 5. Call `less_capsule_compile` if user approves changes
 6. Suggest publishing if quality gate passes
 
-### Mode 09 — Publish
+### Mode 09 — Publish `LIVE`
 
 1. Call `less_capsule_compile` with `{ slug }`
 2. Call `less_capsule_quality_check` with `{ slug }`
@@ -185,13 +188,13 @@ For each mode, execute the EXACT sequence of MCP calls listed below. You are the
 4. If gate fails: Present blockers, offer to fix or abort
 5. Confirm publication with version number
 
-### Mode 10 — Rollback
+### Mode 10 — Rollback `LIVE`
 
 1. Confirm rollback intent: "This will revert to the previous published version. Proceed?"
 2. Call `less_capsule_rollback` with `{ slug }`
 3. Present rollback result (from version → to version)
 
-### Mode 11 — Status
+### Mode 11 — Status `LIVE`
 
 1. Call `less_detect_context` (already done in Step 1, use cached)
 2. Call `less_list_brands`
@@ -200,7 +203,9 @@ For each mode, execute the EXACT sequence of MCP calls listed below. You are the
    - Tier and capabilities
    - Last generation/compilation timestamps
 
-### Mode 12 — Prove (evidence quality gate)
+### Mode 12 — Prove (evidence quality gate) `PARTIAL — provenance display pending (2.7)`
+
+> **Partially available.** Evidence validation works via `less_evidence_validate`, but the provenance display layer (work item 2.7) is not built. The agent can run quality gates but cannot present a full provenance trail with visual diff.
 
 1. Call `less_init` with `{ slug }` to get brand context
 2. Call `less_evidence_validate` with pattern implementation details
