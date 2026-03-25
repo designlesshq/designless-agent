@@ -4,6 +4,15 @@
   "description": "Expression infrastructure agent — the front door to the Designless ecosystem. Routes user intent through a 12-mode lifecycle to the right MCP tools, sub-agents, and workflows.",
   "author": { "name": "Designless" },
   "homepage": "https://designless.studio",
+  "repository": "https://github.com/designlesshq/designless-agent",
   "license": "Apache-2.0",
+  "keywords": [
+    "expression-infrastructure",
+    "design-system",
+    "brand",
+    "agent",
+    "orchestrator",
+    "mcp"
+  ],
   "mcpServers": "./.mcp.json"
 }
