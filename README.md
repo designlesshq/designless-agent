@@ -4,13 +4,35 @@ Designless agent — encode your brand's design judgment into an agent that buil
 
 ## Install
 
+### Plugin (recommended)
+
+Install the Designless plugin in Claude Code:
+
+```bash
+claude plugin marketplace add designlesshq/designless-agent
+claude plugin install designless@designless-plugins
+```
+
+Then reload plugins and start using commands:
+
+```bash
+claude /reload-plugins
+claude /designless:create
+```
+
+### MCP server only
+
+If you only need the expression infrastructure runtime (without commands or orchestration), add the MCP server directly:
+
 ```bash
 claude mcp add --transport http designless \
   --header "x-api-key: YOUR_KEY" \
   https://mcp.designless.studio/mcp
 ```
 
-Get an API key at [build.designless.studio](https://build.designless.studio) — free access, no credit card.
+This gives Claude access to LESS MCP tools — it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available.
+
+Get an API key at [build.designless.studio](https://build.designless.studio).
 
 ## Commands
 
@@ -58,7 +80,7 @@ The agent discovers capabilities from the expression infrastructure server at ru
 
 - [Getting Started](docs/getting-started.md) — Install, connect, and create your first brand
 - [Capabilities](docs/capabilities.md) — What the agent can do, with concrete examples
-- [Vocabulary](docs/vocabulary.md) — Precise definitions of expression infrastructure terms
+- [Vocabulary](docs/vocabulary.md) — The language of expression infrastructure
 
 ## Learn More
 
@@ -66,4 +88,4 @@ The agent discovers capabilities from the expression infrastructure server at ru
 - [build.designless.studio](https://build.designless.studio) — LESS Studio (get your API key here)
 - [designless.live](https://designless.live) — Vocabulary authority and philosophical depth
 - [skill.design](https://skill.design) — Skill designer and registry
-- [designtoken.md](https://designtoken.md) — Free design token generator
+- [designtoken.md](https://designtoken.md) — Design token generator

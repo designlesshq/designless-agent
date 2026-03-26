@@ -5,7 +5,7 @@ This guide walks you through connecting to Designless and creating your first br
 ## Prerequisites
 
 - Claude Code (v1.0.33+) or Cursor with agent support
-- A Designless API key (free — get one at [build.designless.studio](https://build.designless.studio))
+- A Designless API key — get one at [build.designless.studio](https://build.designless.studio)
 
 ## Step 1: Install the Plugin
 
@@ -158,4 +158,4 @@ The agent analyzes the external system, maps it into the expression infrastructu
 - Read [Capabilities](capabilities.md) for a detailed breakdown of everything the agent can do
 - Visit [designless.studio](https://designless.studio) for the full thesis on expression infrastructure
 - Explore [designless.live](https://designless.live) for the vocabulary and philosophy behind the project
-- Try [designtoken.md](https://designtoken.md) for a free design token generator
+- Try [designtoken.md](https://designtoken.md) — design token generator

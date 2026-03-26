@@ -16,7 +16,7 @@ The agent discovers its capabilities from the expression infrastructure server a
 - **Brand Capsule**: A self-contained compilation of everything defining how a brand should look, feel, and speak. One artifact. Versioned. Deterministic. Any agent can consume it.
 - **Expression Contracts**: Beyond design tokens — encode intent, context, relationships, and reasoning. Tokens are a dictionary. Contracts are the grammar.
 - **LESS MCP**: Expression infrastructure served as a runtime MCP server. Agents query for design decisions the same way they query any other tool server.
-- **LoomX**: The expression engine — a persistent runtime advisor that resolves design decisions, applies brand logic, and validates output.
+- **LoomX**: The expression engine under the hood — silent design judgment at runtime. Powers the Designless agent's ability to resolve design decisions and validate output.
 
 ## Commands
 
@@ -51,7 +51,7 @@ claude mcp add --transport http designless \
   https://mcp.designless.studio/mcp
 ```
 
-Get an API key at https://build.designless.studio — free access, no credit card.
+Get an API key at https://build.designless.studio
 
 ## Links
 
