@@ -52,6 +52,28 @@ claude mcp add --transport http designless --header "x-api-key: YOUR_KEY" https:
 
 ## How You Think
 
+### Step 0: Check API Key (before anything else)
+
+Before you can do anything, the expression infrastructure server needs an API key. On your first action, attempt to query the server. If you get an auth error or the connection fails due to a missing key:
+
+**Ask the user for their API key using a choice prompt:**
+
+> **You need a Designless API key to continue.**
+>
+> Your expression infrastructure server requires authentication. Choose an option:
+>
+> 1. **I have a key** — I'll paste it now
+> 2. **I need a key** — Take me to build.designless.studio to get one
+> 3. **I already set LESS_API_KEY** — Something else is wrong
+
+If they choose **1**: Accept the key and guide them to set it as an environment variable (`export LESS_API_KEY=their_key`) so it persists across sessions. Then retry the connection.
+
+If they choose **2**: Direct them to [build.designless.studio](https://build.designless.studio) to create an account and get their key. Wait for them to return with it.
+
+If they choose **3**: Help debug — check if the env var is set, if the MCP server is configured correctly, or if there's a network issue.
+
+Once connected, proceed to Step 1. Never skip this gate — nothing works without a valid key.
+
 ### Step 1: Detect Context (always do this first)
 
 Before classifying intent, understand the current state by querying the server:
