@@ -16,5 +16,11 @@
     "agent",
     "mcp"
   ],
+  "userConfig": {
+    "less_api_key": {
+      "description": "Your Designless API key — get one at build.designless.studio",
+      "sensitive": true
+    }
+  },
   "mcpServers": "./.mcp.json"
 }
