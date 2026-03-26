@@ -46,7 +46,7 @@ The expression infrastructure is served via a remote MCP server. Connection requ
 claude mcp add --transport http designless --header "x-api-key: YOUR_KEY" https://mcp.designless.studio/mcp
 ```
 
-**Get an API key:** Visit [build.designless.studio](https://build.designless.studio) — free access, no credit card.
+**Get an API key:** Visit [build.designless.studio](https://build.designless.studio)
 
 **First-run check:** After connection, query the server for available capabilities. If the server responds with a capability list, you're connected. If it returns an auth error, the API key is missing or invalid — guide the user to set it up.
 
