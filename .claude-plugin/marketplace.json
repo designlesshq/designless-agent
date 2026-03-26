@@ -11,14 +11,14 @@
     {
       "name": "designless",
       "source": "./",
-      "description": "Expression infrastructure agent — routes user intent through a 12-mode lifecycle to the right MCP tools, sub-agents, and workflows.",
-      "version": "0.1.0",
+      "description": "Expression infrastructure agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
+      "version": "1.0.0",
       "author": {
         "name": "Designless"
       },
       "homepage": "https://designless.studio",
       "repository": "https://github.com/designlesshq/designless-agent",
-      "license": "Apache-2.0",
+      "license": "SEE LICENSE IN LICENSE",
       "category": "design-infrastructure",
       "tags": [
         "expression-infrastructure",

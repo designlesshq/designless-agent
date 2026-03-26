@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "purpose": "Offline capability manifest — lets the agent explain what's possible when the server is unreachable",
+    "version": "1.0.0",
+    "updated": "2026-03-26",
+    "note": "This is NOT a capsule. It's a capability description for graceful degradation."
+  },
+  "server": {
+    "endpoint": "https://mcp.designless.studio/mcp",
+    "auth": "x-api-key header",
+    "signup": "https://build.designless.studio"
+  },
+  "capabilities": {
+    "expression_creation": {
+      "description": "Create, resolve, and manage brand expression systems from keywords, descriptions, or visual references",
+      "modes": ["greenfield"],
+      "requires_server": true
+    },
+    "runtime_design_system": {
+      "description": "Serve live design tokens, push overrides, evolve the system, resolve design conflicts",
+      "modes": ["extend", "evolve"],
+      "requires_server": true
+    },
+    "brand_governance": {
+      "description": "Compile capsules, run quality gates, publish/rollback versions, validate accessibility and evidence",
+      "modes": ["audit", "publish", "rollback", "prove"],
+      "requires_server": true
+    },
+    "coding_agent_support": {
+      "description": "Lint generated code against brand rules, compile content with brand voice, validate output",
+      "modes": ["compose"],
+      "requires_server": true
+    },
+    "visual_expression": {
+      "description": "Create brand-aligned carousels, posters, slides, and production HTML via Prism",
+      "modes": ["express", "build"],
+      "requires_server": true,
+      "sub_agent": "prism"
+    },
+    "ecosystem_status": {
+      "description": "Overview of brands, capsules, tier, and capabilities",
+      "modes": ["status"],
+      "requires_server": true
+    }
+  },
+  "offline_message": "The expression infrastructure server is not reachable. This agent requires a live connection to mcp.designless.studio to create, resolve, and govern brands. Check your API key (LESS_API_KEY) and network connection. Get a free key at build.designless.studio."
+}

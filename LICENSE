@@ -1,0 +1,18 @@
+Copyright (c) 2026 Designless (designless.studio)
+
+All rights reserved.
+
+This software and associated documentation files (the "Software") are the
+proprietary property of Designless. The Software is distributed as a plugin
+for Claude Code and compatible environments.
+
+Permission is granted to install and use the Software for its intended purpose
+of connecting to the Designless expression infrastructure service. Modification,
+redistribution, sublicensing, or creation of derivative works is not permitted
+without prior written consent from Designless.
+
+The Software connects to the Designless MCP server (mcp.designless.studio)
+which requires a valid API key. Service terms apply.
+
+For licensing inquiries: ashutoshxupadhyay@gmail.com
+Website: https://designless.studio
