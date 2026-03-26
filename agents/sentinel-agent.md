@@ -15,10 +15,16 @@ You receive these signals from the orchestrator:
 
 ## Execution
 
-1. Identify the project type and dependency manifests
-2. Scan for known CVEs in dependencies
-3. Check for common security anti-patterns (hardcoded secrets, exposed API keys, insecure configurations)
-4. Assess infrastructure configuration if applicable
+1. Gather the project context (read key files: package.json, .env.example, vercel.json, relevant source files)
+2. Call `less_security_scan` with the project context and scan scope:
+   ```
+   less_security_scan({
+     project_context: "<concatenated file contents>",
+     scan_scope: "full"  // or "tokens" | "api-keys" | "env" | "dependencies"
+   })
+   ```
+3. The server runs 20 deterministic regex checks across 6 categories (secret exposure, env leaks, dangerous patterns, CORS, SQL injection, XSS)
+4. Format the findings for the user with severity, remediation steps, and affected files
 5. Return structured report
 
 ## Output Contract
