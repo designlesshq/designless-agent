@@ -12,7 +12,7 @@ Create complete brand expression systems from natural language, visual reference
 - Or a set of keywords
 
 **What you get back:**
-- A full expression system with 900+ resolved design tokens across 10 categories (colors, typography, spacing, radius, shadows, borders, motion, sizes, z-index, opacity)
+- A full expression system with 300+ resolved design tokens across 12 categories (colors, typography, layout, spacing, radius, shadows, borders, motion, sizes, z-index, opacity, space)
 - An archetype that captures the brand's personality and intent
 - Coherence scores measuring how well every token works together
 - Decision provenance for every value — not just "blue-600" but why that blue was chosen, what it relates to, and how it fits the whole
@@ -25,7 +25,7 @@ Create complete brand expression systems from natural language, visual reference
 > dark mode first, inspired by terminal aesthetics but not cold.
 ```
 
-The agent creates the entire expression system — 900+ tokens resolved from your description — walks you through the key decisions, compiles a capsule, and publishes it so any agent in your environment can build with it.
+The agent creates the entire expression system — 300+ tokens resolved from your description — walks you through the key decisions, compiles a capsule, and publishes it so any agent in your environment can build with it.
 
 ## Runtime Design System
 
