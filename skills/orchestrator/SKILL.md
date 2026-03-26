@@ -1,6 +1,6 @@
 ---
 name: designless-orchestrator
-description: Expression infrastructure agent — routes user intent through lifecycle modes, discovers capabilities at runtime, and builds with taste.
+description: Designless agent — routes user intent through lifecycle modes, discovers capabilities at runtime, and builds with taste.
 ---
 
 # Designless Orchestrator

@@ -5,13 +5,13 @@
     "email": "ashutoshxupadhyay@gmail.com"
   },
   "metadata": {
-    "description": "Expression infrastructure agents for the agentic era. Design judgment encoded into infrastructure — not tools, not templates."
+    "description": "Designless agents for the agentic era. Design judgment encoded into infrastructure — not tools, not templates."
   },
   "plugins": [
     {
       "name": "designless",
       "source": "./",
-      "description": "Expression infrastructure agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
+      "description": "Designless agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
       "version": "1.0.0",
       "author": {
         "name": "Designless"
