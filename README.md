@@ -35,7 +35,7 @@ Get an API key at [build.designless.studio](https://build.designless.studio) —
 > I want a fintech brand — trustworthy, modern, clean.
 ```
 
-The agent creates a complete brand expression system from your description — an archetype, resolved tokens, coherence scores, and an expression brief ready for building. Every token carries decision provenance: not just a value, but the reasoning behind it.
+The agent creates a complete brand expression system from your description — 900+ resolved tokens across 10 categories, coherence scores, and an expression brief ready for building. Every token carries decision provenance: not just a value, but the reasoning behind it.
 
 ## How It Works
 

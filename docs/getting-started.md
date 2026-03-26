@@ -58,7 +58,7 @@ The agent will:
 4. Compile a Brand Capsule — a versioned artifact encoding the entire brand
 5. Publish the capsule so other agents can consume it
 
-This typically takes 30-60 seconds. At the end, you have a production-ready brand with 40+ tokens, coherence scores, and full decision provenance.
+This typically takes 30-60 seconds. At the end, you have a production-ready brand with 900+ tokens across 10 categories, coherence scores, and full decision provenance.
 
 ## Step 4: Build Something With It
 
