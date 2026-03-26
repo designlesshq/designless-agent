@@ -2,7 +2,7 @@
   "mcpServers": {
     "less-mcp": {
       "type": "url",
-      "url": "${LESS_MCP_URL:-https://mjvbhqaqiqfgxgzicrao.supabase.co/functions/v1/less-mcp/mcp}",
+      "url": "${LESS_MCP_URL:-https://mcp.designless.studio/mcp}",
       "headers": {
         "x-api-key": "${LESS_API_KEY}"
       }
