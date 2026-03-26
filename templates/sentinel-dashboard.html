@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sentinel Dashboard</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body style="margin:0">
+<div id="root"></div>
+
+<!--
+  SENTINEL DASHBOARD TEMPLATE
+  Source of truth: designless-agent/templates/sentinel-dashboard.html
+  Used by: /designless :sentinel command via sentinel-agent.md
+
+  INJECTION POINT: Replace the placeholder below with actual scan results JSON.
+  The agent should inject the MCP tool response as window.__SENTINEL_REPORT__.
+-->
+<script>
+  window.__SENTINEL_REPORT__ = null; // INJECT SCAN RESULTS HERE
+</script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const SEV_CONFIG = {
+  critical: { color: "#FF3B30", bg: "#FF3B3015", icon: "\u25C9", label: "CRITICAL" },
+  high:     { color: "#FF9500", bg: "#FF950015", icon: "\u25C8", label: "HIGH" },
+  medium:   { color: "#FFD60A", bg: "#FFD60A15", icon: "\u25C7", label: "MEDIUM" },
+  low:      { color: "#30D158", bg: "#30D15815", icon: "\u25CB", label: "LOW" },
+  info:     { color: "#64748B", bg: "#64748B15", icon: "\u00B7", label: "INFO" },
+};
+
+const LAYER_CONFIG = {
+  github:   { color: "#8B5CF6", icon: "\u2B21", label: "GitHub" },
+  supabase: { color: "#3ECF8E", icon: "\u25C6", label: "Supabase" },
+  vercel:   { color: "#FFFFFF", icon: "\u25B2", label: "Vercel" },
+  code:     { color: "#38BDF8", icon: "\u27E8\u27E9", label: "Code" },
+};
+
+function FilterChip({ label, active, onClick, accentColor = "#E2E8F0", count }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        fontSize: 10, padding: "4px 10px", borderRadius: 4,
+        background: active ? `${accentColor}15` : "transparent",
+        border: `1px solid ${active ? `${accentColor}40` : "#1E293B"}`,
+        color: active ? accentColor : "#475569",
+        cursor: "pointer", fontFamily: "inherit",
+        letterSpacing: "0.05em", transition: "all 0.15s",
+        display: "flex", alignItems: "center", gap: 6,
+      }}
+    >
+      {label}
+      {count !== undefined && (
+        <span style={{ fontSize: 9, opacity: 0.6 }}>{count}</span>
+      )}
+    </button>
+  );
+}
+
+function SentinelDashboard() {
+  const [report, setReport] = useState(null);
+  const [error, setError] = useState(null);
+  const [activeLayer, setActiveLayer] = useState("all");
+  const [activeSeverity, setActiveSeverity] = useState("all");
+  const [expandedId, setExpandedId] = useState(null);
+  const [scanAnimation, setScanAnimation] = useState(true);
+
+  useEffect(() => {
+    const data = window.__SENTINEL_REPORT__;
+    if (data) {
+      setReport(data);
+      setScanAnimation(true);
+      const t = setTimeout(() => setScanAnimation(false), 2000);
+      return () => clearTimeout(t);
+    } else {
+      setError("No scan data. Run /designless :sentinel to populate.");
+    }
+  }, []);
+
+  if (error) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: "#0A0A0F", color: "#FF3B30",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 14,
+      }}>
+        {error}
+      </div>
+    );
+  }
+
+  if (!report) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: "#0A0A0F", color: "#475569",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 14,
+      }}>
+        Loading scan report...
+      </div>
+    );
+  }
+
+  const filtered = report.findings.filter((f) => {
+    if (activeLayer !== "all" && f.layer !== activeLayer) return false;
+    if (activeSeverity !== "all" && f.severity !== activeSeverity) return false;
+    return true;
+  });
+
+  const sevOrder = ["critical", "high", "medium", "low", "info"];
+  const sorted = [...filtered].sort((a, b) => sevOrder.indexOf(a.severity) - sevOrder.indexOf(b.severity));
+
+  const totalFindings = report.findings.length;
+  const criticalCount = report.summary.critical + report.summary.high;
+  const score = Math.max(0, 100 - (report.summary.critical * 25 + report.summary.high * 10 + report.summary.medium * 3 + report.summary.low * 1));
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "#0A0A0F",
+      color: "#E2E8F0",
+      fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
+      fontSize: 13,
+      overflow: "hidden",
+    }}>
+      {scanAnimation && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, height: 2,
+          background: "linear-gradient(90deg, transparent, #3ECF8E, transparent)",
+          animation: "scanLine 2s ease-out forwards",
+          zIndex: 100,
+        }} />
+      )}
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        @keyframes scanLine { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(100vh); opacity: 0; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes dotBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 2px; }
+      `}</style>
+
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 20px" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: criticalCount > 0 ? "#FF3B30" : "#30D158",
+                boxShadow: `0 0 8px ${criticalCount > 0 ? "#FF3B30" : "#30D158"}`,
+                animation: criticalCount > 0 ? "pulse 1.5s infinite" : "none",
+              }} />
+              <span style={{
+                fontSize: 18, fontWeight: 700, letterSpacing: "0.05em",
+                fontFamily: "'Space Grotesk', sans-serif",
+                background: "linear-gradient(135deg, #E2E8F0, #94A3B8)",
+                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+              }}>
+                SENTINEL
+              </span>
+              <span style={{ fontSize: 10, color: "#475569", letterSpacing: "0.15em" }}>v0.1.0</span>
+            </div>
+            <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.08em" }}>
+              SCAN: {new Date(report.timestamp).toLocaleString()} {report.scanDurationMs ? `\u00B7 ${(report.scanDurationMs / 1000).toFixed(1)}s` : ""}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 16,
+              padding: "12px 20px", borderRadius: 8,
+              background: "#0F172A", border: "1px solid #1E293B",
+            }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{
+                  fontSize: 28, fontWeight: 700,
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  color: score > 70 ? "#30D158" : score > 40 ? "#FFD60A" : "#FF3B30",
+                }}>
+                  {score}
+                </div>
+                <div style={{ fontSize: 8, color: "#64748B", letterSpacing: "0.2em" }}>SCORE</div>
+              </div>
+              <div style={{ width: 1, height: 40, background: "#1E293B" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", color: "#E2E8F0" }}>
+                  {totalFindings}
+                </div>
+                <div style={{ fontSize: 8, color: "#64748B", letterSpacing: "0.2em" }}>FINDINGS</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Severity bar */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", borderRadius: 4, overflow: "hidden", height: 6, gap: 1 }}>
+            {sevOrder.map((sev) => {
+              const count = report.summary[sev];
+              if (count === 0) return null;
+              return (
+                <div key={sev} style={{
+                  flex: count,
+                  background: SEV_CONFIG[sev].color,
+                  opacity: activeSeverity === "all" || activeSeverity === sev ? 1 : 0.2,
+                  transition: "opacity 0.2s",
+                }} />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Filter row */}
+        <div style={{ display: "flex", gap: 24, marginBottom: 24 }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <FilterChip label="All" active={activeLayer === "all"} onClick={() => setActiveLayer("all")} />
+            {Object.entries(LAYER_CONFIG).map(([key, cfg]) => (
+              <FilterChip
+                key={key}
+                label={`${cfg.icon} ${cfg.label}`}
+                active={activeLayer === key}
+                onClick={() => setActiveLayer(key)}
+                accentColor={cfg.color}
+                count={report.findings.filter((f) => f.layer === key).length}
+              />
+            ))}
+          </div>
+
+          <div style={{ width: 1, background: "#1E293B" }} />
+
+          <div style={{ display: "flex", gap: 6 }}>
+            {sevOrder.map((sev) => (
+              <FilterChip
+                key={sev}
+                label={`${report.summary[sev]}`}
+                active={activeSeverity === sev}
+                onClick={() => setActiveSeverity(activeSeverity === sev ? "all" : sev)}
+                accentColor={SEV_CONFIG[sev].color}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Findings list */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {sorted.map((f, i) => {
+            const sev = SEV_CONFIG[f.severity];
+            const layer = LAYER_CONFIG[f.layer];
+            const expanded = expandedId === f.id;
+
+            return (
+              <div
+                key={f.id}
+                onClick={() => setExpandedId(expanded ? null : f.id)}
+                style={{
+                  padding: "12px 16px",
+                  background: expanded ? "#0F172A" : "transparent",
+                  border: `1px solid ${expanded ? "#1E293B" : "transparent"}`,
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  animation: `slideUp 0.3s ease ${i * 30}ms both`,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{
+                    fontSize: 10, color: "#475569", fontWeight: 600,
+                    width: 20, textAlign: "right", flexShrink: 0,
+                    fontFamily: "'Space Grotesk', sans-serif",
+                  }}>
+                    {i + 1}
+                  </span>
+                  <span style={{
+                    color: sev.color, fontSize: 14, width: 16, textAlign: "center",
+                    textShadow: `0 0 6px ${sev.color}40`,
+                  }}>
+                    {sev.icon}
+                  </span>
+
+                  <span style={{
+                    fontSize: 10, color: "#475569", fontWeight: 500,
+                    width: 120, flexShrink: 0,
+                  }}>
+                    {f.id}
+                  </span>
+
+                  <span style={{
+                    fontSize: 9, color: layer.color, letterSpacing: "0.1em",
+                    padding: "2px 6px", borderRadius: 3,
+                    background: `${layer.color}12`, border: `1px solid ${layer.color}25`,
+                    width: 72, textAlign: "center", flexShrink: 0,
+                  }}>
+                    {layer.icon} {layer.label.toUpperCase()}
+                  </span>
+
+                  <span style={{ flex: 1, color: "#CBD5E1", fontWeight: 400 }}>
+                    {f.title}
+                  </span>
+
+                  {f.file && (
+                    <span style={{
+                      fontSize: 11, color: "#38BDF8", opacity: 0.6,
+                      maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {f.file}
+                    </span>
+                  )}
+
+                  <span style={{
+                    color: "#475569", fontSize: 10,
+                    transform: expanded ? "rotate(90deg)" : "rotate(0)",
+                    transition: "transform 0.15s",
+                  }}>
+                    ▶
+                  </span>
+                </div>
+
+                {expanded && (
+                  <div style={{
+                    marginTop: 12, marginLeft: 28, paddingTop: 12,
+                    borderTop: "1px solid #1E293B",
+                    animation: "fadeIn 0.2s ease",
+                  }}>
+                    {f.description && (
+                      <div style={{ color: "#94A3B8", marginBottom: 10, lineHeight: 1.6 }}>
+                        {f.description}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 9, color: "#64748B", letterSpacing: "0.15em", marginBottom: 6 }}>
+                      FIX INSTRUCTION
+                    </div>
+                    <div style={{
+                      padding: "10px 14px", borderRadius: 4,
+                      background: "#0A0F1A", border: "1px solid #1E293B",
+                      color: "#94A3B8", lineHeight: 1.6,
+                      whiteSpace: "pre-wrap", fontSize: 12,
+                    }}>
+                      {f.fix}
+                    </div>
+                    {f.references && f.references.length > 0 && (
+                      <div style={{ marginTop: 8, fontSize: 10, color: "#475569" }}>
+                        {f.references.map((ref, ri) => (
+                          <a key={ri} href={ref} target="_blank" rel="noopener"
+                            style={{ color: "#3ECF8E", textDecoration: "none", marginRight: 12 }}
+                            onClick={(e) => e.stopPropagation()}>
+                            ref[{ri}]
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(f.fix);
+                        }}
+                        style={{
+                          fontSize: 10, padding: "4px 10px", borderRadius: 3,
+                          background: `${sev.color}15`, border: `1px solid ${sev.color}30`,
+                          color: sev.color, cursor: "pointer", fontFamily: "inherit",
+                          letterSpacing: "0.05em",
+                        }}>
+                        COPY FIX
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {sorted.length === 0 && (
+          <div style={{
+            textAlign: "center", padding: 48, color: "#30D158",
+            fontSize: 14,
+          }}>
+            No findings match current filters
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{
+          marginTop: 32, paddingTop: 16, borderTop: "1px solid #0F172A",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <div style={{ fontSize: 10, color: "#334155", letterSpacing: "0.1em" }}>
+            SENTINEL · DESIGNLESS SECURITY INFRASTRUCTURE
+          </div>
+          <div style={{ fontSize: 10, color: "#334155" }}>
+            <span style={{ color: "#30D158" }}>●</span> SCAN COMPLETE
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<SentinelDashboard />);
+</script>
+</body>
+</html>
