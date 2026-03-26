@@ -112,6 +112,18 @@ Returns an overview of your brands, capsule states, API tier, and available capa
 
 ---
 
+## How Brands Are Selected
+
+Every command that operates on a brand needs to know which brand to use. The agent handles this automatically:
+
+- **One brand** — auto-selected, no question asked.
+- **Multiple brands** — the agent asks which one you want to work with.
+- **No brands** — the agent redirects you to `/designless:create` first.
+
+Brand detection happens at the start of every command. You never need to specify a brand slug manually — the agent queries the server for your brand inventory and resolves the right one from context.
+
+---
+
 ## What Makes This Different
 
 Traditional design systems give you a file of tokens. You export them, paste them into your codebase, and hope they stay in sync.
