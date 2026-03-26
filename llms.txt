@@ -1,0 +1,64 @@
+# Designless Agent
+
+> Expression infrastructure agent — encode your brand's design judgment into an agent that builds with your intent.
+
+Designless is the world's first expression infrastructure for coding agents. It gives agents like Claude runtime access to encoded human design judgment — so the software they build carries taste, not just logic.
+
+## What This Plugin Does
+
+The Designless agent connects to the LESS MCP server — a runtime API that serves design decisions to coding agents via the Model Context Protocol. Describe your brand once. Get a complete, production-ready design system back — available at runtime via API. No copy-paste. No context window overhead. No regeneration cycles.
+
+The agent discovers its capabilities from the expression infrastructure server at runtime. As the infrastructure evolves, the agent's capabilities grow — no plugin updates required.
+
+## Core Concepts
+
+- **Expression Infrastructure**: The runtime layer that gives coding agents access to encoded design judgment. Not a design tool. Infrastructure — like an API, but for taste.
+- **Brand Capsule**: A self-contained compilation of everything defining how a brand should look, feel, and speak. One artifact. Versioned. Deterministic. Any agent can consume it.
+- **Expression Contracts**: Beyond design tokens — encode intent, context, relationships, and reasoning. Tokens are a dictionary. Contracts are the grammar.
+- **LESS MCP**: Expression infrastructure served as a runtime MCP server. Agents query for design decisions the same way they query any other tool server.
+- **LoomX**: The expression engine — a persistent runtime advisor that resolves design decisions, applies brand logic, and validates output.
+
+## Commands
+
+- `/designless` — Routes to the right mode based on your intent
+- `/designless:create` — Create a new brand from a description, keywords, or visual reference
+- `/designless:extend` — Extend or modify an existing brand's tokens
+- `/designless:adopt` — Import an external design system (Figma, CSS, etc.)
+- `/designless:carousel` — Generate a branded carousel via Prism
+- `/designless:poster` — Generate a branded poster via Prism
+- `/designless:build` — Generate production HTML with full brand enforcement
+- `/designless:audit` — One-shot brand health check — accessibility, coherence, quality
+- `/designless:evolve` — Evolve and refresh an existing brand
+- `/designless:prove` — Evidence-based quality validation — prove something is on-brand
+- `/designless:status` — Ecosystem overview — brands, capsules, tier, capabilities
+
+## What You Get
+
+When you create a brand, the agent resolves a complete expression system: 300+ design tokens across 12 categories (colors, typography, layout, spacing, radius, shadows, borders, motion, sizes, z-index, opacity, space). Every token carries decision provenance — not just a value, but the reasoning behind it. The output is compiled into a Brand Capsule — one versioned artifact encoding the entire brand, ready for any agent to consume.
+
+## Install
+
+Claude Code:
+```
+claude plugin marketplace add designlesshq/designless-agent
+claude plugin install designless@designless-plugins
+```
+
+Or add the MCP server directly:
+```
+claude mcp add --transport http designless \
+  --header "x-api-key: YOUR_KEY" \
+  https://mcp.designless.studio/mcp
+```
+
+Get an API key at https://build.designless.studio — free access, no credit card.
+
+## Links
+
+- Product overview: https://designless.studio
+- LESS Studio: https://build.designless.studio
+- Vocabulary and thesis: https://designless.live
+- Skill designer and registry: https://skill.design
+- Design token generator: https://designtoken.md
+- Getting started guide: https://github.com/designlesshq/designless-agent/blob/main/docs/getting-started.md
+- Capabilities reference: https://github.com/designlesshq/designless-agent/blob/main/docs/capabilities.md
