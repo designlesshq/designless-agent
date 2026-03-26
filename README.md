@@ -58,6 +58,7 @@ The agent discovers capabilities from the expression infrastructure server at ru
 
 - [Getting Started](docs/getting-started.md) — Install, connect, and create your first brand
 - [Capabilities](docs/capabilities.md) — What the agent can do, with concrete examples
+- [Vocabulary](docs/vocabulary.md) — Precise definitions of expression infrastructure terms
 
 ## Learn More
 
