@@ -1,6 +1,6 @@
 # Designless Agent
 
-Expression infrastructure agent — encode your brand's design judgment into an agent that builds with your intent.
+Designless agent — encode your brand's design judgment into an agent that builds with your intent.
 
 ## Install
 

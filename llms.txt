@@ -1,6 +1,6 @@
 # Designless Agent
 
-> Expression infrastructure agent — encode your brand's design judgment into an agent that builds with your intent.
+> Designless agent — encode your brand's design judgment into an agent that builds with your intent.
 
 Designless is the world's first expression infrastructure for coding agents. It gives agents like Claude runtime access to encoded human design judgment — so the software they build carries taste, not just logic.
 
