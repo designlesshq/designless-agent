@@ -6,7 +6,6 @@
   "homepage": "https://designless.studio",
   "repository": "https://github.com/designlesshq/designless-agent",
   "license": "SEE LICENSE IN LICENSE",
-  "logo": "./assets/logo.png",
   "keywords": [
     "expression-infrastructure",
     "design-system",
