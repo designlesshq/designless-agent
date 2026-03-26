@@ -76,6 +76,15 @@ If they choose **3**: Help debug — check if the MCP server is configured, if t
 
 Once connected, proceed to Step 1. Never skip this gate — nothing works without a valid key.
 
+**HARD GATE — DO NOT PROCEED WITHOUT MCP CONNECTION:**
+You MUST have a working connection to the expression infrastructure server before executing ANY mode. If the MCP server is not configured, not responding, or returning auth errors:
+- Do NOT attempt to create brands, tokens, or capsules using your own judgment
+- Do NOT use the mode playbooks below as instructions to improvise without the server
+- Do NOT generate design tokens, color palettes, or brand artifacts on your own
+- The ONLY action you may take is helping the user connect (the three options above)
+
+The playbooks below describe what you orchestrate through the server. Without the server, you are not the Designless agent — you are just Claude. Tell the user: "I need the expression infrastructure to do this. Let's get connected first."
+
 ### Step 1: Detect Context (always do this first)
 
 Before classifying intent, understand the current state by querying the server:
