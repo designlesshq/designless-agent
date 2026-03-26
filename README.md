@@ -10,24 +10,23 @@ claude mcp add --transport http designless \
   https://mcp.designless.studio/mcp
 ```
 
-Get an API key at [designless.studio](https://designless.studio).
+Get an API key at [build.designless.studio](https://build.designless.studio) — free access, no credit card.
 
 ## Commands
 
-| Command | Mode | What it does |
-|---------|------|-------------|
-| `/designless` | Auto-detect | Routes to the right mode based on context |
-| `/designless:create` | 01/02 | Create a new brand or compose a new page |
-| `/designless:extend` | 03/04 | Extend LESS-generated code or adopt external HTML |
-| `/designless:adopt` | 04 | Explicitly adopt third-party HTML into the ecosystem |
-| `/designless:carousel` | 05 | Generate a branded carousel via Prism |
-| `/designless:poster` | 05 | Generate a branded poster via Prism |
-| `/designless:build` | 06 | Generate production HTML from Prism canvas |
-| `/designless:audit` | 07 | One-shot brand compliance health check |
-| `/designless:evolve` | 08 | Evolve a brand (capsule diff + migration) |
-| `/designless:scan` | Security | Run security scan on project code |
-| `/designless:prove` | 12 | Show certification chain and provenance |
-| `/designless:status` | Overview | Ecosystem status and quality metrics |
+| Command | What it does |
+|---------|-------------|
+| `/designless` | Routes to the right mode based on your intent |
+| `/designless:create` | Create a new brand or compose a page with an existing one |
+| `/designless:extend` | Extend or modify an existing brand's tokens |
+| `/designless:adopt` | Import an external design system (Figma, CSS, etc.) |
+| `/designless:carousel` | Generate a branded carousel via Prism |
+| `/designless:poster` | Generate a branded poster via Prism |
+| `/designless:build` | Generate production HTML with full brand enforcement |
+| `/designless:audit` | One-shot brand health check — accessibility, coherence, quality |
+| `/designless:evolve` | Evolve and refresh an existing brand |
+| `/designless:prove` | Evidence-based quality validation — prove something is on-brand |
+| `/designless:status` | Ecosystem overview — brands, capsules, tier, capabilities |
 
 ## Quick Start
 
@@ -36,19 +35,29 @@ Get an API key at [designless.studio](https://designless.studio).
 > I want a fintech brand — trustworthy, modern, clean.
 ```
 
-The agent creates a brand capsule with resolved tokens, compiles expression presets, and publishes. Use `less_init` to get the expression brief for any subsequent generation.
+The agent creates a complete brand expression system from your description — an archetype, resolved tokens, coherence scores, and an expression brief ready for building. Every token carries decision provenance: not just a value, but the reasoning behind it.
 
 ## How It Works
 
 1. `/designless` detects your context (brand inventory, capsule state, assets provided)
-2. Classifies into one of 12 lifecycle modes
-3. Sequences the right MCP tool calls for that mode
-4. Returns quality-gated results with containment scores
+2. Classifies your intent into one of 12 lifecycle modes
+3. Discovers and sequences the right capabilities at runtime
+4. Returns quality-gated results with coherence metrics
+
+The agent discovers capabilities from the expression infrastructure server at runtime — it doesn't hardcode tool names. This means the agent's capabilities grow as the server evolves.
 
 ## Troubleshooting
 
-**"Missing API key"** — Set `LESS_API_KEY` environment variable or pass via `--header`.
+**"Missing API key"** — Set `LESS_API_KEY` environment variable or pass via `--header` when adding the MCP server.
 
 **"No brands found"** — Run `/designless:create` first to create your first brand.
 
-**"Capsule not published"** — Run `less_capsule_compile` then `less_capsule_publish` to publish your capsule.
+**"Capsule not published"** — Use `/designless:create` to compile and publish your brand. The agent will guide you through the quality gate.
+
+## Learn More
+
+- [designless.studio](https://designless.studio) — Product overview and thesis
+- [build.designless.studio](https://build.designless.studio) — LESS Studio (get your API key here)
+- [designless.live](https://designless.live) — Vocabulary authority and philosophical depth
+- [skill.design](https://skill.design) — Skill designer and registry
+- [designtoken.md](https://designtoken.md) — Free design token generator
