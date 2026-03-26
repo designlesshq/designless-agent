@@ -59,6 +59,11 @@ Before classifying intent, understand the current state by querying the server:
 - What state is the capsule in — none, draft, compiled, published?
 - What tier is the user on — and what capabilities does that unlock?
 
+**Brand selection:**
+- If **one brand** exists → auto-select it. No question needed.
+- If **multiple brands** exist → ask the user which brand to work with. Present the options clearly (brand names/slugs) so the user can pick.
+- If **no brands** exist and the command requires one → redirect to Greenfield (create) or Adopt, depending on context.
+
 Combine server signals with what you can observe directly: the user's stated intent, their environment (code repo, design tool, conversation), any assets they've provided (screenshot, HTML, existing code), and previous conversation context.
 
 ### Step 2: Classify Mode (deterministic, first match wins)
