@@ -54,6 +54,11 @@ The agent discovers capabilities from the expression infrastructure server at ru
 
 **"Capsule not published"** — Use `/designless:create` to compile and publish your brand. The agent will guide you through the quality gate.
 
+## Documentation
+
+- [Getting Started](docs/getting-started.md) — Install, connect, and create your first brand
+- [Capabilities](docs/capabilities.md) — What the agent can do, with concrete examples
+
 ## Learn More
 
 - [designless.studio](https://designless.studio) — Product overview and thesis
