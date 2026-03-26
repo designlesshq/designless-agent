@@ -4,7 +4,7 @@
       "type": "url",
       "url": "${LESS_MCP_URL:-https://mcp.designless.studio/mcp}",
       "headers": {
-        "x-api-key": "${LESS_API_KEY}"
+        "x-api-key": "${user_config.less_api_key}"
       }
     }
   }
