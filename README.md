@@ -84,7 +84,7 @@ The agent discovers capabilities from the expression infrastructure server at ru
 
 ## Learn More
 
-- [designless.studio](https://designless.studio) — Product overview and thesis
+- [designless.io](https://designless.io) — Product overview and thesis
 - [designless.app](https://designless.app) — LESS Studio (get your API key here)
 - [designless.live](https://designless.live) — Vocabulary authority and philosophical depth
 - [skill.design](https://skill.design) — Skill designer and registry

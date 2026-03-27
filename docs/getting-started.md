@@ -156,6 +156,6 @@ The agent analyzes the external system, maps it into the expression infrastructu
 ## Next Steps
 
 - Read [Capabilities](capabilities.md) for a detailed breakdown of everything the agent can do
-- Visit [designless.studio](https://designless.studio) for the full thesis on expression infrastructure
+- Visit [designless.io](https://designless.io) for the full thesis on expression infrastructure
 - Explore [designless.live](https://designless.live) for the vocabulary and philosophy behind the project
 - Try [designtoken.md](https://designtoken.md) — design token generator

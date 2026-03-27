@@ -55,7 +55,7 @@ Get an API key at https://designless.app
 
 ## Links
 
-- Product overview: https://designless.studio
+- Product overview: https://designless.io
 - LESS Studio: https://designless.app
 - Vocabulary and thesis: https://designless.live
 - Skill designer and registry: https://skill.design
