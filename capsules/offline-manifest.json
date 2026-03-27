@@ -6,9 +6,9 @@
     "note": "This is NOT a capsule. It's a capability description for graceful degradation."
   },
   "server": {
-    "endpoint": "https://mcp.designless.studio/mcp",
+    "endpoint": "https://mcp.designless.app/mcp",
     "auth": "x-api-key header",
-    "signup": "https://build.designless.studio"
+    "signup": "https://designless.app"
   },
   "capabilities": {
     "expression_creation": {
@@ -43,5 +43,5 @@
       "requires_server": true
     }
   },
-  "offline_message": "The expression infrastructure server is not reachable. This agent requires a live connection to mcp.designless.studio to create, resolve, and govern brands. Check your API key (LESS_API_KEY) and network connection. Get a free key at build.designless.studio."
+  "offline_message": "The expression infrastructure server is not reachable. This agent requires a live connection to mcp.designless.app to create, resolve, and govern brands. Check your API key (LESS_API_KEY) and network connection. Get a free key at designless.app."
 }

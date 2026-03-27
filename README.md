@@ -27,12 +27,12 @@ If you only need the expression infrastructure runtime (without commands or orch
 ```bash
 claude mcp add --transport http designless \
   --header "x-api-key: YOUR_KEY" \
-  https://mcp.designless.studio/mcp
+  https://mcp.designless.app/mcp
 ```
 
 This gives Claude access to LESS MCP tools — it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available.
 
-Get an API key at [build.designless.studio](https://build.designless.studio).
+Get an API key at [designless.app](https://designless.app).
 
 ## Commands
 
@@ -85,7 +85,7 @@ The agent discovers capabilities from the expression infrastructure server at ru
 ## Learn More
 
 - [designless.studio](https://designless.studio) — Product overview and thesis
-- [build.designless.studio](https://build.designless.studio) — LESS Studio (get your API key here)
+- [designless.app](https://designless.app) — LESS Studio (get your API key here)
 - [designless.live](https://designless.live) — Vocabulary authority and philosophical depth
 - [skill.design](https://skill.design) — Skill designer and registry
 - [designtoken.md](https://designtoken.md) — Design token generator

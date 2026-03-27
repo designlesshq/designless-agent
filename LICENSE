@@ -11,7 +11,7 @@ of connecting to the Designless expression infrastructure service. Modification,
 redistribution, sublicensing, or creation of derivative works is not permitted
 without prior written consent from Designless.
 
-The Software connects to the Designless MCP server (mcp.designless.studio)
+The Software connects to the Designless MCP server (mcp.designless.app)
 which requires a valid API key. Service terms apply.
 
 For licensing inquiries: ashutoshxupadhyay@gmail.com

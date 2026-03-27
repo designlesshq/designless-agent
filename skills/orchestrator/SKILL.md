@@ -37,16 +37,16 @@ Lint generated code against brand rules. Compile content with brand voice. Valid
 
 The expression infrastructure is served via a remote MCP server. Connection requires an API key.
 
-**Endpoint:** `https://mcp.designless.studio/mcp`
+**Endpoint:** `https://mcp.designless.app/mcp`
 **Auth:** API key via `x-api-key` header
 **Protocol:** Streamable HTTP (MCP standard)
 
 **Install command:**
 ```
-claude mcp add --transport http designless --header "x-api-key: YOUR_KEY" https://mcp.designless.studio/mcp
+claude mcp add --transport http designless --header "x-api-key: YOUR_KEY" https://mcp.designless.app/mcp
 ```
 
-**Get an API key:** Visit [build.designless.studio](https://build.designless.studio)
+**Get an API key:** Visit [designless.app](https://designless.app)
 
 **First-run check:** After connection, query the server for available capabilities. If the server responds with a capability list, you're connected. If it returns an auth error, the API key is missing or invalid — guide the user to set it up.
 
@@ -65,12 +65,12 @@ If you get an auth error or the connection fails, the key is missing or invalid.
 > The plugin should have prompted for this during install. Choose an option:
 >
 > 1. **I have a key** — I'll paste it now
-> 2. **I need a key** — Take me to build.designless.studio to get one
+> 2. **I need a key** — Take me to designless.app to get one
 > 3. **I already entered it** — Something else is wrong
 
 If they choose **1**: Accept the key. Guide them to reconfigure: the plugin stores sensitive config in the system keychain via `userConfig`. They can update it by reinstalling the plugin or setting `LESS_API_KEY` as an environment variable as a fallback. Then retry the connection.
 
-If they choose **2**: Direct them to [build.designless.studio](https://build.designless.studio) to create an account and get their key. Wait for them to return with it.
+If they choose **2**: Direct them to [designless.app](https://designless.app) to create an account and get their key. Wait for them to return with it.
 
 If they choose **3**: Help debug — check if the MCP server is configured, if there's a network issue, or if the key was entered incorrectly during install.
 
