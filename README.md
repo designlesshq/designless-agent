@@ -20,9 +20,9 @@ claude /reload-plugins
 claude /designless:create
 ```
 
-### MCP server only
+### MCP server
 
-If you only need the expression infrastructure runtime (without commands or orchestration), add the MCP server directly:
+Add the expression infrastructure runtime directly to any MCP-compatible agent:
 
 ```bash
 claude mcp add --transport http designless \
@@ -30,9 +30,25 @@ claude mcp add --transport http designless \
   https://mcp.designless.app/mcp
 ```
 
-This gives Claude access to LESS MCP tools — it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available.
+This gives your agent access to LESS MCP tools — it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available.
 
 Get an API key at [designless.app](https://designless.app).
+
+### Skills (any coding agent)
+
+Install via [skills.sh](https://skills.sh) to use the Designless orchestrator in any supported coding agent — Cursor, Cline, Codex, Amp, Windsurf, and 40+ others:
+
+```bash
+npx skills add designlesshq/designless-agent
+```
+
+The installer will:
+1. Clone the repo and detect the `designless-orchestrator` skill
+2. Ask which agents to install to (Cursor, Cline, Codex, etc.)
+3. Choose scope — **Project** (current directory) or **Global** (all projects)
+4. Copy the skill into each agent's `.agents/skills/` directory
+
+After install, the orchestrator is available in your chosen agents. It connects to the expression infrastructure at `mcp.designless.app/mcp` — you'll need an API key from [designless.app](https://designless.app) on first use.
 
 ## Commands
 
