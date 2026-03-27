@@ -48,15 +48,15 @@ Or add the MCP server directly:
 ```
 claude mcp add --transport http designless \
   --header "x-api-key: YOUR_KEY" \
-  https://mcp.designless.studio/mcp
+  https://mcp.designless.app/mcp
 ```
 
-Get an API key at https://build.designless.studio
+Get an API key at https://designless.app
 
 ## Links
 
 - Product overview: https://designless.studio
-- LESS Studio: https://build.designless.studio
+- LESS Studio: https://designless.app
 - Vocabulary and thesis: https://designless.live
 - Skill designer and registry: https://skill.design
 - Design token generator: https://designtoken.md

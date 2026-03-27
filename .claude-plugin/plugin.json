@@ -17,7 +17,7 @@
   ],
   "userConfig": {
     "less_api_key": {
-      "description": "Your Designless API key — get one at build.designless.studio",
+      "description": "Your Designless API key — get one at designless.app",
       "sensitive": true
     }
   },

@@ -5,7 +5,7 @@ This guide walks you through connecting to Designless and creating your first br
 ## Prerequisites
 
 - Claude Code (v1.0.33+) or Cursor with agent support
-- A Designless API key — get one at [build.designless.studio](https://build.designless.studio)
+- A Designless API key — get one at [designless.app](https://designless.app)
 
 ## Step 1: Install the Plugin
 
@@ -33,7 +33,7 @@ Or add the MCP server directly:
 ```bash
 claude mcp add --transport http designless \
   --header "x-api-key: YOUR_KEY" \
-  https://mcp.designless.studio/mcp
+  https://mcp.designless.app/mcp
 ```
 
 **Verify the connection:**
@@ -149,7 +149,7 @@ The agent analyzes the external system, maps it into the expression infrastructu
 
 **"No brands found"** — Run `/designless:create` first. Most commands need an existing brand to work with.
 
-**"Server unreachable"** — Check your network connection and verify the endpoint at `https://mcp.designless.studio/mcp`. The agent needs a live server connection for all capabilities.
+**"Server unreachable"** — Check your network connection and verify the endpoint at `https://mcp.designless.app/mcp`. The agent needs a live server connection for all capabilities.
 
 **"Capsule not published"** — The brand exists but hasn't been compiled into a capsule yet. Run `/designless:create` to compile and publish, or `/designless:audit` to check the brand's state.
 
