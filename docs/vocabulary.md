@@ -52,6 +52,48 @@ The governing layer that compiles, validates, and distributes a brand's expressi
 
 The capability that resolves brand expression in both directions: from brand intent to design output, and from existing design output back to brand intent. It closes the loop between how a brand means to look and how it actually appears. Not aesthetic review — structured validation with a traceable chain.
 
+## Design Intelligence Vocabulary
+
+### DLM (Design Language Model)
+
+A Design Language Model captures the compounded sum of fractional design decisions — the infinitesimal judgments designers make that machines don't know. It resolves a brand description into a complete, production-ready expression system. The model that makes taste computable.
+
+### WGLL (What Good Looks Like)
+
+Runtime quality judgment — structured assessment of what good looks like, available to your coding agent at the moment it builds. Not aesthetic opinion. Not subjective review. Encoded taste as a callable runtime check.
+
+### ContentKit
+
+The content intelligence layer — voice-modulated, surface-aware content that speaks in your brand's voice across every touchpoint. Content tokens compiled to match tone, length, and terminology rules.
+
+### EvidenceKit
+
+The quality proof layer — structured evidence that what was built is actually on-brand. Not opinion. Traceable verification with domain-level scoring and pass/fail gates.
+
+### DecisionKit
+
+Pattern resolution — matching what you want to build with structural patterns that carry the brand's judgment. Intent in, governed pattern out.
+
+### Blueprint
+
+A structural pattern matched to brand intent — the starting composition your agent builds from, carrying layout, content zones, and pattern slots.
+
+### Brand Archetype
+
+The personality profile that shapes how a brand expresses itself — the starting point for every design decision the system makes.
+
+### Composition Quality
+
+How well components compose into governed layouts — structural quality that goes beyond visual appearance. The measure of whether the whole is greater than its parts.
+
+### Provenance
+
+Every LESS-generated surface carries provenance — traceable lineage back to the brand decisions that produced it. Not watermarking. Decision archaeology.
+
+### Inner Loop
+
+The inner loop finds and fixes token escapes — hardcoded values that should be brand-governed — and validates the corrections automatically. Continuous quality improvement without manual auditing.
+
 ## The Three Design Eras
 
 **Craft** — Design lived in the designer's head. Consistency through proximity.

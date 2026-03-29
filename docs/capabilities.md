@@ -25,7 +25,7 @@ Create complete brand expression systems from natural language, visual reference
 > dark mode first, inspired by terminal aesthetics but not cold.
 ```
 
-The agent creates the entire expression system — 300+ tokens resolved from your description — walks you through the key decisions, compiles a capsule, and publishes it so any agent in your environment can build with it.
+The agent creates the entire expression system — 300+ tokens resolved from your description — walks you through the key decisions, compiles a capsule, and publishes it so any agent in your environment can build with it. This is the DLM — the Design Language Model — resolving natural language into deterministic infrastructure.
 
 ## Runtime Design System
 
@@ -54,7 +54,7 @@ Compile, version, audit, and validate brands with quality gates and evidence cha
 - Compile a brand into a Brand Capsule — a self-contained, versioned artifact that encodes everything about how the brand should look, feel, and speak
 - Run brand health audits covering accessibility (contrast ratios, color blindness), coherence (do all tokens work together?), and quality (does it meet production standards?)
 - Publish and rollback capsule versions with full version history
-- Prove that generated output is on-brand using traceable evidence — not "it looks right" but "here's the token chain, the coherence score, and the rule it satisfied"
+- Prove that generated output is on-brand using traceable evidence — EvidenceKit traces every design decision back to its source token and returns structured proof, not opinion
 
 **Example:**
 ```
@@ -89,7 +89,7 @@ Create brand-aligned visual content — carousels, posters, slides, and producti
 > Use my brand.
 ```
 
-Prism generates the carousel using your published Brand Capsule — colors, typography, spacing, and voice all come from your expression system. The output includes coherence scores confirming brand alignment.
+Prism generates the carousel using your published Brand Capsule — colors, typography, spacing, and voice all come from your expression system. The output includes Composition Quality scores confirming brand alignment.
 
 **Example:**
 ```

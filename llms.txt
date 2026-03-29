@@ -17,6 +17,11 @@ The agent discovers its capabilities from the expression infrastructure server a
 - **Expression Contracts**: Beyond design tokens — encode intent, context, relationships, and reasoning. Tokens are a dictionary. Contracts are the grammar.
 - **LESS MCP**: Expression infrastructure served as a runtime MCP server. Agents query for design decisions the same way they query any other tool server.
 - **LoomX**: The expression engine under the hood — silent design judgment at runtime. Powers the Designless agent's ability to resolve design decisions and validate output.
+- **DLM** (Design Language Model): Resolves brand descriptions into complete expression systems. The model that makes taste computable.
+- **EvidenceKit**: Quality proof layer — structured, traceable verification that output is on-brand.
+- **ContentKit**: Content intelligence — voice-modulated content compiled to match brand tone across surfaces.
+- **Composition Quality**: How well components compose into governed layouts. Structural quality beyond visual appearance.
+- **Blueprint**: Intent-matched structural patterns — the starting composition agents build from.
 
 ## Commands
 
