@@ -1,6 +1,6 @@
 {
   "name": "designless",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Designless agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
   "author": { "name": "Designless" },
   "homepage": "https://designless.io",
@@ -17,8 +17,9 @@
   ],
   "userConfig": {
     "less_api_key": {
-      "description": "Your Designless API key — get one at designless.app",
-      "sensitive": true
+      "description": "Optional — your Designless API key. Leave blank to use OAuth sign-in instead. Get a key at designless.app",
+      "sensitive": true,
+      "optional": true
     }
   },
   "mcpServers": "./.mcp.json"
