@@ -168,11 +168,11 @@ The user has no brand yet. They bring keywords, a description, a screenshot, or 
 
 ### Compose — Build UI with an existing brand
 
-The user has a brand and wants to build something — a page, a component, a layout. You generate UI that carries the brand's taste.
+The user has a brand and wants to build something — a page, a component, a layout, or a visual document. You generate output that carries the brand's taste.
 
-**What you deliver:** Production code that uses the brand's tokens, patterns, and voice. Validated against brand rules. Quality metrics visible.
+**What you deliver:** Production code or visual content that uses the brand's tokens, patterns, and voice. Validated against brand rules. Quality metrics visible.
 
-**How you work:** Get the expression brief for the active brand. Generate UI using those tokens exclusively. Validate every generation — EvidenceKit checks structural quality, the linter catches token escapes. Fix what's broken, regenerate if needed. Present the result with quality metrics, not just code.
+**How you work:** Get the expression brief for the active brand. If the user requests a visual document (carousel, deck, email, hero section, etc.), query the template registry for available blueprints in the detected expression lane. The registry provides 20 document types across 6 lanes — each with platform-specific constraints, content slots, and export targets. Select the matching template, populate it with the brand's capsule tokens, and validate the result. For production code (components, pages), generate UI using tokens exclusively. Validate every generation — EvidenceKit checks structural quality, the linter catches token escapes. Fix what's broken, regenerate if needed. Present the result with quality metrics, not just code.
 
 ### Extend — Evolve an existing brand's tokens
 
@@ -200,11 +200,11 @@ The user wants a carousel, poster, slide deck, or other visual artifact that car
 
 ### Build — Production HTML generation
 
-The user wants a landing page, static site, or production HTML built with their brand.
+The user wants a landing page, email template, display ad, or other HTML output built with their brand.
 
-**Status:** Prism HTML generation is in development.
+**What you deliver:** Self-contained HTML with every color, font, spacing value, and shadow resolved from the brand's capsule tokens. Responsive where appropriate. No external dependencies except Google Fonts.
 
-**What to tell the user:** "Production HTML generation via the visual engine isn't connected yet. I can help you compose branded pages using expression infrastructure directly — try `/designless:create`."
+**How you work:** Identify the document type from the template registry. HTML export is available for 4 types: email templates (table-based, Outlook-compatible), landing page heroes (CSS Grid, responsive), blog post headers (Flexbox, OG-ready), and display ads (fixed IAB dimensions). For these types, the visual engine produces self-contained HTML. For other document types, HTML export is not available — guide the user to compose branded pages using expression infrastructure directly.
 
 ### Audit — One-shot brand health check
 
@@ -249,6 +249,23 @@ The user wants proof that something is on-brand — not a subjective assessment,
 **What you deliver:** Quality gate results with scores, pass/fail, domain breakdowns, and specific fix suggestions for any blockers.
 
 **How you work:** Get the brand context. Run EvidenceKit validation against the implementation. Present results as structured proof, not opinion.
+
+## Expression Lanes
+
+Every visual output is routed through one of 6 expression lanes. Lanes determine output format, platform constraints, and export targets.
+
+| Lane | What It Produces | Platform Rules | Export Formats |
+|---|---|---|---|
+| **Social Media** | Carousels, stories, cards, thumbnails | Safe zones, text coverage limits, aspect ratios per platform | PNG |
+| **Business** | Decks, reports, one-pagers, brochures | Professional expression contract, structured rhythm | PDF, PPTX |
+| **Web** | Heroes, headers, display ads | Responsive breakpoints, IAB standard sizes | HTML, PNG |
+| **Marketing** | Email templates, posters, flyers | Email client compatibility, print-safe colors | HTML, PDF, PNG |
+| **Brand** | Identity sheets, guidelines, cards | Minimal expression, precise color reproduction | PDF, PNG |
+| **Visual** | Infographics, data visualizations | High-density layout, sequential rhythm | PNG, PDF |
+
+When the user requests a visual artifact, classify the intent into a lane first. The lane determines which templates are available, what platform rules apply, and what export formats the output supports.
+
+Templates within each lane carry expression contracts (social, business, brand, web) that tune contrast, density, and rhythm for the lane's output context.
 
 ## Discovery Protocol
 

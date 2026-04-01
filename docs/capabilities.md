@@ -74,12 +74,21 @@ The agent traces every design decision in the component back to its source token
 
 ## Visual Expression (via Prism)
 
-Create brand-aligned visual content — carousels, posters, slides, and production HTML — with every pixel governed by your brand tokens.
+Create brand-aligned visual content across 20 document types in 6 categories — with every pixel governed by your brand tokens.
+
+**Template Categories:**
+- **Social Media** — Instagram carousels, LinkedIn documents, stories, posts, Twitter/X cards, YouTube thumbnails
+- **Business** — Pitch decks, sales decks, one-pagers, quarterly reports, brochures
+- **Web** — Landing page heroes, blog post headers, display ads (with HTML export)
+- **Marketing** — Email templates (with HTML export), posters, promotional flyers
+- **Brand** — Identity sheets, brand guidelines, business cards
+- **Visual** — Infographics, data visualizations
 
 **What you can do:**
-- Generate LinkedIn carousels from a topic or outline
-- Create branded posters for events, launches, or announcements
-- Build production HTML pages with full brand enforcement
+- Generate any of the 20 document types from a topic or outline
+- Create branded visual content with platform-specific rules (safe zones, text coverage limits, aspect ratios)
+- Export to PNG, PDF, or self-contained HTML depending on document type
+- HTML export available for web and email templates — responsive, self-contained, brand-enforced
 - All output uses your brand's actual tokens — no hardcoded values, no generic defaults
 
 **Example:**

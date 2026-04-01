@@ -103,3 +103,43 @@ The inner loop finds and fixes token escapes — hardcoded values that should be
 **Post-Static** — Design is infrastructure available at runtime, when the agent builds. The artifact is no longer enough.
 
 [Full definition →](https://designless.live/vocabulary/post-static-design-era)
+
+## Design Language Model (DLM)
+
+The intelligence layer that transforms natural language into structured design decisions. Given a vibe, a keyword, or a description, the DLM resolves it into a complete, coherent set of design tokens — not by guessing, but by understanding how design dimensions relate to each other. It's the reason a single sentence can produce 300+ tokens that feel intentional.
+
+## WGLL (Weighted Generative Layout Language)
+
+The structural vocabulary that encodes how visual elements should be arranged. WGLL captures layout intent — not as pixel coordinates, but as weighted relationships between composition elements. It's how the system knows that a hero section should breathe differently than a dashboard grid, even when both use the same brand tokens.
+
+## ContentKit
+
+The content compilation layer that ensures brand voice extends beyond visual tokens. ContentKit resolves tone, terminology, and messaging patterns into structured content tokens — so when an agent writes a CTA or error message, the words carry the same brand intent as the colors and typography.
+
+## EvidenceKit
+
+The validation engine that proves output is on-brand with traceable evidence chains. EvidenceKit doesn't just check if something looks right — it traces every design decision back to its source token, scores coherence across dimensions, and produces structured proof that can be reviewed, shared, or audited.
+
+## DecisionKit
+
+The reasoning layer that captures why a design decision was made, not just what it is. Every token in the system carries provenance — a traceable chain from user intent through resolution to final value. DecisionKit structures this reasoning so agents can explain their design choices and humans can verify them.
+
+## Blueprint
+
+A structural template that describes how content should be arranged within a composition. Blueprints are matched to user intent — when you say "landing page hero," the system selects a blueprint that encodes the right content zones, emphasis hierarchy, and rhythm for that surface type.
+
+## Brand Archetype
+
+A canonical personality anchor that shapes how a brand expresses itself. Archetypes capture the fundamental character of a brand — whether it's a technical vanguard, a warm community platform, or a premium authority. They influence every design decision from color temperature to typography personality to content tone.
+
+## Composition Quality
+
+A measured score that captures how well visual elements work together in a specific context. Composition quality is not aesthetic opinion — it's structured evaluation across dimensions like token compliance, layout coherence, accessibility, and expression contract adherence. Every generation gets a score, and the score is traceable.
+
+## Provenance
+
+The traceable chain from a user's intent to a generated output. Every token, layout decision, and content choice in the system carries provenance — the record of why it was chosen, what influenced it, and how it relates to the brand's overall expression. Provenance is what makes expression infrastructure auditable.
+
+## Inner Loop
+
+The self-healing cycle that detects when generated output deviates from brand intent and corrects it before delivery. When a token escapes — a hardcoded color, a font override, a spacing anomaly — the inner loop identifies the violation, diagnoses the cause, patches the output, and validates the fix. Continuous quality enforcement, not post-hoc review.

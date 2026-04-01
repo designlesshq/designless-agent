@@ -17,11 +17,23 @@ The agent discovers its capabilities from the expression infrastructure server a
 - **Expression Contracts**: Beyond design tokens — encode intent, context, relationships, and reasoning. Tokens are a dictionary. Contracts are the grammar.
 - **LESS MCP**: Expression infrastructure served as a runtime MCP server. Agents query for design decisions the same way they query any other tool server.
 - **LoomX**: The expression engine under the hood — silent design judgment at runtime. Powers the Designless agent's ability to resolve design decisions and validate output.
-- **DLM** (Design Language Model): Resolves brand descriptions into complete expression systems. The model that makes taste computable.
+- **DLM (Design Language Model)**: Resolves brand descriptions into complete expression systems. The model that makes taste computable.
 - **EvidenceKit**: Quality proof layer — structured, traceable verification that output is on-brand.
 - **ContentKit**: Content intelligence — voice-modulated content compiled to match brand tone across surfaces.
-- **Composition Quality**: How well components compose into governed layouts. Structural quality beyond visual appearance.
-- **Blueprint**: Intent-matched structural patterns — the starting composition agents build from.
+- **Blueprint**: Structural templates matched to user intent — the right content zones, emphasis hierarchy, and rhythm for each surface type.
+- **Brand Archetype**: Canonical personality anchors that shape how a brand expresses itself across every design dimension.
+- **Provenance**: Traceable decision chains from user intent to generated output — auditable, verifiable, not just aesthetic.
+- **Composition Quality**: Measured visual composition scores across token compliance, layout coherence, accessibility, and expression contract adherence.
+
+## Template Registry
+
+20 document types across 6 categories, with platform-specific rules and expression contracts:
+- **Social Media (7):** Instagram carousels, LinkedIn documents, stories, square posts, Twitter/X cards, YouTube thumbnails
+- **Business (6):** Pitch decks, sales decks, one-pagers, quarterly reports, brochures
+- **Web (3):** Landing page heroes, blog headers, display ads — with HTML export
+- **Marketing (2):** Email templates (HTML export), posters/flyers
+- **Brand (3):** Identity sheets, brand guidelines, business cards
+- **Visual (1):** Infographics
 
 ## Commands
 
