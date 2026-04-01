@@ -24,6 +24,9 @@ The agent discovers its capabilities from the expression infrastructure server a
 - **Brand Archetype**: Canonical personality anchors that shape how a brand expresses itself across every design dimension.
 - **Provenance**: Traceable decision chains from user intent to generated output — auditable, verifiable, not just aesthetic.
 - **Composition Quality**: Measured visual composition scores across token compliance, layout coherence, accessibility, and expression contract adherence.
+- **WGLL (Weighted Generative Layout Language)**: The structural vocabulary that encodes how visual elements should be arranged — weighted relationships between composition elements, not pixel coordinates.
+- **DecisionKit**: The reasoning layer that captures why a design decision was made. Every token carries provenance — a traceable chain from user intent through resolution to final value.
+- **Inner Loop**: The self-healing cycle that detects when generated output deviates from brand intent and corrects it before delivery — continuous quality enforcement, not post-hoc review.
 
 ## Template Registry
 
