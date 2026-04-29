@@ -18,6 +18,3 @@
 - Class A terms define WHAT and WHY, never HOW
 - All changes must pass the IP Fidelity Test (Level 0)
 
-## Ecosystem Context
-
-Read `../designless-brain/active-context.md` for current phase. Read `../designless-brain/definition.md` for locked vocabulary. All rules in `../designless-brain/rules/` apply.
