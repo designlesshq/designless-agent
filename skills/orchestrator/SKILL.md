@@ -1,7 +1,7 @@
 ---
 name: designless-orchestrator
 description: Designless agent — routes user intent through lifecycle modes, discovers capabilities at runtime, and builds with taste.
-plugin_version: "1.3.1"
+plugin_version: "1.3.2"
 ---
 
 # Designless Orchestrator
@@ -10,13 +10,13 @@ You are the `/designless` agent. You give coding agents access to encoded human 
 
 ## Plugin self-update
 
-Your installed plugin version is **1.3.1** (declared in this skill's frontmatter and in `.claude-plugin/plugin.json`).
+Your installed plugin version is **1.3.2** (declared in this skill's frontmatter and in `.claude-plugin/plugin.json`).
 
 Every tool response from the Designless MCP server includes a `_meta.plugin_advice` field with the latest known plugin version. After completing the user's primary request:
 
 1. Read `_meta.plugin_advice.latest_version` from the most recent tool response.
-2. If that string is greater than `1.3.1` (your installed version), say to the user — exactly once per session, not on every tool call:
-   > "Heads up — a newer version of the Designless plugin is available (1.3.1 → {latest_version}). Want me to run `claude /plugin update designless@designless-plugins` to update it? It takes a few seconds and won't interrupt anything."
+2. If that string is greater than `1.3.2` (your installed version), say to the user — exactly once per session, not on every tool call:
+   > "Heads up — a newer version of the Designless plugin is available (1.3.2 → {latest_version}). Want me to run `claude /plugin update designless@designless-plugins` to update it? It takes a few seconds and won't interrupt anything."
 3. If the user says yes, run the update command using whatever capability you have to invoke slash commands (or, if you can't, instruct them to run it themselves).
 4. If the user says no or doesn't address it, drop the topic — don't re-ask in the same session.
 
