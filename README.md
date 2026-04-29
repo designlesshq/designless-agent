@@ -13,11 +13,11 @@ claude plugin marketplace add designlesshq/designless-agent
 claude plugin install designless@designless-plugins
 ```
 
-Then reload plugins and start using commands:
+Then reload plugins and start using:
 
 ```bash
 claude /reload-plugins
-claude /designless:create
+claude /designless
 ```
 
 ### MCP server
@@ -50,26 +50,18 @@ The installer will:
 
 After install, the orchestrator is available in your chosen agents. It connects to the expression infrastructure at `mcp.designless.app/mcp` — you'll need an API key from [designless.app](https://designless.app) on first use.
 
-## Commands
+## One command, every flow
 
-| Command | What it does |
-|---------|-------------|
-| `/designless` | Routes to the right mode based on your intent |
-| `/designless:create` | Create a new brand or compose a page with an existing one |
-| `/designless:extend` | Extend or modify an existing brand's tokens |
-| `/designless:adopt` | Import an external design system (Figma, CSS, etc.) |
-| `/designless:carousel` | Generate a branded carousel via Prism |
-| `/designless:poster` | Generate a branded poster via Prism |
-| `/designless:build` | Generate production HTML with full brand enforcement |
-| `/designless:audit` | One-shot brand health check — accessibility, coherence, quality |
-| `/designless:evolve` | Evolve and refresh an existing brand |
-| `/designless:prove` | Evidence-based quality validation — prove something is on-brand |
-| `/designless:status` | Ecosystem overview — brands, capsules, tier, capabilities |
+```
+/designless
+```
+
+That's it. There's no `/designless:create`, `/designless:audit`, or any other sub-command — the orchestrator detects your intent from what you say and routes to the right capability at runtime. You describe what you want; it figures out whether to create a brand, extend it, adopt an external system, build a page, audit quality, prove provenance, generate a carousel or poster, or surface ecosystem state.
 
 ## Quick Start
 
 ```
-> /designless:create
+> /designless
 > I want a fintech brand — trustworthy, modern, clean.
 ```
 
@@ -88,9 +80,9 @@ The agent discovers capabilities from the expression infrastructure server at ru
 
 **"Missing API key"** — Set `LESS_API_KEY` environment variable or pass via `--header` when adding the MCP server.
 
-**"No brands found"** — Run `/designless:create` first to create your first brand.
+**"No brands found"** — Run `/designless` and ask for a new brand to get started.
 
-**"Capsule not published"** — Use `/designless:create` to compile and publish your brand. The agent will guide you through the quality gate.
+**"Capsule not published"** — Run `/designless` and ask to publish; the agent walks you through the quality gate.
 
 ## Documentation
 
