@@ -2,7 +2,7 @@
   "mcpServers": {
     "less-mcp": {
       "type": "http",
-      "url": "${LESS_MCP_URL:-https://mcp.designless.app/mcp}"
+      "url": "https://mcp.designless.app/mcp"
     }
   }
 }

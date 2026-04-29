@@ -12,7 +12,7 @@
       "name": "designless",
       "source": "./",
       "description": "Designless agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
-      "version": "1.3.11",
+      "version": "1.3.12",
       "author": {
         "name": "Designless"
       },
