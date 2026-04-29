@@ -25,14 +25,10 @@ claude /designless
 Add the expression infrastructure runtime directly to any MCP-compatible agent:
 
 ```bash
-claude mcp add --transport http designless \
-  --header "x-api-key: YOUR_KEY" \
-  https://mcp.designless.app/mcp
+claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
 
-This gives your agent access to LESS MCP tools — it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available.
-
-Get an API key at [designless.app](https://designless.app).
+This gives your agent access to LESS MCP tools — it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available. Authentication is handled via OAuth on first use.
 
 ### Skills (any coding agent)
 
@@ -48,7 +44,7 @@ The installer will:
 3. Choose scope — **Project** (current directory) or **Global** (all projects)
 4. Copy the skill into each agent's `.agents/skills/` directory
 
-After install, the orchestrator is available in your chosen agents. It connects to the expression infrastructure at `mcp.designless.app/mcp` — you'll need an API key from [designless.app](https://designless.app) on first use.
+After install, the orchestrator is available in your chosen agents. It connects to the expression infrastructure at `mcp.designless.app/mcp` — authentication is handled via OAuth on first use.
 
 ## One command, every flow
 
@@ -78,7 +74,7 @@ The agent discovers capabilities from the expression infrastructure server at ru
 
 ## Troubleshooting
 
-**"Missing API key"** — Set `LESS_API_KEY` environment variable or pass via `--header` when adding the MCP server.
+**"Not authenticated"** — Run `/designless connect` and complete the OAuth flow in your browser.
 
 **"No brands found"** — Run `/designless` and ask for a new brand to get started.
 

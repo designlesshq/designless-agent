@@ -40,17 +40,9 @@ The agent discovers its capabilities from the expression infrastructure server a
 
 ## Commands
 
-- `/designless` — Routes to the right mode based on your intent
-- `/designless:create` — Create a new brand from a description, keywords, or visual reference
-- `/designless:extend` — Extend or modify an existing brand's tokens
-- `/designless:adopt` — Import an external design system (Figma, CSS, etc.)
-- `/designless:carousel` — Generate a branded carousel via Prism
-- `/designless:poster` — Generate a branded poster via Prism
-- `/designless:build` — Generate production HTML with full brand enforcement
-- `/designless:audit` — One-shot brand health check — accessibility, coherence, quality
-- `/designless:evolve` — Evolve and refresh an existing brand
-- `/designless:prove` — Evidence-based quality validation — prove something is on-brand
-- `/designless:status` — Ecosystem overview — brands, capsules, tier, capabilities
+- `/designless` — One command. Describe your intent; the agent routes to the right capability automatically.
+
+There are no sub-commands. The orchestrator classifies intent at runtime — whether you want to create a brand, extend tokens, audit quality, generate a carousel, build production HTML, or surface ecosystem state, you say it in plain language and it routes accordingly.
 
 ## What You Get
 
@@ -66,12 +58,10 @@ claude plugin install designless@designless-plugins
 
 Or add the MCP server directly:
 ```
-claude mcp add --transport http designless \
-  --header "x-api-key: YOUR_KEY" \
-  https://mcp.designless.app/mcp
+claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
 
-Get an API key at https://designless.app
+Authentication is handled via OAuth on first use. Visit https://designless.app to create an account.
 
 ## Links
 

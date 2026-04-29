@@ -20,7 +20,7 @@ Create complete brand expression systems from natural language, visual reference
 
 **Example:**
 ```
-> /designless:create
+> /designless
 > I need a brand for a developer tools startup — technical but approachable,
 > dark mode first, inspired by terminal aesthetics but not cold.
 ```
@@ -39,7 +39,7 @@ Serve live design tokens that respond to context — not a static export, but a 
 
 **Example:**
 ```
-> /designless:extend
+> /designless
 > Add a set of motion tokens to my brand — transitions should feel snappy
 > for interactions but smooth for page-level animations.
 ```
@@ -58,7 +58,7 @@ Compile, version, audit, and validate brands with quality gates and evidence cha
 
 **Example:**
 ```
-> /designless:audit
+> /designless audit
 > Run a full health check on my brand before I hand it to the engineering team.
 ```
 
@@ -66,8 +66,7 @@ The agent runs accessibility checks, coherence scoring, and quality gates, then 
 
 **Example:**
 ```
-> /designless:prove
-> Prove that this hero section is on-brand. Show me the evidence.
+> /designless prove this hero section is on-brand. Show me the evidence.
 ```
 
 The agent traces every design decision in the component back to its source token, checks coherence scores, and returns an evidence chain you can review or share.
@@ -93,7 +92,7 @@ Create brand-aligned visual content across 20 document types in 6 categories —
 
 **Example:**
 ```
-> /designless:carousel
+> /designless
 > Create a 5-slide LinkedIn carousel about why design tokens alone aren't enough.
 > Use my brand.
 ```
@@ -102,7 +101,7 @@ Prism generates the carousel using your published Brand Capsule — colors, typo
 
 **Example:**
 ```
-> /designless:build
+> /designless
 > Build a landing page hero section for my brand. Dark background,
 > headline + subhead + CTA, responsive.
 ```
@@ -114,7 +113,7 @@ Prism generates production HTML where every color, font, spacing value, and shad
 See your full Designless environment at a glance.
 
 ```
-> /designless:status
+> /designless status
 ```
 
 Returns an overview of your brands, capsule states, API tier, and available capabilities. Useful for orienting before you start working.
@@ -127,7 +126,7 @@ Every command that operates on a brand needs to know which brand to use. The age
 
 - **One brand** — auto-selected, no question asked.
 - **Multiple brands** — the agent asks which one you want to work with.
-- **No brands** — the agent redirects you to `/designless:create` first.
+- **No brands** — the agent prompts you to describe a new brand first.
 
 Brand detection happens at the start of every command. You never need to specify a brand slug manually — the agent queries the server for your brand inventory and resolves the right one from context.
 
