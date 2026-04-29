@@ -2,10 +2,7 @@
   "mcpServers": {
     "less-mcp": {
       "type": "http",
-      "url": "${LESS_MCP_URL:-https://mcp.designless.app/mcp}",
-      "headers": {
-        "x-api-key": "${LESS_API_KEY:-}"
-      }
+      "url": "${LESS_MCP_URL:-https://mcp.designless.app/mcp}"
     }
   }
 }
