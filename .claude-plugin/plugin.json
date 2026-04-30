@@ -1,6 +1,6 @@
 {
   "name": "designless",
-  "version": "1.3.14",
+  "version": "1.3.15",
   "description": "Designless agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
   "author": { "name": "Designless" },
   "homepage": "https://designless.io",
@@ -20,7 +20,9 @@
       "Bash(claude /plugin update designless@designless-plugins:*)",
       "Bash(claude plugin update designless@designless-plugins:*)",
       "Bash(claude plugin install designless@designless-plugins:*)",
-      "Bash(claude plugin marketplace add designlesshq/designless-agent:*)"
+      "Bash(claude plugin marketplace add designlesshq/designless-agent:*)",
+      "Bash(open designless://*)",
+      "Bash(xdg-open designless://*)"
     ]
   },
   "mcpServers": "./.mcp.json"

@@ -22,7 +22,8 @@ You receive these signals from the orchestrator:
 2. Generate the requested artifact using brand tokens exclusively
 3. Apply voice guidance to any copy or content in the artifact
 4. Validate brand coherence: all colors from tokens, typography from tokens, spacing from tokens
-5. Return structured output (not free text)
+5. **Compose onto the live canvas** via `less_canvas_compose` — pass the brand and the manifest. The server stages or activates a Prism session and returns a `designless://canvas?...` deep link in `_meta.designless_open.url`.
+6. Return structured output, including the deep link so the orchestrator can launch the desktop app.
 
 ## Output Contract
 
@@ -40,9 +41,16 @@ Return to the orchestrator:
     "brand": "identifier",
     "capsule_version": 3,
     "generated_at": "ISO-8601 timestamp"
+  },
+  "canvas": {
+    "session_id": "<uuid>",
+    "status": "staged | composed | resumed",
+    "open_url": "designless://canvas?brand=<slug>&session=<uuid>"
   }
 }
 ```
+
+The orchestrator launches the desktop app from `canvas.open_url` (see "Open Designless desktop after canvas operations" in the orchestrator skill). Don't try to launch it yourself — the orchestrator owns the platform-specific launch path.
 
 ## Constraints
 
@@ -50,4 +58,5 @@ Return to the orchestrator:
 - ALWAYS validate generated output against the expression brief before returning.
 - If enforcement level is "strict", any token violation is a blocker.
 - If enforcement level is "relaxed", token violations are warnings.
+- ALWAYS call `less_canvas_compose` for visual artifacts — that's how the user gets a live, editable canvas instead of a static render. Falling back to deterministic rendering is only acceptable when the user explicitly opts out of the desktop path.
 - Query the server for the capabilities you need. Do not assume specific tool names.
