@@ -57,9 +57,17 @@ You receive these signals from the orchestrator:
 
 5. Validate brand coherence: all colors from tokens, typography from tokens, spacing from tokens. Honor `platform_rules` (safe zones, text coverage caps).
 
-6. **Compose onto the live canvas** via `less_canvas_compose` — pass `brand_slug`, `payload` (the resolved manifest), and `template_id` (the registry id from step 2b). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
+6. **Defensive read before writing to a session in flight.** When the orchestrator is calling you for a *follow-up* request inside an existing session (the user asked for a change after seeing the canvas, not a fresh artifact), call `less_canvas_status` first. The response includes `last_edit_source` and `cooldown_active`:
+   - `last_edit_source = "agent"` (or null) → safe to proceed.
+   - `last_edit_source = "user"` or `"mixed"` AND `cooldown_active = true` → the user has been editing the canvas directly via the in-canvas AI input within the cooldown window (60s). **Do not silently overwrite.** Either:
+     - Apply changes incrementally via `less_canvas_update` (operation deltas), preserving everything the user did. This is the right move when the user asked to "make the headline bigger" or "add a CTA" — small, additive edits.
+     - Or, if you must replace the manifest wholesale (e.g. switching templates), confirm with the user first: "I see you've made edits in the canvas. Should I replace them with my version, or apply my changes on top?"
 
-7. Return structured output, including the deep link so the orchestrator can launch the desktop app.
+7. **Compose vs update.** Pick the right tool:
+   - `less_canvas_compose` — fresh sessions, template switches, full-manifest writes. Pass `brand_slug`, `payload` (the resolved manifest), and `template_id` (the registry id from step 2b). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
+   - `less_canvas_update` — incremental edits within an active session. Cheaper for the server (no full-manifest diff) and safer for the user (operation-level changes, not whole-manifest overwrites).
+
+8. Return structured output, including the deep link so the orchestrator can launch the desktop app.
 
 ## When the user asks for HTML output
 
@@ -86,7 +94,8 @@ Return to the orchestrator:
   "canvas": {
     "session_id": "<uuid>",
     "status": "staged | composed | resumed",
-    "open_url": "designless://canvas?brand=<slug>&session=<uuid>&template=<template_id>"
+    "open_url": "designless://canvas?brand=<slug>&session=<uuid>&template=<template_id>",
+    "edit_path": "compose | update"
   }
 }
 ```
@@ -100,5 +109,7 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 - ALWAYS validate generated output against the expression brief before returning.
 - If enforcement level is "strict", any token violation is a blocker.
 - If enforcement level is "relaxed", token violations are warnings.
-- ALWAYS call `less_canvas_compose` for visual artifacts — that's how the user gets a live, editable canvas instead of a static render. Falling back to deterministic rendering is only acceptable when the user explicitly opts out of the desktop path.
-- Query the server for the capabilities you need. Do not assume specific tool names.
+- ALWAYS use `less_canvas_compose` for fresh sessions or template switches; use `less_canvas_update` for incremental changes within an active session — preserves user edits and is cheaper for the server.
+- ALWAYS call `less_canvas_status` first when the orchestrator is making a follow-up request on a session that's already open. If the user has been editing the canvas (last_edit_source = "user" or "mixed", cooldown_active = true), apply changes via `less_canvas_update` or confirm before replacing.
+- Falling back to deterministic rendering is only acceptable when the user explicitly opts out of the desktop path.
+- Discover tools via search; do not hardcode tool names beyond the canvas-* family that this contract names directly.
