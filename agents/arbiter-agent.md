@@ -77,7 +77,7 @@ Return to the orchestrator:
 }
 ```
 
-`confidence_band` is the canonical bucketing of the raw confidence score — Arbiter never surfaces the float to non-superuser callers (response sanitisation strips it server-side).
+`confidence_band` is the canonical bucketing of the raw confidence score. Arbiter never surfaces the underlying float — response sanitisation strips it server-side.
 
 ## Constraints
 
