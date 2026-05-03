@@ -43,6 +43,20 @@ A browser window opens for OAuth authentication. Complete login at [designless.a
 
 If you see your account tier and capabilities listed, you're connected.
 
+### Get embed snippets for an existing brand
+
+If you've already created a brand and just need to wire it into a new
+project, run:
+
+```
+> less_init <your-brand-slug>
+```
+
+The response includes an `integration` block with framework-specific embed
+snippets (HTML, Next.js, Vite, Astro, SvelteKit, Nuxt) and per-platform env-var
+setup instructions (Vercel, Netlify, Render, Railway, Supabase). The agent will
+copy-paste the right snippet for your stack — no external doc lookup needed.
+
 ## Step 3: Create Your First Brand
 
 ```
