@@ -75,16 +75,19 @@ Filter `less_list_templates supports_html: true`. Today: `email-template`, `land
 
 ## Output Contract
 
-Return to the orchestrator:
+Return to the orchestrator a structure built from values the SERVER returned, not from values you would like to be true. Pre-2026-05-08 this section asked for a `brand_coherence` block; that block was a fabrication — no tool ever scored coherence at compose time, and the orchestrator had no way to detect when a write didn't actually land. The contract below replaces it with the `verified` block that `less_canvas_compose` now returns on every success.
+
 ```json
 {
   "artifact_type": "carousel",
   "template_id": "linkedin-document",
-  "slides": [],
-  "brand_coherence": {
-    "score": 0.95,
-    "token_coverage": 1.0,
-    "violations": []
+  "slides_summary": "<optional brief: slide roles, not a fabricated coherence score>",
+  "verified": {
+    "brand_slug": "haven-compass",
+    "template_id": "linkedin-document",
+    "session_status": "active | staged | composed | resumed",
+    "slide_count": 17,
+    "element_count": 80
   },
   "metadata": {
     "brand": "identifier",
@@ -99,6 +102,12 @@ Return to the orchestrator:
   }
 }
 ```
+
+Rules for the `verified` block:
+
+- **Copy it verbatim from the server's response.** `less_canvas_compose` returns a `verified` field reading `{brand_slug, template_id, session_status, slide_count, element_count}` from the actual `prism_sessions` row after the write. Pass it through. Do not synthesize numbers, do not infer `element_count` from your manifest draft, do not invent a `score`.
+- **Compare `verified.brand_slug` against the brand the orchestrator asked you to compose.** If they differ, that's the canvas-compose-rebind regression returning. Don't paper over it — return an error to the orchestrator: `"verification_mismatch: composed against <brand_slug> but server stored <verified.brand_slug>"`. The orchestrator's truth gate will surface this to the user instead of opening a wrong-branded canvas.
+- **Compare `verified.element_count` against your manifest's element count.** If the server stored zero (or noticeably fewer) elements, the manifest didn't land. Return the same `verification_mismatch` error rather than letting the orchestrator launch an empty canvas.
 
 The orchestrator launches the desktop app from `canvas.open_url` (see "Open Designless desktop after canvas operations" in the orchestrator skill). Don't try to launch it yourself — the orchestrator owns the platform-specific launch path.
 
