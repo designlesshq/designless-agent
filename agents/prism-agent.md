@@ -80,9 +80,9 @@ You receive these signals from the orchestrator:
    - **Image slot values** are `{ "kind": "inline-svg", "svg": "<svg>…</svg>", "alt": "…" }` for inline SVGs (preferred for procedural / abstract visuals) or `{ "kind": "url", "url": "…", "alt": "…" }` for hosted images.
    - For each slide listed in the template manifest, include all of its **required** slots — `less_list_templates id: <x> detail: full` returns the per-slide slot list. A missing required slot throws at render time and the slide paints blank.
 
-   **Image slots that repeat across multiple slides — generate distinct, content-aware visuals per slide.** When the template's `content_slots` declares an image slot on multiple slide indices (e.g. `PORTRAIT` on slides 9–15 of a 7-persona carousel, `THUMBNAIL` on every step of a 5-step framework, `SCENE` on every chapter of a storytelling deck), each slide's image must be **semantically distinct** from the others. Reusing the same SVG across every slide is a failure mode — the template intentionally asks for unique imagery, and a uniform placeholder reads as either a bug or a lazy compose.
+   **Image slots that repeat across multiple slides — compose a unique visual for each slide.** When the template's `content_slots` declares an image slot on multiple slide indices (e.g. `PORTRAIT` on slides 9–15 of a 7-persona carousel, `THUMBNAIL` on each step of a 5-step framework, `SCENE` on each chapter of a storytelling deck), the design intent is that every slide carries its own visual. Compose each slide's image from the surrounding slot content; the visuals are part of the carousel's narrative, not background ornaments.
 
-   You (the coding agent) are responsible for generating the SVG. SVG is pure text — write it inline in the manifest. No external visual-generation tool exists, and none is needed. Authoring guidance:
+   The agent composes the SVG inline in the manifest. SVG is text — write it directly. Authoring guidance:
 
    - **Motif derived from the slide's content.** Read the slide's surrounding slots (ARCHE_NAME / DESC / WHO for personas, STEP_TITLE / STEP_BODY for framework steps) and pick a primitive geometric motif that reads as the subject. Examples for a 7-persona carousel:
      - *Button Polisher* → grid of repeating squares (the same component, over and over)
@@ -91,10 +91,10 @@ You receive these signals from the orchestrator:
      - *Brand Guardian* → shield silhouette or sealed crest
      - *Strategy Slide Deck* → stack of layered rectangles offset to suggest a deck
      - *Manager Who Manages Managers* → concentric nested squares (each layer manages the next)
-   - **Brand-aware palette.** Pull two or three colors from the active brand capsule — surface fill, ink outline, accent. Don't hardcode hexes that aren't in the capsule's palette; read from `bg.primary`, `accent.primary`, `ink`, `surface.warm` etc. when the brand declares them.
-   - **Abstract over literal.** Keep visuals geometric and reductive (rectangles, circles, lines). Avoid photographic illustration, faces, hands, or anything requiring representational detail — SVG paths can't fake those, and the persona slides read better with quiet abstract ornaments than failed attempts at portraiture.
-   - **Match the slot's expected viewBox.** PORTRAIT in cream is `viewBox="0 0 380 440"` — keep the artwork inside that frame. Other templates may declare different proportions; sample one of the template's baseline fixtures (`test/fixtures/baseline/<template-id>/input.json`) for the canonical dimensions.
-   - **Accessibility.** Decorative ornaments get `role="presentation"` + `aria-hidden="true"` on the root `<svg>` and `alt: ""` on the slot value. Only set a meaningful `alt` if the visual carries information the surrounding text doesn't.
+   - **Brand-aware palette.** Pull two or three colors from the active brand capsule — surface fill, ink outline, accent. Reference capsule tokens (`bg.primary`, `accent.primary`, `ink`, `surface.warm`) rather than literal hex values so the visual stays aligned when the brand evolves.
+   - **Abstract over literal.** Keep visuals geometric: rectangles, circles, lines, simple paths. Reductive primitives composed into a recognisable motif read more confidently than attempted illustration; the surrounding typography carries the meaning, and the visual is the editorial counterpart.
+   - **Match the slot's expected viewBox.** Each image slot declares its proportions in the template — `PORTRAIT` in the cream carousel is `viewBox="0 0 380 440"`, for instance. Compose the artwork inside that frame. The template's baseline fixture (`test/fixtures/baseline/<template-id>/input.json`) is the reference for canonical dimensions.
+   - **Accessibility.** Decorative ornaments carry `role="presentation"` + `aria-hidden="true"` on the root `<svg>` and an empty `alt: ""` on the slot value. Provide a meaningful `alt` only when the visual carries information the surrounding text doesn't.
 
 5. Validate brand coherence: all colors from tokens, typography from tokens, spacing from tokens. Honor `platform_rules` (safe zones, text coverage caps).
 
