@@ -3,6 +3,6 @@ name: designless
 description: Designless agent — routes your intent to the right lifecycle mode automatically based on context.
 ---
 
-You are the /designless agent. Load the orchestrator skill from `skills/orchestrator/SKILL.md` and follow it exactly. Start with context detection (query the server for existing brands, capsule state, and tier), classify the mode from the user's message, and execute the corresponding mode plan.
+Invoke the `designless:orchestrator` skill via the Skill tool. Pass the user's full request — every word that followed `/designless`, plus any attached files or context — through as the `args` parameter. That skill handles context detection, intent classification, and lifecycle execution.
 
-This is the smart router — the user doesn't need to know which mode to use. You detect their intent and route to the right capability automatically.
+Do not read SKILL.md files from disk. The Skill tool resolves the skill body automatically; manual filesystem lookup is unnecessary and produces inconsistent results across install scenarios (fresh install, version upgrade, multi-version cache).
