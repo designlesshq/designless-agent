@@ -53,7 +53,32 @@ You receive these signals from the orchestrator:
 
 3. Call `less_list_templates id: <chosen-id>` to inspect the full schema — content_slots, dimensions, export_targets, platform_rules. Map the user's content into the template's slot placeholders (those `{{HEADLINE}}`, `{{BODY}}` tokens in the manifest). Honor `content_slots` declared `max_length` constraints.
 
-4. Generate the manifest using brand tokens exclusively. Capsule placeholders (`{bg.primary}`, `{font.display}`, etc.) resolve client-side at render. Apply voice guidance to copy.
+4. **Generate the manifest** using brand tokens exclusively. Capsule placeholders (`{bg.primary}`, `{font.display}`, etc.) resolve client-side at render. Apply voice guidance to copy.
+
+   **Payload shape for HTML-first templates** (LinkedIn carousel, Instagram carousel, story, square, Twitter card, YouTube thumbnail, email, landing hero, blog header, pitch deck, sales deck, one-pager, infographic, poster — anything where `less_list_templates` shows `supports_html: true`):
+
+   ```json
+   {
+     "_template": { "id": "<template-id-from-step-2b>" },
+     "brand": "<brand_slug>",
+     "_source": {
+       "template_id": "<template-id>",
+       "slots": {
+         "01": { "EYEBROW": "WORK", "YEAR": "2026", "DISPLAY": "…", "SUB": "…", "CTA_HINT": "Swipe →" },
+         "02": { "LABEL": "01", "DISPLAY": "…", "MICRO": "…", "PAGE_NUM": "02 / 17" },
+         "09": { "LABEL": "A · Persona 1", "PORTRAIT": { "kind": "inline-svg", "svg": "…", "alt": "" }, "ARCHE_NAME": "…", "WHO": "…", "QUOTE": "…", "DESC": "…", "PAGE_NUM": "09 / 17" }
+       }
+     }
+   }
+   ```
+
+   **`_source.slots` is keyed by zero-padded 1-based slide index (`"01"`, `"02"`, …, `"17"`), and each entry is a flat dict of UPPERCASE slot names.** This per-slide scoping is what lets a 7-persona deck declare seven different `ARCHE_NAME` / `QUOTE` / `DESC` values without requiring template authors to invent per-slide slot suffixes (`ARCHE_NAME_A`, `ARCHE_NAME_B`, …). Sending a flat `_source.slots = { EYEBROW: …, DISPLAY: … }` is also accepted for backwards compatibility, but the same dict is broadcast to every slide — only use it when every slide should share the same content (rare).
+
+   - Use UPPERCASE slot names exactly as declared in the template's `content_slots`. Lowercase, mixed case, or omitted slots fail to substitute and render blank.
+   - Prose slot values are plain strings with Option C emphasis markup: `*italic*`, `**second-color**`, `__underline__`, `***italic-color***`. Apply voice guidance from the expression brief.
+   - List slot values (`ROSTER`, `CTA_LIST`, etc.) are arrays of objects shaped by the template's row sub-templates — `{l, name, who}` for roster rows, `{num, txt}` for CTA rows.
+   - Image slot values are `{ "kind": "inline-svg", "svg": "<svg>…</svg>", "alt": "…" }` for inline SVGs or `{ "kind": "url", "url": "…", "alt": "…" }` for hosted images.
+   - For each slide listed in the template manifest, include all of its **required** slots — `less_list_templates id: <x> detail: full` returns the per-slide slot list. A missing required slot throws at render time and the slide paints blank.
 
 5. Validate brand coherence: all colors from tokens, typography from tokens, spacing from tokens. Honor `platform_rules` (safe zones, text coverage caps).
 
