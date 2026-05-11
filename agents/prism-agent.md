@@ -51,9 +51,21 @@ You receive these signals from the orchestrator:
      3. **Visual style** — clean / bold / minimal / dense?
    Don't ask all three when the first answer already commits. For document_types that map 1:1 (everything except `linkedin-carousel` and `poster`), skip questions and proceed.
 
-3. Call `less_list_templates id: <chosen-id>` to inspect the full schema — content_slots, dimensions, export_targets, platform_rules. Map the user's content into the template's slot placeholders (those `{{HEADLINE}}`, `{{BODY}}` tokens in the manifest). Honor `content_slots` declared `max_length` constraints.
+3. Call `less_list_templates id: <chosen-id> detail: full` to inspect the schema. Two structures drive what comes next:
+   - **`_arc`** — the template's narrative spine. An ordered list of slide groups, each with `role`, `required`/`required_if`, `cardinality` (`fixed` | `flex`), `min_slides` / `max_slides`, and an `intent` line.
+   - **`content_slots[i].composition`** — per-slot directives for slots that need agent-side generation (image slots that vary per slide, list slots whose length must match another arc role, etc.).
 
-4. **Generate the manifest** using brand tokens exclusively. Capsule placeholders (`{bg.primary}`, `{font.display}`, etc.) resolve client-side at render. Apply voice guidance to copy.
+   Read both. The template is a content-shape contract, not a fixed slot map to fill literally.
+
+4. **Size the deck via `_arc`.** Walk the arc in order and decide which groups to include based on the user's content:
+   - `required: true` → always include.
+   - `required_if: { <field>: { <op>: <value> } }` → evaluate the predicate against your content (e.g. `persona_count: { gte: 1 }` — include the roster only when at least one persona will follow).
+   - `cardinality: flex` → include the count the user's content justifies, bounded by `min_slides` and `max_slides`. **Do not pad to the max.**
+   - `cardinality: fixed` → all `slides` for that arc role are included when the role itself is included.
+
+   The final deck is the union of slide indices from included arc groups. A thought-leadership carousel with 3 archetypes renders cover + 1-2 thesis + roster + 3 personas + cta ≈ 7-8 slides — not 17. The `slide_count` field is a ceiling, not a target.
+
+5. **Generate the manifest** using brand tokens exclusively. Capsule placeholders (`{bg.primary}`, `{font.display}`, etc.) resolve client-side at render. Apply voice guidance to copy.
 
    **Payload shape for HTML-first templates** (LinkedIn carousel, Instagram carousel, story, square, Twitter card, YouTube thumbnail, email, landing hero, blog header, pitch deck, sales deck, one-pager, infographic, poster — anything where `less_list_templates` shows `supports_html: true`):
 
@@ -80,35 +92,30 @@ You receive these signals from the orchestrator:
    - **Image slot values** are `{ "kind": "inline-svg", "svg": "<svg>…</svg>", "alt": "…" }` for inline SVGs (preferred for procedural / abstract visuals) or `{ "kind": "url", "url": "…", "alt": "…" }` for hosted images.
    - For each slide listed in the template manifest, include all of its **required** slots — `less_list_templates id: <x> detail: full` returns the per-slide slot list. A missing required slot throws at render time and the slide paints blank.
 
-   **Image slots that repeat across multiple slides — compose a unique visual for each slide.** When the template's `content_slots` declares an image slot on multiple slide indices (e.g. `PORTRAIT` on slides 9–15 of a 7-persona carousel, `THUMBNAIL` on each step of a 5-step framework, `SCENE` on each chapter of a storytelling deck), the design intent is that every slide carries its own visual. Compose each slide's image from the surrounding slot content; the visuals are part of the carousel's narrative, not background ornaments.
+   **Comply with each slot's `composition` directive.** When a `content_slots[i].composition` field is present, it declares everything you need to know about how to generate that slot's content:
 
-   The agent composes the SVG inline in the manifest. SVG is text — write it directly. Authoring guidance:
+   - `cardinality` — `per_slide_distinct` (unique value per slide), `shared` (same value across all slides), `count_matches_arc_role` (list length tracks another arc role's slide count).
+   - `derives_from` — which surrounding slots inform the composition. Read the slide's other slot values; derive your output from them.
+   - `style_hint` — primitive vocabulary the slot expects (e.g. `abstract_geometric`).
+   - `palette_source` / `palette_roles` — pull colors from capsule tokens (`surface.warm`, `ink`, `accent.primary`) referenced by role, not literal hex.
+   - `viewBox` — proportions to compose inside (for image slots).
+   - `a11y_role` — `decorative` ornaments carry `role="presentation"` + `aria-hidden="true"` + empty `alt`; informational visuals need a meaningful `alt`.
 
-   - **Motif derived from the slide's content.** Read the slide's surrounding slots (ARCHE_NAME / DESC / WHO for personas, STEP_TITLE / STEP_BODY for framework steps) and pick a primitive geometric motif that reads as the subject. Examples for a 7-persona carousel:
-     - *Button Polisher* → grid of repeating squares (the same component, over and over)
-     - *Workshop Facilitator* → overlapping rectangles arranged like sticky notes on a Miro board
-     - *Design Ops Empire Builder* → connected boxes in a small org-chart pattern
-     - *Brand Guardian* → shield silhouette or sealed crest
-     - *Strategy Slide Deck* → stack of layered rectangles offset to suggest a deck
-     - *Manager Who Manages Managers* → concentric nested squares (each layer manages the next)
-   - **Brand-aware palette.** Pull two or three colors from the active brand capsule — surface fill, ink outline, accent. Reference capsule tokens (`bg.primary`, `accent.primary`, `ink`, `surface.warm`) rather than literal hex values so the visual stays aligned when the brand evolves.
-   - **Abstract over literal.** Keep visuals geometric: rectangles, circles, lines, simple paths. Reductive primitives composed into a recognisable motif read more confidently than attempted illustration; the surrounding typography carries the meaning, and the visual is the editorial counterpart.
-   - **Match the slot's expected viewBox.** Each image slot declares its proportions in the template — `PORTRAIT` in the cream carousel is `viewBox="0 0 380 440"`, for instance. Compose the artwork inside that frame. The template's baseline fixture (`test/fixtures/baseline/<template-id>/input.json`) is the reference for canonical dimensions.
-   - **Accessibility.** Decorative ornaments carry `role="presentation"` + `aria-hidden="true"` on the root `<svg>` and an empty `alt: ""` on the slot value. Provide a meaningful `alt` only when the visual carries information the surrounding text doesn't.
+   Image-slot SVG is plain text — write it inline in the manifest per the directive. Pick a primitive geometric motif (rectangles, circles, simple paths) that reads as the subject — e.g. "the same component over and over" reads as a grid of repeating shapes; "stuck in time" reads as a stopped clock; "manages managers" reads as nested boxes. The schema's `style_hint` constrains the vocabulary; the slide's `derives_from` content drives the choice within that vocabulary.
 
-5. Validate brand coherence: all colors from tokens, typography from tokens, spacing from tokens. Honor `platform_rules` (safe zones, text coverage caps).
+6. Validate brand coherence: all colors from tokens, typography from tokens, spacing from tokens. Honor `platform_rules` (safe zones, text coverage caps).
 
-6. **Defensive read before writing to a session in flight.** When the orchestrator is calling you for a *follow-up* request inside an existing session (the user asked for a change after seeing the canvas, not a fresh artifact), call `less_canvas_status` first. The response includes `last_edit_source` and `cooldown_active`:
+7. **Defensive read before writing to a session in flight.** When the orchestrator is calling you for a *follow-up* request inside an existing session (the user asked for a change after seeing the canvas, not a fresh artifact), call `less_canvas_status` first. The response includes `last_edit_source` and `cooldown_active`:
    - `last_edit_source = "agent"` (or null) → safe to proceed.
    - `last_edit_source = "user"` or `"mixed"` AND `cooldown_active = true` → the user has been editing the canvas directly via the in-canvas AI input within the cooldown window (60s). **Do not silently overwrite.** Either:
      - Apply changes incrementally via `less_canvas_update` (operation deltas), preserving everything the user did. This is the right move when the user asked to "make the headline bigger" or "add a CTA" — small, additive edits.
      - Or, if you must replace the manifest wholesale (e.g. switching templates), confirm with the user first: "I see you've made edits in the canvas. Should I replace them with my version, or apply my changes on top?"
 
-7. **Compose vs update.** Pick the right tool:
+8. **Compose vs update.** Pick the right tool:
    - `less_canvas_compose` — fresh sessions, template switches, full-manifest writes. Pass `brand_slug`, `payload` (the resolved manifest), and `template_id` (the registry id from step 2b). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
    - `less_canvas_update` — incremental edits within an active session. Cheaper for the server (no full-manifest diff) and safer for the user (operation-level changes, not whole-manifest overwrites).
 
-8. Return structured output, including the deep link so the orchestrator can launch the desktop app.
+9. Return structured output, including the deep link so the orchestrator can launch the desktop app.
 
 ## When the user asks for HTML output
 
