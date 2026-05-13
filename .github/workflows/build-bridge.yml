@@ -1,0 +1,115 @@
+name: Build bridge
+
+# Two triggers:
+#   1. push to main on bridge/** — fast verify (build only, no signing, no PR).
+#      Keeps source-vs-build drift detectable on every merge.
+#   2. workflow_dispatch with `version` input — full release path: build, sign + notarize,
+#      open a PR adding the signed binary under bin/ for human review + merge.
+#
+# Target scope: macOS arm64 only. Matches the Designless desktop app's existing
+# release matrix (electron-builder.yml: mac.target.arch: [arm64]) and Cowork's
+# native runtime (Cowork's plugin MCP servers execute on the host, not inside
+# the Linux VM sandbox; the host is always Apple Silicon for Cowork today).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Bridge binary version (e.g., 0.1.0). Used in the PR title only — the binary itself reads version from Cargo.toml.'
+        required: true
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - 'bridge/**'
+      - '.github/workflows/build-bridge.yml'
+      - 'build/sign-bridge-mac.sh'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build:
+    name: Build aarch64-apple-darwin
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bridge -> target
+          key: aarch64-apple-darwin
+
+      - name: Cargo build (release)
+        working-directory: bridge
+        run: cargo build --release --locked --target aarch64-apple-darwin
+
+      # Sign + notarize only on workflow_dispatch (release path). Verify-only pushes
+      # to main don't burn cert + notarytool quota; the verify run just proves the
+      # source compiles cleanly.
+      - name: Sign + notarize
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash build/sign-bridge-mac.sh bridge/target/aarch64-apple-darwin/release/designless-mcp-bridge
+
+      - name: Stage artifact
+        run: |
+          mkdir -p artifacts
+          cp bridge/target/aarch64-apple-darwin/release/designless-mcp-bridge artifacts/designless-mcp-bridge-darwin-arm64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: designless-mcp-bridge-darwin-arm64
+          path: artifacts/designless-mcp-bridge-darwin-arm64
+          if-no-files-found: error
+          retention-days: 30
+
+  release-pr:
+    name: Open release PR
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: designless-mcp-bridge-darwin-arm64
+          path: bin/
+
+      - name: Make binary executable
+        run: chmod +x bin/designless-mcp-bridge-darwin-arm64
+
+      - name: Open release PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: release/bridge-v${{ inputs.version }}
+          base: main
+          title: 'chore: bridge binary v${{ inputs.version }}'
+          body: |
+            Signed bridge binary for `aarch64-apple-darwin`, notarized via `xcrun notarytool`.
+
+            Cowork users on Apple Silicon route through this same binary — Cowork's plugin MCP servers run natively on the macOS host, not inside the Linux VM sandbox (per the [Cowork desktop architecture overview](https://support.claude.com/en/articles/14479288-claude-cowork-desktop-architecture-overview)).
+
+            Merge to roll `bin/` to v${{ inputs.version }}.
+          commit-message: 'chore: bridge binary v${{ inputs.version }}'
+          add-paths: bin/
+          delete-branch: true
