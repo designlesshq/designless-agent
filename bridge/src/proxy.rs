@@ -60,6 +60,11 @@ async fn forward(
         .post(upstream)
         .bearer_auth(&bearer)
         .header("content-type", "application/json")
+        // MCP Streamable HTTP transport spec requires the client to accept
+        // both JSON and SSE — the server is allowed to upgrade to streaming
+        // for any response and rejects requests that don't advertise both
+        // with a 406 Not Acceptable.
+        .header("accept", "application/json, text/event-stream")
         .json(frame)
         .send()
         .await?;
@@ -73,8 +78,50 @@ async fn forward(
         });
     }
 
-    let json: Value = res.json().await?;
-    Ok(json)
+    // The MCP Streamable HTTP transport allows servers to respond either with
+    // straight JSON or with an SSE stream. We accept both. Branch on the
+    // response content-type.
+    let content_type = res
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json")
+        .to_string();
+
+    if content_type.starts_with("text/event-stream") {
+        // SSE: extract the data line(s) and parse the last JSON-RPC frame.
+        // For non-streaming responses (e.g. tools/list, single tool call result),
+        // the server emits one `event: message` followed by one `data:` line.
+        // For streaming responses (progress events), multiple frames may appear;
+        // we currently surface only the terminal frame to Claude Code. Wiring
+        // intermediate progress events through stdio is a future enhancement.
+        let body = res.text().await?;
+        let mut last_frame: Option<Value> = None;
+        for event_block in body.split("\n\n") {
+            // SSE field syntax: each line is `field: value`. Concatenate `data:`
+            // lines from a single event with newlines per the spec.
+            let mut data_parts: Vec<&str> = Vec::new();
+            for line in event_block.lines() {
+                if let Some(rest) = line.strip_prefix("data:") {
+                    data_parts.push(rest.trim_start());
+                }
+            }
+            if data_parts.is_empty() {
+                continue;
+            }
+            let payload = data_parts.join("\n");
+            match serde_json::from_str::<Value>(&payload) {
+                Ok(frame) => last_frame = Some(frame),
+                Err(err) => tracing::warn!(error = %err, "skipping unparseable SSE data payload"),
+            }
+        }
+        last_frame.ok_or_else(|| {
+            BridgeError::Protocol("SSE response had no parseable data frames".into())
+        })
+    } else {
+        let json: Value = res.json().await?;
+        Ok(json)
+    }
 }
 
 /// Build a JSON-RPC error response. Includes a human-readable hint in
