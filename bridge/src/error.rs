@@ -1,0 +1,51 @@
+//! Error types surfaced across module boundaries.
+//!
+//! Errors that the bridge returns *to Claude Code* are translated into JSON-RPC
+//! error responses in `proxy.rs`. Errors used internally propagate via
+//! `anyhow::Result` in `main` and module-typed `Result` in submodules.
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+#[allow(dead_code)] // IpcUnreachable / AccessDenied / Protocol surface in phase 2.1 + 4
+pub enum BridgeError {
+    /// Anchored mode: Electron desktop did not respond on the IPC socket within
+    /// the probe window. Caller should fall back to standalone mode.
+    #[error("electron ipc not reachable")]
+    IpcUnreachable,
+
+    /// Anchored mode: Electron declined the access-request handshake (user
+    /// clicked Deny in the native consent dialog, or no signed-in user).
+    #[error("electron denied access: {0}")]
+    AccessDenied(String),
+
+    /// Auth source produced no bearer (keychain empty in anchored, file empty
+    /// + OAuth flow not yet run in standalone).
+    #[error("no bearer token available: {0}")]
+    NoBearer(String),
+
+    /// Upstream MCP endpoint returned a non-success status.
+    #[error("upstream MCP returned {status}: {body}")]
+    UpstreamStatus {
+        status: u16,
+        body: String,
+    },
+
+    /// JSON-RPC frame parsing or serialization failed.
+    #[error("MCP frame protocol error: {0}")]
+    Protocol(String),
+
+    /// Filesystem / keychain / IPC IO error.
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// HTTPS client error from reqwest.
+    #[error("http client error: {0}")]
+    Http(#[from] reqwest::Error),
+
+    /// JSON serialization error.
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+pub type BridgeResult<T> = Result<T, BridgeError>;
