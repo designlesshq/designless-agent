@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "less-mcp": {
-      "type": "http",
-      "url": "https://mcp.designless.app/mcp"
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/launch.mjs"]
     }
   }
 }
