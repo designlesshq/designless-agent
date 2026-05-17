@@ -12,12 +12,15 @@
 //!                                   but every MCP frame returns an error
 //!                                   with a hint pointing at the tray menu
 //! - `None`                        — Electron reports no signed-in user or
-//!                                   invalid session; main.rs falls back to
-//!                                   standalone mode (browser OAuth)
+//!                                   invalid session. Under the default
+//!                                   (auto) policy main.rs falls back to
+//!                                   standalone (browser OAuth); under the
+//!                                   anchored policy it stays alive with a
+//!                                   recovery hint and never opens a browser.
 //!
 //! Errors from the IPC layer itself (connect failed, malformed reply, etc.)
-//! also trigger fallback to standalone — anchored is best-effort, never
-//! a blocker.
+//! resolve the same way — best-effort under the auto policy, strict (hint,
+//! no browser) under the anchored policy.
 
 pub mod ipc;
 
@@ -120,6 +123,16 @@ impl AuthProvider for AnchoredAuth {
 /// the same error so Claude Code's /mcp panel shows the recovery hint.
 pub struct DeniedAuth {
     hint: String,
+}
+
+impl DeniedAuth {
+    /// Build a hard-fail provider with a custom recovery hint. Used by the
+    /// anchored-required policy when the desktop app is unreachable or has no
+    /// signed-in user: the bridge stays alive and every MCP frame returns this
+    /// hint via the /mcp panel instead of silently switching to browser OAuth.
+    pub fn with_hint(hint: impl Into<String>) -> Self {
+        Self { hint: hint.into() }
+    }
 }
 
 #[async_trait::async_trait]
