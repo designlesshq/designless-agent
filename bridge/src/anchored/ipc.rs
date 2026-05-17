@@ -19,17 +19,6 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(250);
 /// generous; get_token should return in milliseconds).
 const CALL_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// Try to connect within the probe window. Returns Ok(true) on connect,
-/// Ok(false) on any failure (timeout, not-found, refused). Errors are
-/// swallowed by design: if anchored is not reachable, the caller falls
-/// through to standalone mode.
-pub async fn probe_reachable() -> std::io::Result<bool> {
-    match connect_inner(PROBE_TIMEOUT).await {
-        Ok(_) => Ok(true),
-        Err(_) => Ok(false),
-    }
-}
-
 /// Full connection for sustained IPC use. Caller wraps in IpcClient.
 pub async fn connect() -> BridgeResult<IpcClient> {
     let stream = connect_inner(PROBE_TIMEOUT).await?;

@@ -49,12 +49,13 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
     Ok(())
 }
 
-async fn forward(
+/// Single attempt: fetch a current Bearer and POST the frame upstream.
+async fn post_once(
     client: &Client,
     upstream: &str,
     auth: &(dyn AuthProvider + Send + Sync),
     frame: &Value,
-) -> BridgeResult<Value> {
+) -> BridgeResult<reqwest::Response> {
     let bearer = auth.bearer_or_refresh().await?;
     let res = client
         .post(upstream)
@@ -68,6 +69,25 @@ async fn forward(
         .json(frame)
         .send()
         .await?;
+    Ok(res)
+}
+
+async fn forward(
+    client: &Client,
+    upstream: &str,
+    auth: &(dyn AuthProvider + Send + Sync),
+    frame: &Value,
+) -> BridgeResult<Value> {
+    let mut res = post_once(client, upstream, auth, frame).await?;
+
+    // The desktop app is the token-rotation authority. On a 401, asking it
+    // again (`bearer_or_refresh()` → a fresh IPC `get_token`) yields a
+    // freshly-refreshed token; retry the frame exactly once. Covers the rare
+    // race where the token expired in flight or just after it was read.
+    if res.status().as_u16() == 401 {
+        tracing::warn!("upstream 401 — requesting a fresh token from the desktop app and retrying once");
+        res = post_once(client, upstream, auth, frame).await?;
+    }
 
     let status = res.status();
     if !status.is_success() {
@@ -131,7 +151,7 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
     let (code, hint) = match err {
         BridgeError::IpcUnreachable => (
             -32001,
-            "Open the Designless desktop app and sign in, or wait for standalone-mode OAuth.",
+            "Open the Designless desktop app and sign in, then reconnect this MCP server from the /mcp panel.",
         ),
         BridgeError::AccessDenied(_) => (
             -32002,
@@ -139,11 +159,11 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
         ),
         BridgeError::NoBearer(_) => (
             -32003,
-            "Sign in to the Designless app (anchored mode) or complete the OAuth prompt (standalone mode).",
+            "Sign in to the Designless desktop app, then reconnect this MCP server from the /mcp panel.",
         ),
         BridgeError::UpstreamStatus { status: 401, .. } => (
             -32004,
-            "Session expired. Re-authenticate via the Designless app or by completing the OAuth prompt.",
+            "Session expired. Open the Designless desktop app and sign in, then retry.",
         ),
         BridgeError::UpstreamStatus { .. } => (-32005, "Upstream MCP error. Visit https://designless.app/help if persistent."),
         BridgeError::Protocol(_) => (-32700, "MCP protocol error."),

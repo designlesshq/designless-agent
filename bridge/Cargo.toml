@@ -1,10 +1,10 @@
 [package]
 name = "designless-mcp-bridge"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
-description = "Designless MCP bridge: stdio MCP server forwarding frames to mcp.designless.app/mcp with anchored (Electron IPC + keychain JWT) and standalone (PKCE OAuth + file storage) auth modes."
+description = "Designless MCP bridge: stdio MCP server forwarding frames to mcp.designless.app/mcp, anchored to the Designless desktop app (Electron IPC + keychain JWT; the desktop app owns token rotation)."
 repository = "https://github.com/designlesshq/designless-agent"
 publish = false
 

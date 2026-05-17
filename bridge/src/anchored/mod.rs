@@ -11,47 +11,36 @@
 //! - `UserDenied(DeniedAuth)`      — user clicked Deny; bridge stays alive
 //!                                   but every MCP frame returns an error
 //!                                   with a hint pointing at the tray menu
-//! - `None`                        — Electron reports no signed-in user or
-//!                                   invalid session. Under the default
-//!                                   (auto) policy main.rs falls back to
-//!                                   standalone (browser OAuth); under the
-//!                                   anchored policy it stays alive with a
-//!                                   recovery hint and never opens a browser.
-//!
-//! Errors from the IPC layer itself (connect failed, malformed reply, etc.)
-//! resolve the same way — best-effort under the auto policy, strict (hint,
-//! no browser) under the anchored policy.
+//! - `None`                        — desktop app reports no signed-in user /
+//!                                   invalid session, or the IPC layer itself
+//!                                   failed (connect, malformed reply). main.rs
+//!                                   maps this to a recovery hint and stays
+//!                                   alive; it never opens a browser.
 
 pub mod ipc;
 
 use crate::auth::AuthProvider;
 use crate::error::{BridgeError, BridgeResult};
 
-/// Reachability probe used by main.rs to decide initial mode.
-pub async fn probe() -> std::io::Result<bool> {
-    ipc::probe_reachable().await
-}
-
 /// Result of attempting to bring up anchored mode. Discriminates between
-/// "use this provider" and "fall back to standalone".
+/// "use this provider" and "surface a recovery hint".
 pub enum AnchoredInit {
     /// User granted access (or already granted previously). Use this provider.
     Ready(AnchoredAuth),
-    /// User explicitly denied. Don't fall back to standalone — surface a clear
-    /// error so they know to click Disconnect Claude Code if they change their
-    /// mind.
+    /// User explicitly denied. Surface a clear error so they know to click
+    /// Disconnect Claude Code if they change their mind.
     UserDenied(DeniedAuth),
 }
 
 /// Try to initialise anchored mode. Returns `Ok(None)` for soft-failure cases
-/// where the caller should fall back to standalone mode (no signed-in user,
-/// invalid session, IPC error). Returns `Ok(Some(...))` when anchored mode is
-/// the right outcome (whether granted or denied).
+/// (no signed-in user, invalid session, IPC error) — the caller surfaces a
+/// recovery hint and stays alive (never a browser). Returns `Ok(Some(...))`
+/// when anchored mode is the right outcome (whether granted or denied).
 pub async fn try_init() -> BridgeResult<Option<AnchoredInit>> {
     let mut client = match ipc::connect().await {
         Ok(c) => c,
         Err(e) => {
-            tracing::warn!(error = %e, "anchored IPC connect failed; falling back to standalone");
+            tracing::warn!(error = %e, "anchored IPC connect failed; will surface a recovery hint");
             return Ok(None);
         }
     };
@@ -60,7 +49,7 @@ pub async fn try_init() -> BridgeResult<Option<AnchoredInit>> {
     let reply = match client.request_access("claude-code", pid).await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!(error = %e, "request_access failed; falling back to standalone");
+            tracing::warn!(error = %e, "request_access failed; will surface a recovery hint");
             return Ok(None);
         }
     };
@@ -78,22 +67,22 @@ pub async fn try_init() -> BridgeResult<Option<AnchoredInit>> {
                 })))
             }
             other => {
-                tracing::info!(reason = ?other, "anchored unavailable; falling back to standalone");
+                tracing::info!(reason = ?other, "anchored unavailable; will surface a recovery hint");
                 Ok(None)
             }
         },
         other => {
-            tracing::warn!(?other, "unexpected IPC reply to request_access; falling back");
+            tracing::warn!(?other, "unexpected IPC reply to request_access; will surface a recovery hint");
             Ok(None)
         }
     }
 }
 
-/// Auth provider that reads JWTs via IPC each call. No caching: Electron is
-/// the rotation authority. The bridge stays out of refresh logic — if the
-/// returned token is near expiry, the proxy passes it as-is; mcp.designless.app
-/// returns 401 (rare; Electron refreshes proactively at 5min remaining), and
-/// the next get_token call fetches the rotated token.
+/// Auth provider that reads JWTs via a fresh IPC `get_token` on every call.
+/// No caching: the desktop app is the rotation authority and refreshes the
+/// token on demand, so each call returns a current JWT. In the rare event a
+/// token expires in flight, the proxy asks again once (a fresh `get_token`)
+/// and retries the frame.
 pub struct AnchoredAuth {
     #[allow(dead_code)] // surfaced via logs + reserved for future per-user audit lines
     user_id: String,
@@ -126,10 +115,10 @@ pub struct DeniedAuth {
 }
 
 impl DeniedAuth {
-    /// Build a hard-fail provider with a custom recovery hint. Used by the
-    /// anchored-required policy when the desktop app is unreachable or has no
-    /// signed-in user: the bridge stays alive and every MCP frame returns this
-    /// hint via the /mcp panel instead of silently switching to browser OAuth.
+    /// Build a hard-fail provider with a custom recovery hint. Used when the
+    /// desktop app is unreachable or has no signed-in user: the bridge stays
+    /// alive and every MCP frame returns this hint via the /mcp panel instead
+    /// of silently minting a separate identity.
     pub fn with_hint(hint: impl Into<String>) -> Self {
         Self { hint: hint.into() }
     }

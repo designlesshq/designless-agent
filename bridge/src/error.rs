@@ -9,8 +9,8 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[allow(dead_code)] // IpcUnreachable / AccessDenied / Protocol surface in phase 2.1 + 4
 pub enum BridgeError {
-    /// Anchored mode: Electron desktop did not respond on the IPC socket within
-    /// the probe window. Caller should fall back to standalone mode.
+    /// Electron desktop did not respond on the IPC socket within the probe
+    /// window. Caller surfaces a recovery hint (no browser fallback).
     #[error("electron ipc not reachable")]
     IpcUnreachable,
 
@@ -19,8 +19,7 @@ pub enum BridgeError {
     #[error("electron denied access: {0}")]
     AccessDenied(String),
 
-    /// Auth source produced no bearer (keychain empty in anchored, file empty
-    /// + OAuth flow not yet run in standalone).
+    /// Auth source produced no bearer (desktop app has no signed-in user).
     #[error("no bearer token available: {0}")]
     NoBearer(String),
 
