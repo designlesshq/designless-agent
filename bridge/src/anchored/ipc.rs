@@ -38,10 +38,28 @@ async fn connect_inner(t: Duration) -> BridgeResult<Stream> {
     let fut = async {
         match endpoint {
             #[cfg(unix)]
-            IpcEndpoint::UnixSocket(path) => tokio::net::UnixStream::connect(&path)
-                .await
-                .map(Stream::Unix)
-                .map_err(BridgeError::Io),
+            IpcEndpoint::UnixSocket(path) => {
+                // On macOS the socket lives in a shared-/tmp per-user dir; only
+                // connect if that dir is our own private 0700, owner-only dir
+                // (defends against a planted socket). Linux uses
+                // XDG_RUNTIME_DIR, which is already user-private.
+                #[cfg(target_os = "macos")]
+                let dir_ok = path
+                    .parent()
+                    .map(crate::paths::ipc_dir_is_safe)
+                    .unwrap_or(false);
+                #[cfg(not(target_os = "macos"))]
+                let dir_ok = true;
+
+                if dir_ok {
+                    tokio::net::UnixStream::connect(&path)
+                        .await
+                        .map(Stream::Unix)
+                        .map_err(BridgeError::Io)
+                } else {
+                    Err(BridgeError::IpcUnreachable)
+                }
+            }
             #[cfg(windows)]
             IpcEndpoint::NamedPipe(path) => {
                 use tokio::net::windows::named_pipe::ClientOptions;

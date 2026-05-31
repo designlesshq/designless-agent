@@ -27,7 +27,7 @@ import { spawn, execFile, execFileSync } from 'node:child_process'
 import { connect } from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
+import { existsSync, lstatSync } from 'node:fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -92,12 +92,37 @@ function appInstalled() {
   }
 }
 
+// Stable per-user IPC path, independent of $TMPDIR. The desktop app (GUI,
+// LaunchServices temp) and this launcher (the CLI's $TMPDIR) run in different
+// $TMPDIR contexts, so a $TMPDIR-derived path made them miss each other: the
+// launcher thought a running app was down and re-opened it (stealing focus),
+// and the bridge couldn't read the token. uid is identical in every launch
+// context. Must match electron/bridge-ipc.js and bridge/src/paths.rs.
+function ipcDir() {
+  return `/tmp/designless-${process.getuid()}`
+}
+
 function socketPath() {
-  return join(process.env.TMPDIR || '/tmp', 'Designless.sock')
+  return join(ipcDir(), 'ipc.sock')
+}
+
+// /tmp is world-writable; only trust the socket if its dir is our own private
+// 0700, owner-only, non-symlink directory (mirrors the app + bridge checks).
+function ipcDirIsSafe() {
+  try {
+    const st = lstatSync(ipcDir())
+    return st.isDirectory() && st.uid === process.getuid() && (st.mode & 0o077) === 0
+  } catch {
+    return false
+  }
 }
 
 function probeSocket(timeoutMs) {
   return new Promise((resolve) => {
+    if (!ipcDirIsSafe()) {
+      resolve(false)
+      return
+    }
     let settled = false
     const finish = (ok) => {
       if (settled) return
