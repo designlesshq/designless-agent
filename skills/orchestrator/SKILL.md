@@ -282,9 +282,11 @@ If a Prism session is already in flight, Prism reads its status first via the ca
 
 **Optional inline compliance gate.** If the user (or the project's brand rules) requires every generated artifact to pass compliance before delivery, hand off to the Arbiter sub-agent in `inline` mode with `strict` strictness after Prism returns. Arbiter blocks delivery on a yellow or red badge until the user approves the auto-heals or regenerates. Default is no gate — Arbiter runs only when explicitly requested or when the brand's policy declares strict enforcement.
 
+**Fill every slot the template asks for, on every slide.** Before you compose, call `less_list_templates` with `id: <template_id>` and `detail: full`. Each template declares its slots in `content_slots`, and each slide lists exactly which slots it needs. Read those, then build your payload so every slide you include carries a value for every slot that slide declares. Do not invent slot names and do not guess them; use the ids the template gives you. If a slide is missing one of its declared slots, that content will not appear in the result and compose flags which slide and slot are incomplete, so fill them and compose again. If you only want some slides (a shorter deck), include just those slides and fill each one completely.
+
 **Two paths for visual documents.** When the artifact is a multi-slide document (carousel, slide deck), you have two ways to fill the slot content before composing. Pick one up front.
 
-*Path A, template-direct (the common case).* Search for the template registry (`less_list_templates`) and pick a `template_id`. Write the slot content yourself, then compose it with `less_canvas_compose`. Use this when the document is one-off, the brief is specific to this user, or no shared version is likely to exist yet.
+*Path A, template-direct (the common case).* Search for the template registry (`less_list_templates`) and pick a `template_id`, then read its slots with `detail: full`. Write a value for every slot each slide declares, and compose it with `less_canvas_compose`. Use this when the document is one-off, the brief is specific to this user, or no shared version is likely to exist yet.
 
 *Path B, compose-and-cache.* Use this for common document shapes that many users request, where a ready-made version is worth reusing across runs.
 
@@ -305,7 +307,7 @@ The user wants a landing page, email template, blog header, or display ad built 
 
 **What you deliver:** Self-contained HTML where every color, font, spacing value, and shadow resolves from the brand's capsule tokens. Responsive where appropriate. No external dependencies except Google Fonts.
 
-**How you work:** Search for the template registry tool with `supports_html=true` filter to enumerate the HTML-export-capable types. Today: email templates (table-based, Outlook-compatible), landing page heroes (CSS Grid, responsive), blog post headers (Flexbox, OG-ready), and display ads (fixed IAB dimensions). Pick the right `document_type`, search for the canvas-compose tool, and call it with the resolved manifest. Use the canvas-export tool with `format=html` to materialise the output. For document types without HTML support, route to Express mode (canvas only).
+**How you work:** Search for the template registry tool with `supports_html=true` filter to enumerate the HTML-export-capable types. Today: email templates (table-based, Outlook-compatible), landing page heroes (CSS Grid, responsive), blog post headers (Flexbox, OG-ready), and display ads (fixed IAB dimensions). Pick the right `document_type`, read its slots with `detail: full`, and fill a value for every slot the template declares. Search for the canvas-compose tool and call it with the complete manifest. Use the canvas-export tool with `format=html` to materialise the output. For document types without HTML support, route to Express mode (canvas only).
 
 ### Audit — Brand health check
 
