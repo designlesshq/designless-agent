@@ -1,6 +1,6 @@
 [package]
 name = "designless-mcp-bridge"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
@@ -33,6 +33,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # Cross-platform user directory lookup (~/.designless, $TMPDIR, etc.)
 dirs = "5"
+
+# POSIX getuid() — builds the per-user IPC socket dir /tmp/designless-<uid> so
+# the path is identical across launch contexts (independent of $TMPDIR).
+libc = "0.2"
 
 # NOTE: Anchored mode reads tokens via IPC to the Electron desktop app, NOT
 # via direct keychain access. This is intentional: the Electron app is signed
