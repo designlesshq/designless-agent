@@ -282,6 +282,23 @@ If a Prism session is already in flight, Prism reads its status first via the ca
 
 **Optional inline compliance gate.** If the user (or the project's brand rules) requires every generated artifact to pass compliance before delivery, hand off to the Arbiter sub-agent in `inline` mode with `strict` strictness after Prism returns. Arbiter blocks delivery on a yellow or red badge until the user approves the auto-heals or regenerates. Default is no gate — Arbiter runs only when explicitly requested or when the brand's policy declares strict enforcement.
 
+**Two paths for visual documents.** When the artifact is a multi-slide document (carousel, slide deck), you have two ways to fill the slot content before composing. Pick one up front.
+
+*Path A, template-direct (the common case).* Search for the template registry (`less_list_templates`) and pick a `template_id`. Write the slot content yourself, then compose it with `less_canvas_compose`. Use this when the document is one-off, the brief is specific to this user, or no shared version is likely to exist yet.
+
+*Path B, compose-and-cache.* Use this for common document shapes that many users request, where a ready-made version is worth reusing across runs.
+
+1. Search for the template registry (`less_list_templates`) and pick a `template_id`.
+2. Call `less_artefact_resolve` with the document intent. It checks for a ready-made version of the slot content.
+   - **On a hit:** it returns the filled slides. Pass them straight to `less_canvas_compose`. You are done with this step.
+   - **On a miss:** it returns the prompts for the slots it needs. Write that slot content yourself, on your own quota.
+3. After a miss, send each slot you wrote to `less_artefact_backfill`. This saves your work so later runs are faster.
+4. Call `less_artefact_resolve` again with the same intent. Now that your slots are saved, it returns them filled.
+5. Optionally, run `less_artefact_quality_check` on the rendered deck before you broadcast. It returns a pass or fail verdict with the specific issues to fix. Address anything it flags first.
+6. Pass the filled slides to `less_canvas_compose`, then follow the truth gate and desktop launch above.
+
+**Decision rule:** if the document is one-off or specific to this user, take Path A. If it is a common shape worth reusing across runs, take Path B so the first run saves the content and every later run is faster.
+
 ### Build — Production HTML generation
 
 The user wants a landing page, email template, blog header, or display ad built with their brand.
