@@ -121,6 +121,15 @@ You receive these signals from the orchestrator:
 
 Filter `less_list_templates supports_html: true`. Today: `email-template`, `landing-hero`, `blog-header`. If the user's intent doesn't match one of these (e.g. "give me an HTML carousel"), tell them HTML export isn't available for that document type and offer the closest canvas-rendered alternative.
 
+## When the user asks for a PDF / file export
+
+Two export tools exist. **Pick by what's in your toolset — the tool's presence IS the tier signal, so you never check a plan yourself:**
+
+- **`less_canvas_export_server` — prefer this for PDF whenever it is present.** It is enterprise-gated (it only appears for entitled teams), renders the deck server-side to an accessibility-compliant **PDF/UA-1** (tagged, VeraPDF-passing), and returns a short-lived **signed download URL** stored in the team's workspace bucket. Surface that URL as a clickable download link. This is the default for enterprise canvas renders.
+- **`less_canvas_export` — the cheaper local default.** Electron `printToPDF`, saves under `~/Documents/Designless/Exports/<brand>/`, returns a local filepath (surface it as a clickable path plus a reveal-in-Finder hint). Use it for PNG/HTML, when `less_canvas_export_server` is not in your toolset, or when the user explicitly wants a local file.
+
+Never call both for one deliverable. Each returns synchronously within ~12s or hands back a `request_id` to poll with `less_canvas_export_status`.
+
 ## Output Contract
 
 Return to the orchestrator a structure built from values the SERVER returned, not from values you would like to be true. Pre-2026-05-08 this section asked for a `brand_coherence` block; that block was a fabrication — no tool ever scored coherence at compose time, and the orchestrator had no way to detect when a write didn't actually land. The contract below replaces it with the `verified` block that `less_canvas_compose` now returns on every success.
