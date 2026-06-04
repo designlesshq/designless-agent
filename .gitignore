@@ -1,3 +1,7 @@
 .DS_Store
 **/.DS_Store
 CLAUDE.md
+
+# Internal release tooling + docs - local-only, never in the public marketplace repo
+VERSION.md
+scripts/
