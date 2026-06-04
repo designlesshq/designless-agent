@@ -296,7 +296,7 @@ If a Prism session is already in flight, Prism reads its status first via the ca
    - **On a miss:** it returns the prompts for the slots it needs. Write that slot content yourself, on your own quota.
 3. After a miss, send each slot you wrote to `less_artefact_backfill`. This saves your work so later runs are faster.
 4. Call `less_artefact_resolve` again with the same intent. Now that your slots are saved, it returns them filled.
-5. Optionally, run `less_artefact_quality_check` on the rendered deck before you broadcast. It returns a pass or fail verdict with the specific issues to fix. Address anything it flags first.
+5. Gate the deck before you broadcast: run `less_artefact_quality_check` on the rendered deck HTML and read its pass/fail verdict + specific issues. If it fails, fix the flagged slots and re-resolve (step 2) before composing; do not broadcast a failing deck. If your environment has already scored the deck locally, the tool accepts those scores via `supplied_scores` to run the gate at zero metered cost; otherwise it scores server-side.
 6. Pass the filled slides to `less_canvas_compose`, then follow the truth gate and desktop launch above.
 
 **Decision rule:** if the document is one-off or specific to this user, take Path A. If it is a common shape worth reusing across runs, take Path B so the first run saves the content and every later run is faster.
