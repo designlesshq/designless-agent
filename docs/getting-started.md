@@ -24,17 +24,18 @@ After installing, run `/reload-plugins` to activate.
 
 ## Step 2: Connect to the Expression Infrastructure
 
-Run the connect command:
+How you connect depends on your setup.
+
+**With the Designless desktop app (recommended).** Install the [Designless app](https://designless.app) and sign in. The plugin connects through it automatically, so there is no separate sign-in step. Verify with:
 ```
-> /designless connect
+> /designless status
 ```
 
-The agent detects whether the MCP server is configured. If not, it runs the install automatically:
+**Without the desktop app** (a remote or sandbox environment, or any other MCP client). Connect over HTTP and authenticate in your browser:
 ```bash
 claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
-
-A browser window opens for OAuth authentication. Complete login at [designless.app](https://designless.app) and return — the session continues automatically.
+On first use, a browser opens so you can sign in and authorize access at [designless.app](https://designless.app). Once you approve, the connection completes automatically. Spec-compliant MCP clients discover this flow on their own from the server.
 
 **Verify the connection:**
 ```
