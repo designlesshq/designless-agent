@@ -113,15 +113,14 @@ Attempt a server query. Three outcomes:
 3. **Auth error / bridge error** — the bridge spawned but couldn't authenticate. The bridge surfaces structured error messages with embedded recovery hints; **relay them verbatim** instead of inventing your own wording. Common shapes:
    - `"Designless app has no signed-in user"` → "Open the Designless desktop app and sign in, then ask me again."
    - `"Designless denied Claude Code access. Click 'Disconnect Claude Code' in the menu bar..."` → relay as-is; the bridge already names the recovery path.
-   - `"OAuth callback timed out"` → "The authorization timed out. Try once more — when you see the browser prompt, complete consent."
    - Anything else → relay verbatim. Bridge errors carry their own recovery instructions.
 
 If the call fails for network or server reasons (DNS, 5xx), help debug — check internet, then `designless.app/status`.
 
-Never ask the user to paste API keys, callback URLs, or any other auth artifact. Never display OAuth URLs in chat — the bridge handles browser launches itself. Never run `claude mcp add` manually; the plugin owns its own MCP configuration.
+Never ask the user to paste API keys, callback URLs, or any other auth artifact. Never run `claude mcp add` manually; the plugin owns its own MCP configuration.
 
 **HARD GATE — DO NOT PROCEED WITHOUT MCP CONNECTION:**
-You MUST have a working connection to the expression infrastructure server before executing ANY mode. If the MCP server is not configured, not responding, or OAuth hasn't completed:
+You MUST have a working connection to the expression infrastructure server before executing ANY mode. If the MCP server is not configured, not responding, or sign-in hasn't completed:
 - Do NOT attempt to create brands, tokens, or capsules using your own judgment
 - Do NOT use the mode playbooks below as instructions to improvise without the server
 - Do NOT generate design tokens, color palettes, or brand artifacts on your own
