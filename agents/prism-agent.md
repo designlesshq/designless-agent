@@ -39,17 +39,17 @@ You receive these signals from the orchestrator:
    | "blog header" / "article header" / "OG image" | `blog-header` | HTML+PNG |
    | "one-pager" / "PDF brief" | `one-pager` | 9:16 vertical document |
    | "infographic" | `infographic` | Long vertical 1:3 |
-   | "poster" / "flyer" / "event signage" | `poster` | A4 print (portrait or landscape) |
+   | "poster" / "flyer" / "event signage" | `poster-portrait` / `poster-landscape` | A4 print, by orientation |
 
    **Step 2b — pick the specific template within that document_type.** For most types, document_type maps 1:1 to a single template_id. The exceptions are:
    - `linkedin-carousel` (11 templates) — pick by *narrative approach*: opinion (thought-leadership / storytelling / hot-take), structured (listicle / educational / framework), evidence (data-driven / case-study / before-after), standalone (personal-brand), document (linkedin-document — a 3-slide variant)
-   - `poster` (2 templates) — pick by orientation: `poster-a4-portrait` or `poster-a4-landscape`
+   - `poster-portrait` / `poster-landscape` (separate document_types, one template each): `poster-a4-portrait-stage` for portrait, `poster-a4-landscape-vista` for landscape. Orientation is chosen at step 2a, so there is no second pick.
 
    When ambiguous, **ask up to 3 short questions** in this order, stopping at the first answer that pins the template:
      1. **Approach / narrative** — opinion, educational, data-driven, before-after, personal story?
      2. **Length** — 3, 5, 7 slides, or freeform?
      3. **Visual style** — clean / bold / minimal / dense?
-   Don't ask all three when the first answer already commits. For document_types that map 1:1 (everything except `linkedin-carousel` and `poster`), skip questions and proceed.
+   Don't ask all three when the first answer already commits. For document_types that map 1:1 (everything except `linkedin-carousel`), skip questions and proceed.
 
 3. Call `less_list_templates id: <chosen-id> detail: full` to inspect the schema. Two structures drive what comes next:
    - **`_arc`** — the template's narrative spine. An ordered list of slide groups, each with `role`, `required`/`required_if`, `cardinality` (`fixed` | `flex`), `min_slides` / `max_slides`, and an `intent` line.
@@ -76,19 +76,19 @@ You receive these signals from the orchestrator:
      "_source": {
        "template_id": "<template-id>",
        "slots": {
-         "01": { "EYEBROW": "WORK", "YEAR": "2026", "DISPLAY": "…", "SUB": "…", "CTA_HINT": "Swipe →" },
-         "02": { "LABEL": "01", "DISPLAY": "…", "MICRO": "…", "PAGE_NUM": "02 / 17" },
-         "09": { "LABEL": "A · Persona 1", "PORTRAIT": { "kind": "inline-svg", "svg": "…", "alt": "" }, "ARCHE_NAME": "…", "WHO": "…", "QUOTE": "…", "DESC": "…", "PAGE_NUM": "09 / 17" }
+         "01": { "eyebrow": "WORK", "year": "2026", "display": "…", "sub": "…", "cta_hint": "Swipe →" },
+         "02": { "label": "01", "display": "…", "micro": "…", "page_num": "02 / 17" },
+         "09": { "label": "A · Persona 1", "portrait": { "kind": "inline-svg", "svg": "…", "alt": "" }, "arche_name": "…", "who": "…", "quote": "…", "desc": "…", "page_num": "09 / 17" }
        }
      }
    }
    ```
 
-   **`_source.slots` is keyed by zero-padded 1-based slide index (`"01"`, `"02"`, …, `"17"`), and each entry is a flat dict of UPPERCASE slot names.** This per-slide scoping is what lets a 7-persona deck declare seven different `ARCHE_NAME` / `QUOTE` / `DESC` values without requiring template authors to invent per-slide slot suffixes (`ARCHE_NAME_A`, `ARCHE_NAME_B`, …). Sending a flat `_source.slots = { EYEBROW: …, DISPLAY: … }` is also accepted for backwards compatibility, but the same dict is broadcast to every slide — only use it when every slide should share the same content (rare).
+   **`_source.slots` is keyed by zero-padded 1-based slide index (`"01"`, `"02"`, …, `"17"`), and each entry is a flat dict of the template's slot names, written exactly as `content_slots` declares them.** This per-slide scoping is what lets a 7-persona deck declare seven different `arche_name` / `quote` / `desc` values without requiring template authors to invent per-slide slot suffixes (`arche_name_a`, `arche_name_b`, …). Sending a flat `_source.slots = { eyebrow: …, display: … }` is also accepted for backwards compatibility, but the same dict is broadcast to every slide — only use it when every slide should share the same content (rare).
 
-   - Use UPPERCASE slot names exactly as declared in the template's `content_slots`. Lowercase, mixed case, or omitted slots fail to substitute and render blank.
+   - Use slot names exactly as declared in the template's `content_slots`, matching their case. Today's templates declare lowercase ids (`display`, `lead`, `event`, `page_num`, …); read them from `less_list_templates id:<x> detail:full`. A name whose case or spelling doesn't match a declared id fails to substitute and renders blank.
    - Prose slot values are plain strings with Option C emphasis markup. The template registry returns per-template marker grammar at `less_list_templates id:<x> detail:full → markup_grammar.markers`; read it and apply markers per the field's `guidance` line (typically one accent per prose slot on the strongest beat, mapped to whatever colour the template's voice paints that marker).
-   - List slot values (`ROSTER`, `CTA_LIST`, etc.) are arrays of objects shaped by the template's row sub-templates — `{l, name, who}` for roster rows, `{num, txt}` for CTA rows.
+   - List slot values (`roster`, `cta_list`, etc.) are arrays of objects shaped by the template's row sub-templates — `{l, name, who}` for roster rows, `{num, txt}` for CTA rows.
    - **Image slot values** are `{ "kind": "inline-svg", "svg": "<svg>…</svg>", "alt": "…" }` for inline SVGs (preferred for procedural / abstract visuals) or `{ "kind": "url", "url": "…", "alt": "…" }` for hosted images.
    - For each slide listed in the template manifest, include all of its **required** slots — `less_list_templates id: <x> detail: full` returns the per-slide slot list. A missing required slot throws at render time and the slide paints blank.
 
@@ -113,7 +113,7 @@ You receive these signals from the orchestrator:
 
 8. **Compose vs update.** Pick the right tool:
    - `less_canvas_compose` — fresh sessions, template switches, full-manifest writes. Pass `brand_slug`, `payload` (the resolved manifest), and `template_id` (the registry id from step 2b). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
-   - `less_canvas_update` — incremental edits within an active session. Cheaper for the server (no full-manifest diff) and safer for the user (operation-level changes, not whole-manifest overwrites).
+   - `less_canvas_update` — incremental edits within an active session: operation-level changes that preserve the user's edits, not whole-manifest overwrites.
 
 9. Return structured output, including the deep link so the orchestrator can launch the desktop app.
 
@@ -123,16 +123,16 @@ Filter `less_list_templates supports_html: true`. Today: `email-template`, `land
 
 ## When the user asks for a PDF / file export
 
-Two export tools exist. **Pick by what's in your toolset — the tool's presence IS the tier signal, so you never check a plan yourself:**
+Two export tools may be in your toolset. Use whichever is present; don't check the user's plan yourself.
 
-- **`less_canvas_export_server` — prefer this for PDF whenever it is present.** It is enterprise-gated (it only appears for entitled teams), renders the deck server-side to an accessibility-compliant **PDF/UA-1** (tagged, VeraPDF-passing), and returns a short-lived **signed download URL** stored in the team's workspace bucket. Surface that URL as a clickable download link. This is the default for enterprise canvas renders.
-- **`less_canvas_export` — the cheaper local default.** Electron `printToPDF`, saves under `~/Documents/Designless/Exports/<brand>/`, returns a local filepath (surface it as a clickable path plus a reveal-in-Finder hint). Use it for PNG/HTML, when `less_canvas_export_server` is not in your toolset, or when the user explicitly wants a local file.
+- **`less_canvas_export_server`** is the PDF tool when present. It renders server-side and returns a short-lived signed download URL; surface that URL as a clickable download link.
+- **`less_canvas_export`** handles PNG and HTML, and PDF when `less_canvas_export_server` isn't in your toolset (or when the user wants a local file). It saves under `~/Documents/Designless/Exports/<brand>/` and returns a local filepath; surface it as a clickable path plus a reveal-in-Finder hint.
 
 Never call both for one deliverable. Each returns synchronously within ~12s or hands back a `request_id` to poll with `less_canvas_export_status`.
 
 ## Output Contract
 
-Return to the orchestrator a structure built from values the SERVER returned, not from values you would like to be true. Pre-2026-05-08 this section asked for a `brand_coherence` block; that block was a fabrication — no tool ever scored coherence at compose time, and the orchestrator had no way to detect when a write didn't actually land. The contract below replaces it with the `verified` block that `less_canvas_compose` now returns on every success.
+Return to the orchestrator a structure built from values the SERVER returned, not from values you would like to be true. Use the `verified` block that `less_canvas_compose` returns on every success, and pass its numbers through rather than synthesizing your own.
 
 ```json
 {
@@ -175,7 +175,7 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 - ALWAYS validate generated output against the expression brief before returning.
 - If enforcement level is "strict", any token violation is a blocker.
 - If enforcement level is "relaxed", token violations are warnings.
-- ALWAYS use `less_canvas_compose` for fresh sessions or template switches; use `less_canvas_update` for incremental changes within an active session — preserves user edits and is cheaper for the server.
+- ALWAYS use `less_canvas_compose` for fresh sessions or template switches; use `less_canvas_update` for incremental changes within an active session — preserves user edits.
 - ALWAYS call `less_canvas_status` first when the orchestrator is making a follow-up request on a session that's already open. If the user has been editing the canvas (last_edit_source = "user" or "mixed", cooldown_active = true), apply changes via `less_canvas_update` or confirm before replacing.
 - Falling back to deterministic rendering is only acceptable when the user explicitly opts out of the desktop path.
 - Discover tools via search; do not hardcode tool names beyond the canvas-* family that this contract names directly.
