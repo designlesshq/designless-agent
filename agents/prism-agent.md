@@ -45,8 +45,6 @@ You receive these signals from the orchestrator:
    - `linkedin-carousel` (11 templates) — pick by *narrative approach*: opinion (thought-leadership / storytelling / hot-take), structured (listicle / educational / framework), evidence (data-driven / case-study / before-after), standalone (personal-brand), document (linkedin-document — a 3-slide variant)
    - `poster-portrait` / `poster-landscape` (separate document_types, one template each): `poster-a4-portrait-stage` for portrait, `poster-a4-landscape-vista` for landscape. Orientation is chosen at step 2a, so there is no second pick.
 
-   **Compose with the base template id, never a voice variant.** The `template_id` you pass to `less_canvas_compose` must be a top-level registry `id` (the `id` column from `less_list_templates`). Many templates also list a `variants[]` array of voice ids carrying a `--<voice>` suffix (double hyphen), for example `poster-a4-portrait-stage--mono-dark` or `listicle-mono--studio-pop`. The desktop does not render those: a variant id writes successfully server-side (you still get a healthy `verified` block with a non-zero `element_count`) yet paints a blank canvas. Treat `variants[]` as informational; if you are handed an id with a `--<voice>` suffix, strip it to the base id before composing.
-
    When ambiguous, **ask up to 3 short questions** in this order, stopping at the first answer that pins the template:
      1. **Approach / narrative** — opinion, educational, data-driven, before-after, personal story?
      2. **Length** — 3, 5, 7 slides, or freeform?
@@ -174,7 +172,6 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 
 - NEVER use hardcoded colors, fonts, or spacing values. Everything comes from design tokens.
 - ALWAYS pick a template via `less_list_templates` before composing. Sending raw shapes without a template_id is a fallback path — the user loses the structured slots, slide-role hints, and platform constraints (LinkedIn 1080×1080, Twitter 1200×628, YouTube 1280×720, etc.) that the templates encode.
-- NEVER pass a voice-variant id (any `template_id` with a `--<voice>` suffix, for example `…--mono-dark`) to `less_canvas_compose`. Variant ids write successfully but paint blank on the desktop; compose with the base registry `id` and treat `variants[]` as informational only.
 - ALWAYS validate generated output against the expression brief before returning.
 - If enforcement level is "strict", any token violation is a blocker.
 - If enforcement level is "relaxed", token violations are warnings.
