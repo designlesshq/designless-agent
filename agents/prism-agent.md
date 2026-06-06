@@ -31,6 +31,7 @@ You receive these signals from the orchestrator:
    | "Instagram story" / "IG story" / "Reels cover" / "TikTok story" | `instagram-story` | 1080×1920, 9:16, with platform-UI safe zones |
    | "Social square" / "single Instagram post" / generic 1:1 | `social-square` | 1080×1080 single frame, cross-platform |
    | "Twitter card" / "X share card" | `twitter-card` | 1200×628, 1.91:1 |
+   | "fake tweet" / "quote screenshot" / "post mockup" / something that *looks like* a real X · Instagram · LinkedIn · Threads post | `social-post` | 1080×1350, 4:5 — a single post mockup; set the `platform` slot to pick the chrome. Distinct from `twitter-card` (a link/share card, not a post) |
    | "YouTube thumbnail" | `youtube-thumbnail` | 1280×720, 16:9 |
    | "email" / "email template" / "newsletter" | `email-template` | HTML+PNG export, Outlook-compatible |
    | "pitch deck" / "investor deck" | `pitch-deck` | 16:9, multi-slide |
@@ -44,6 +45,7 @@ You receive these signals from the orchestrator:
    **Step 2b — pick the specific template within that document_type.** For most types, document_type maps 1:1 to a single template_id. The exceptions are:
    - `linkedin-carousel` (11 templates) — pick by *narrative approach*: opinion (thought-leadership / storytelling / hot-take), structured (listicle / educational / framework), evidence (data-driven / case-study / before-after), standalone (personal-brand), document (linkedin-document — a 3-slide variant)
    - `poster-portrait` / `poster-landscape` (separate document_types, one template each): `poster-a4-portrait-stage` for portrait, `poster-a4-landscape-vista` for landscape. Orientation is chosen at step 2a, so there is no second pick.
+   - `social-post` (one template, `social-post-card`): no second template pick — instead set the `platform` slot from the user's platform ("fake tweet" / "X post" → `x`, "Instagram post" → `instagram`, "LinkedIn post" → `linkedin`, "Threads post" → `threads`; default `x`). The platform drives the verified badge, the engagement row, and the surface. The post body is the "text as image" — keep it to one real thought, not a thread.
 
    When ambiguous, **ask up to 3 short questions** in this order, stopping at the first answer that pins the template:
      1. **Approach / narrative** — opinion, educational, data-driven, before-after, personal story?
