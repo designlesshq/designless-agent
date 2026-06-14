@@ -13,7 +13,7 @@ You receive these signals from the orchestrator:
 - **Brand identifier** — which brand to express
 - **Capsule version** — pinned version for consistency
 - **Expression brief** — compiled brief containing design tokens, voice guidance, and pattern rules
-- **Artifact type** — "carousel" | "poster" | "slide" | "html"
+- **Artifact type** — "carousel" | "poster" | "slide" | "html" | "page" (page = Type-2, the user's own running app — see "Type-2 page mode" below)
 - **Enforcement level** — how strict to be with brand rules ("strict" or "relaxed")
 
 ## Execution
@@ -99,6 +99,24 @@ You receive these signals from the orchestrator:
    - `less_canvas_update` — incremental edits within an active session: operation-level changes that preserve the user's edits, not whole-manifest overwrites.
 
 9. Return structured output, including the deep link so the orchestrator can launch the desktop app.
+
+## Type-2 page mode (edit the user's own running app)
+
+Everything above is Type-1: you compose a brand *artifact* (carousel, poster, deck) from tokens. **Page mode is the other branch** — the user wants to see and edit their OWN running app (Next.js, Vite + React) on the canvas, with their edits flowing back into their source. Same orchestrator, same canvas, same ops loop; only the bootstrap and the apply target differ. Signals: "show my Next app and let me edit it", "open my dev server on the canvas", a request pointed at a local project rather than asking for a new graphic.
+
+The flow is **detect → init → verify → compose → drive the ops loop**, and it is **fail-open at every step**: if anything is missing, unsupported, or declined, fall back to the agent-composed app-preview path (works today, zero installs) and tell the user what you did.
+
+1. **Detect the framework** from repo files you already read — `package.json` dependencies and config files (`next.config.*`, `vite.config.*`). Detection is local; repo contents never leave the machine.
+
+2. **Init via `less_canvas_init(framework)`.** Pass the framework id/alias you detected. It returns the command to scaffold `@designless/annotate` into the project, the engine, and how the markers wire in. The command is decided server-side, so **never hardcode or guess it** — run exactly what the tool returns, through the host's permission UI so the user approves it. If the tool reports the framework isn't supported, offer the closest one it lists, or fall back to app-preview.
+
+3. **Verify the markers wired in** (three-way diagnostic): the dependency installed, the config was edited (the `wire` import/wrapper the tool named is present), and a dev build doesn't error. The annotator fails loud and never crashes the dev server — if it didn't wire (a version gate or loud no-op), surface the diagnostic and fall back. Do not compose a page session against unmarked source.
+
+4. **Compose the page session.** Call `less_canvas_compose` with the page shape — the dev `port` and the `routes[]` read from the framework's own route manifest (route = slide). The server stages the session; the Electron canvas captures each localhost route into a self-contained snapshot and renders it as a slide. Apply the same truth gate as Type-1 (read the `verified` block; refuse to launch on a mismatch). Then write `.designless/session.json` in the project (add `.designless/` to `.gitignore`) carrying the `session_id`; the plugin's fail-open hooks read it to remind you to drain edits on later turns. Delete it when the user is done with the session.
+
+5. **Drive the ops loop** — identical contract to Type-1, different apply target. Pull edits with `less_canvas_ops` (claim); for each op, confirm scope via the canvas chip (edit one item's *data* vs the *component* style), apply the anchored edit to the right source file (anchor on `previous_value`; refuse a wrong or ambiguous anchor), let Fast Refresh rebuild, let the canvas re-capture the affected route, then `ack`. Failures surface inline on the canvas, never silently. Loop until the user is done.
+
+Page mode is owner-only and desktop-only by construction (the capture is a canvas capability of the Electron app). When `less_canvas_init` or the markers aren't available, the agent-composed app-preview path is always the safe fallback.
 
 ## Inline preview in the conversation (opt-in, NOT a routine step)
 
@@ -189,5 +207,6 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 - ALWAYS use `less_canvas_compose` for fresh sessions or template switches; use `less_canvas_update` for incremental changes within an active session — preserves user edits.
 - ALWAYS call `less_canvas_status` first when the orchestrator is making a follow-up request on a session that's already open. If the user has been editing the canvas (last_edit_source = "user" or "mixed", cooldown_active = true), apply changes via `less_canvas_update` or confirm before replacing.
 - The inline preview (`less_canvas_preview` → `visualize`) is OPT-IN, NOT a routine step — call it only when the user explicitly asks to see the deck in the conversation before composing. Composing opens the canvas directly, so default to composing. Never gate compose on it. The canvas remains the only *editable* render.
+- Type-2 page mode is fail-open: detect → `less_canvas_init` → run the tool-returned command via the permission UI → verify markers → compose → ops loop. NEVER hardcode the init command — it comes from `less_canvas_init`. If detection, framework support, the install, or the markers fail, fall back to the agent-composed app-preview path and say so. Owner-only, desktop-only.
 - Falling back to deterministic rendering is only acceptable when the user explicitly opts out of the desktop path.
 - Discover tools via search; do not hardcode tool names beyond the canvas-* family that this contract names directly.
