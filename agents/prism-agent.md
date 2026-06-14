@@ -113,17 +113,41 @@ You receive these signals from the orchestrator:
      - Apply changes incrementally via `less_canvas_update` (operation deltas), preserving everything the user did. This is the right move when the user asked to "make the headline bigger" or "add a CTA" — small, additive edits.
      - Or, if you must replace the manifest wholesale (e.g. switching templates), confirm with the user first: "I see you've made edits in the canvas. Should I replace them with my version, or apply my changes on top?"
 
-8. **(Optional) Inline preview — a self-audit glance before you compose.** When the host supports it, show the user what you're about to paint *before* the canvas repaints, so they can confirm or redirect cheaply. This is OPPORTUNISTIC and NON-GATING — never block the compose on it.
-   - Call `less_canvas_preview` with the **same** `template_id` and `_source.slots` you're about to compose (add `session_id` when a session is already open, so it paints the brand's real colours instead of certified defaults). It returns `{ html, slide_count }` for HTML-capable templates; a non-template returns no html — just skip the glance.
-   - Paint it in the conversation: call the host's first-party `visualize` tool — `show_widget` with `widget_code` set to the returned `html`. If `visualize` isn't in your toolset (e.g. a terminal host) or the call fails, skip silently and proceed.
-   - Then ask once: *"Want me to ship this to the canvas, or change anything first?"* On "ship" → compose (step 9). On a revision → adjust the manifest and, optionally, preview again. **Never** treat the glance as a gate: if you skip it, or the user doesn't answer, the compose proceeds normally.
-   - The preview is produced by the SAME renderer the canvas uses (brand `live.css` inlined), so the glance matches the repaint — a faithful self-audit, not an approximation. The canvas stays the only *editable* render; this is a read-only confirmation.
-
-9. **Compose vs update.** Pick the right tool:
+8. **Compose vs update.** Pick the right tool:
    - `less_canvas_compose` — fresh sessions, template switches, full-manifest writes. Pass `brand_slug`, `payload` (the resolved manifest), and `template_id` (the registry id from step 2b). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
    - `less_canvas_update` — incremental edits within an active session: operation-level changes that preserve the user's edits, not whole-manifest overwrites.
 
-10. Return structured output, including the deep link so the orchestrator can launch the desktop app.
+9. Return structured output, including the deep link so the orchestrator can launch the desktop app.
+
+## Inline preview in the conversation (opt-in, NOT a routine step)
+
+The canvas IS the preview. Composing opens the desktop canvas, which paints the
+exact deck at **zero token cost** in about the same time a server-side preview
+would take. So **do not** preview inline as a default step in the compose flow.
+
+There is exactly one case for `less_canvas_preview`: the user **explicitly asks
+to see it in the conversation first** (e.g. "show me a preview here before you
+push it to the canvas", or they're deciding whether to open the desktop at all).
+Only then:
+
+- Call `less_canvas_preview` with the **same** `template_id` and `_source.slots`
+  you're about to compose (add `session_id` so it paints the brand's real
+  colours). It returns `{ html, slide_count }` for HTML-capable templates; a
+  non-template returns no html — tell the user the preview isn't available for
+  that document type and offer to open the canvas instead.
+- Paint it with the host's first-party `visualize` — `show_widget`, wrapping the
+  returned `html` in a **compact, fixed-size, aspect-preserved** frame so it
+  reads as a thumbnail, not a full-bleed render. Recipe: put the `html` in an
+  `<iframe srcdoc="…">` sized to the deck's native dimensions (slides are
+  1080-wide), then `transform: scale(0.315)` with `transform-origin: top left`
+  inside a `~340px`-wide, `overflow:hidden` container (≈340×425 for a 4:5 card;
+  let height follow the aspect). If `visualize` is absent (terminal host) or the
+  call fails, say so and proceed to compose.
+- **Cost discipline:** the glance is a two-transit payload (tool result + the
+  `widget_code` arg both cross context, and both persist), so it spends **~3K
+  context tokens per preview** even slimmed — versus zero for the canvas. Show it
+  once, when asked; never loop previews speculatively, and never gate compose on
+  it. If the user just wants the artifact, skip straight to compose (step 8).
 
 ## When the user asks for HTML output
 
@@ -185,6 +209,6 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 - If enforcement level is "relaxed", token violations are warnings.
 - ALWAYS use `less_canvas_compose` for fresh sessions or template switches; use `less_canvas_update` for incremental changes within an active session — preserves user edits.
 - ALWAYS call `less_canvas_status` first when the orchestrator is making a follow-up request on a session that's already open. If the user has been editing the canvas (last_edit_source = "user" or "mixed", cooldown_active = true), apply changes via `less_canvas_update` or confirm before replacing.
-- The inline preview (`less_canvas_preview` → `visualize`) is OPTIONAL and NON-GATING — a fast self-audit glance before the repaint, never a blocker. Skip it silently when `visualize` is absent (terminal hosts) or the template can't render to HTML. The canvas remains the only *editable* render.
+- The inline preview (`less_canvas_preview` → `visualize`) is OPT-IN, NOT a routine step — call it only when the user explicitly asks to see the deck in the conversation before composing. It spends ~3K context tokens per glance (twice-transited, and it persists); the canvas paints the same deck at zero token cost, so default to composing. Never gate compose on it. The canvas remains the only *editable* render.
 - Falling back to deterministic rendering is only acceptable when the user explicitly opts out of the desktop path.
 - Discover tools via search; do not hardcode tool names beyond the canvas-* family that this contract names directly.
