@@ -38,7 +38,21 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
 
     while let Some(frame) = reader.read_frame().await? {
         let id = frame.get("id").cloned();
-        let response = match forward(&client, &upstream, &*auth, &frame).await {
+        // JSON-RPC notifications (no `id`) must never receive a response. The MCP
+        // Streamable HTTP server answers them with 202 Accepted + empty body;
+        // forward fire-and-forget and emit nothing. Emitting a frame here — in
+        // particular the spurious {"error", id:null} from failing to decode that
+        // empty 202 body — is an unsolicited response a strict client rejects,
+        // failing the connect handshake right after `notifications/initialized`.
+        let is_notification = matches!(id, None | Some(Value::Null));
+        let result = forward(&client, &upstream, &*auth, &frame).await;
+        if is_notification {
+            if let Err(e) = result {
+                tracing::debug!(error = %e, "notification upstream result ignored");
+            }
+            continue;
+        }
+        let response = match result {
             Ok(v) => v,
             Err(e) => error_response(id, &e),
         };
