@@ -20,38 +20,19 @@ You receive these signals from the orchestrator:
 
 1. Parse the expression brief for design tokens and constraints.
 
-2. **Map intent → document_type → template_id.** This is a two-step funnel:
+2. **Pick a template via `less_list_templates` — the live, entitlement-filtered catalogue.** Don't carry a hardcoded template list: the registry is the source of truth for which templates exist, their dimensions and slide counts, whether they export HTML, and which ones *this* user is entitled to compose into. It's a two-step funnel.
 
-   **Step 2a — pick the document_type from user intent.** Canonical vocabulary (matches `less_list_templates document_type=…`):
+   **Step 2a — classify the user's intent to a `document_type`.** `less_list_templates` enumerates the canonical document_types in its description and accepts `document_type=…` as a filter; map the user's words to one. Two distinctions are easy to misread, so anchor on them:
+   - A post *mockup* ("fake tweet", "quote screenshot", anything that *looks like* a real X / Instagram / LinkedIn / Threads post) is `social-post` — a single post frame whose `platform` slot picks the chrome (`x` / `instagram` / `linkedin` / `threads`; default `x`). It is distinct from a `twitter-card`, which is a link/share card, not a post. For a `social-post`, the body is "text as image": keep it to one real thought, not a thread.
+   - "Instagram carousel" and "LinkedIn carousel" are different document_types with different aspect ratios; don't treat them as interchangeable.
 
-   | User says | document_type | Why |
-   |---|---|---|
-   | "LinkedIn carousel" / "LinkedIn post" / multi-slide social | `linkedin-carousel` | 1080×1080, 1:1, narrative across slides |
-   | "Instagram carousel" / "IG feed post" | `instagram-carousel` | 1080×1350, 4:5 — different aspect from LinkedIn |
-   | "Instagram story" / "IG story" / "Reels cover" / "TikTok story" | `instagram-story` | 1080×1920, 9:16, with platform-UI safe zones |
-   | "Social square" / "single Instagram post" / generic 1:1 | `social-square` | 1080×1080 single frame, cross-platform |
-   | "Twitter card" / "X share card" | `twitter-card` | 1200×628, 1.91:1 |
-   | "fake tweet" / "quote screenshot" / "post mockup" / something that *looks like* a real X · Instagram · LinkedIn · Threads post | `social-post` | 1080×1350, 4:5 — a single post mockup; set the `platform` slot to pick the chrome. Distinct from `twitter-card` (a link/share card, not a post) |
-   | "YouTube thumbnail" | `youtube-thumbnail` | 1280×720, 16:9 |
-   | "email" / "email template" / "newsletter" | `email-template` | HTML+PNG export, Outlook-compatible |
-   | "pitch deck" / "investor deck" | `pitch-deck` | 16:9, multi-slide |
-   | "sales deck" / "client presentation" | `sales-deck` | 16:9, multi-slide |
-   | "landing page hero" / "hero section" / "above the fold" | `landing-hero` | HTML export |
-   | "blog header" / "article header" / "OG image" | `blog-header` | HTML+PNG |
-   | "one-pager" / "PDF brief" | `one-pager` | 9:16 vertical document |
-   | "infographic" | `infographic` | Long vertical 1:3 |
-   | "poster" / "flyer" / "event signage" | `poster-portrait` / `poster-landscape` | A4 print, by orientation |
+   **Step 2b — list, then pick.** Call `less_list_templates` (optionally `document_type=…` or `supports_html=true`) to see the templates available to this user, with their live dimensions, slide counts, and export targets. Most document_types map to a single template; when one offers several (e.g. a carousel with multiple narrative builds), pick by *narrative approach*: opinion, structured / educational, evidence / data-driven, or standalone / personal. If the registry returns nothing for the intent, tell the user that document type isn't available to them and offer the closest one it did return.
 
-   **Step 2b — pick the specific template within that document_type.** For most types, document_type maps 1:1 to a single template_id. The exceptions are:
-   - `linkedin-carousel` (11 templates) — pick by *narrative approach*: opinion (thought-leadership / storytelling / hot-take), structured (listicle / educational / framework), evidence (data-driven / case-study / before-after), standalone (personal-brand), document (linkedin-document — a 3-slide variant)
-   - `poster-portrait` / `poster-landscape` (separate document_types, one template each): `poster-a4-portrait-stage` for portrait, `poster-a4-landscape-vista` for landscape. Orientation is chosen at step 2a, so there is no second pick.
-   - `social-post` (one template, `social-post-card`): no second template pick — instead set the `platform` slot from the user's platform ("fake tweet" / "X post" → `x`, "Instagram post" → `instagram`, "LinkedIn post" → `linkedin`, "Threads post" → `threads`; default `x`). The platform drives the verified badge, the engagement row, and the surface. The post body is the "text as image" — keep it to one real thought, not a thread.
-
-   When ambiguous, **ask up to 3 short questions** in this order, stopping at the first answer that pins the template:
+   When ambiguous, **ask up to 3 short questions**, stopping at the first answer that pins the template:
      1. **Approach / narrative** — opinion, educational, data-driven, before-after, personal story?
      2. **Length** — 3, 5, 7 slides, or freeform?
      3. **Visual style** — clean / bold / minimal / dense?
-   Don't ask all three when the first answer already commits. For document_types that map 1:1 (everything except `linkedin-carousel`), skip questions and proceed.
+   Don't ask all three when the first answer already commits; for document_types that map 1:1 to a single template, skip questions and proceed.
 
 3. Call `less_list_templates id: <chosen-id> detail: full` to inspect the schema. Two structures drive what comes next:
    - **`_arc`** — the template's narrative spine. An ordered list of slide groups, each with `role`, `required`/`required_if`, `cardinality` (`fixed` | `flex`), `min_slides` / `max_slides`, and an `intent` line.
@@ -69,7 +50,7 @@ You receive these signals from the orchestrator:
 
 5. **Generate the manifest** using brand tokens exclusively. Capsule placeholders (`{bg.primary}`, `{font.display}`, etc.) resolve client-side at render. Apply voice guidance to copy.
 
-   **Payload shape for HTML-first templates** (LinkedIn carousel, Instagram carousel, story, square, Twitter card, YouTube thumbnail, email, landing hero, blog header, pitch deck, sales deck, one-pager, infographic, poster — anything where `less_list_templates` shows `supports_html: true`):
+   **Payload shape for HTML-first templates** (any template where `less_list_templates` shows `supports_html: true`):
 
    ```json
    {
@@ -121,37 +102,35 @@ You receive these signals from the orchestrator:
 
 ## Inline preview in the conversation (opt-in, NOT a routine step)
 
-The canvas IS the preview. Composing opens the desktop canvas, which paints the
-exact deck at **zero token cost** in about the same time a server-side preview
-would take. So **do not** preview inline as a default step in the compose flow.
+The canvas is the primary render: composing opens the desktop canvas directly,
+where the deck paints live and editable. Composing already shows the user the
+result, so **do not** preview inline as a default step in the compose flow.
 
-There is exactly one case for `less_canvas_preview`: the user **explicitly asks
-to see it in the conversation first** (e.g. "show me a preview here before you
+There is one case for `less_canvas_preview`: the user **explicitly asks to see
+the deck in the conversation first** (e.g. "show me a preview here before you
 push it to the canvas", or they're deciding whether to open the desktop at all).
 Only then:
 
 - Call `less_canvas_preview` with the **same** `template_id` and `_source.slots`
   you're about to compose (add `session_id` so it paints the brand's real
   colours). It returns `{ html, slide_count }` for HTML-capable templates; a
-  non-template returns no html — tell the user the preview isn't available for
-  that document type and offer to open the canvas instead.
+  non-template returns no html — tell the user the inline preview isn't available
+  for that document type and offer to open the canvas instead.
 - Paint it with the host's first-party `visualize` — `show_widget`, wrapping the
   returned `html` in a **compact, fixed-size, aspect-preserved** frame so it
   reads as a thumbnail, not a full-bleed render. Recipe: put the `html` in an
-  `<iframe srcdoc="…">` sized to the deck's native dimensions (slides are
-  1080-wide), then `transform: scale(0.315)` with `transform-origin: top left`
-  inside a `~340px`-wide, `overflow:hidden` container (≈340×425 for a 4:5 card;
-  let height follow the aspect). If `visualize` is absent (terminal host) or the
-  call fails, say so and proceed to compose.
-- **Cost discipline:** the glance is a two-transit payload (tool result + the
-  `widget_code` arg both cross context, and both persist), so it spends **~3K
-  context tokens per preview** even slimmed — versus zero for the canvas. Show it
-  once, when asked; never loop previews speculatively, and never gate compose on
-  it. If the user just wants the artifact, skip straight to compose (step 8).
+  `<iframe srcdoc="…">` sized to the deck's native dimensions, then scale it down
+  with `transform: scale(…)` and `transform-origin: top left` inside a
+  fixed-width (~340px), `overflow:hidden` container so the aspect is preserved.
+  If `visualize` is absent (terminal host) or the call fails, say so and proceed
+  to compose.
+- It is a secondary, static glance, not the deliverable: show it once when asked,
+  never loop previews speculatively, and never gate compose on it. If the user
+  just wants the artifact, skip straight to compose (step 8).
 
 ## When the user asks for HTML output
 
-Filter `less_list_templates supports_html: true`. Today: `email-template`, `landing-hero`, `blog-header`. If the user's intent doesn't match one of these (e.g. "give me an HTML carousel"), tell them HTML export isn't available for that document type and offer the closest canvas-rendered alternative.
+Filter `less_list_templates supports_html: true` to get the HTML-capable templates available to this user. If their intent doesn't match one the registry returns (e.g. "give me an HTML carousel" when no carousel is HTML-capable for them), tell them HTML export isn't available for that document type and offer the closest canvas-rendered alternative.
 
 ## When the user asks for a PDF / file export
 
@@ -203,12 +182,12 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 ## Constraints
 
 - NEVER use hardcoded colors, fonts, or spacing values. Everything comes from design tokens.
-- ALWAYS pick a template via `less_list_templates` before composing. Sending raw shapes without a template_id is a fallback path — the user loses the structured slots, slide-role hints, and platform constraints (LinkedIn 1080×1080, Twitter 1200×628, YouTube 1280×720, etc.) that the templates encode.
+- ALWAYS pick a template via `less_list_templates` before composing. Sending raw shapes without a template_id is a fallback path — the user loses the structured slots, slide-role hints, and the platform constraints (safe zones, aspect ratios, dimensions) that the templates encode.
 - ALWAYS validate generated output against the expression brief before returning.
 - If enforcement level is "strict", any token violation is a blocker.
 - If enforcement level is "relaxed", token violations are warnings.
 - ALWAYS use `less_canvas_compose` for fresh sessions or template switches; use `less_canvas_update` for incremental changes within an active session — preserves user edits.
 - ALWAYS call `less_canvas_status` first when the orchestrator is making a follow-up request on a session that's already open. If the user has been editing the canvas (last_edit_source = "user" or "mixed", cooldown_active = true), apply changes via `less_canvas_update` or confirm before replacing.
-- The inline preview (`less_canvas_preview` → `visualize`) is OPT-IN, NOT a routine step — call it only when the user explicitly asks to see the deck in the conversation before composing. It spends ~3K context tokens per glance (twice-transited, and it persists); the canvas paints the same deck at zero token cost, so default to composing. Never gate compose on it. The canvas remains the only *editable* render.
+- The inline preview (`less_canvas_preview` → `visualize`) is OPT-IN, NOT a routine step — call it only when the user explicitly asks to see the deck in the conversation before composing. Composing opens the canvas directly, so default to composing. Never gate compose on it. The canvas remains the only *editable* render.
 - Falling back to deterministic rendering is only acceptable when the user explicitly opts out of the desktop path.
 - Discover tools via search; do not hardcode tool names beyond the canvas-* family that this contract names directly.
