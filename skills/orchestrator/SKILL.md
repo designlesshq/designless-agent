@@ -152,6 +152,7 @@ Classify the user's intent into exactly ONE of these modes. Follow the tree top-
 | "connect" keyword (explicit) | **Connect** | Set up or re-establish the MCP connection |
 | No brands + screenshot or URL | **Adopt** | Adopt an external system from a visual reference |
 | No brands + keywords or description | **Greenfield** | Create a new brand from scratch |
+| Has brand + "show/edit my running app or dev server on the canvas" (points at a local project, not a new graphic) | **Express** (Prism page mode) | Open the user's OWN running app (Next.js / Vite) on the canvas and edit it live, with edits flowing back to source. Type-2 page mode: the Express/Hybrid surface, not a new mode. Hand to the Prism agent with `artifact_type: 'page'`. |
 | Has brand + "build/create/make a page or component" | **Compose** | Build UI with an existing brand |
 | Has brand + "extend/add tokens/modify theme" | **Extend** | Evolve an existing brand's tokens |
 | Has brand + existing design system (Figma/CSS) to import | **Adopt** | Bring an external design system under brand governance |
@@ -179,6 +180,7 @@ IF no brands exist:
   ELSE → Ask: "Create a new brand from scratch, or adopt an existing design system?"
 
 IF brands exist:
+  IF user wants to see/edit their OWN running app on the canvas (dev server / local project, not a new graphic) → Express, Prism page mode (hand to prism-agent with artifact_type:'page')
   IF visual artifact intent → Express (hand off to Prism)
   IF production HTML intent → Build
   IF create/build UI intent → Compose
@@ -263,6 +265,8 @@ The user has an existing design system (Figma variables, CSS custom properties, 
 ### Express — Visual artifacts via Prism
 
 The user wants a carousel, poster, slide deck, or other visual artifact that carries their brand.
+
+**Two surfaces under Express.** Most Express requests are Type-1: a brand *artifact* (carousel, poster, deck). But if the user points at their OWN running app ("show my Next app on the canvas and let me edit it", a dev server or local project), that is **Type-2 page mode**: same canvas, same ops loop, a different bootstrap and apply target. Hand to the Prism agent with `artifact_type: 'page'`; Prism runs its detect → init → verify → compose → ops → brand-lint flow (see the prism-agent Type-2 section) and is fail-open to the agent-composed app-preview path if anything is unavailable. Page mode is owner-only and desktop-only.
 
 **What you deliver:** Brand-aligned visual content live in the Designless desktop canvas — the user can see it render, edit it interactively, and export. Every color, font, and spacing decision traced to the brand's tokens.
 
@@ -427,7 +431,7 @@ When the user requests visual artifacts (carousels, posters, slides), hand off t
 - The active brand identifier
 - The pinned capsule version (for consistency)
 - The compiled expression brief (design tokens, voice guidance, pattern rules)
-- The artifact type (carousel, poster, slide, HTML)
+- The artifact type (carousel, poster, slide, HTML, or `page` for Type-2 page mode)
 - How strict to be with brand rules
 
 **What to expect back:** A generated artifact with brand coherence metrics and any constraint violations flagged, plus the canvas open URL the orchestrator launches the desktop app from.
