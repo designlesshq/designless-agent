@@ -1,10 +1,18 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/session-start-inbox.mjs" }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/page-session-nudge.mjs" }
+          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/canvas-wake.mjs" }
         ]
       }
     ],
@@ -12,7 +20,7 @@
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/page-session-drain.mjs" }
+          { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/canvas-drain-check.mjs" }
         ]
       }
     ]
