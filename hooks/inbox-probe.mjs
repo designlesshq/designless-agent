@@ -1,0 +1,161 @@
+// inbox-probe.mjs - shared cwd-independent canvas-edit probe for the wake hooks.
+//
+// Phase-5 v3 (brain d8db8b78, §5). The old wakes gated on
+// existsSync(cwd/.designless/session.json), which missed every case where the
+// canvas renders a different repo than the Claude Code session is rooted in (the
+// live prism-vs-skilldesign miss). Discovery is now keyed on USER IDENTITY via
+// the desktop IPC `list_inbox` accelerator, so it surfaces waiting edits in ANY
+// cwd. One honest dependency: a reachable, signed-in desktop. When the socket is
+// absent / denied / stale, the probe is silently empty and the canvas "waiting"
+// pill remains the human floor.
+//
+// Node built-ins only, fail-open on any error or timeout. Never throws.
+
+import net from 'node:net'
+import fs from 'node:fs'
+import path from 'node:path'
+
+const TIMEOUT_MS = 700
+
+/** The desktop IPC socket path + its parent dir, derived from getuid(). */
+function socketPath() {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null
+  if (process.platform === 'darwin') {
+    if (uid == null) return null
+    const dir = `/tmp/designless-${uid}`
+    return { dir, sock: path.join(dir, 'ipc.sock') }
+  }
+  // Linux: XDG_RUNTIME_DIR/Designless, else /tmp/designless-<uid>
+  const xdg = process.env.XDG_RUNTIME_DIR
+  if (xdg) { const dir = path.join(xdg, 'Designless'); return { dir, sock: path.join(dir, 'ipc.sock') } }
+  if (uid != null) { const dir = `/tmp/designless-${uid}`; return { dir, sock: path.join(dir, 'ipc.sock') } }
+  return null
+}
+
+/** Refuse a socket dir that isn't owner-only 0700 (a same-uid-malware guard). */
+function dirIsSafe(dir) {
+  try {
+    const st = fs.statSync(dir)
+    if (!st.isDirectory()) return false
+    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return false
+    if ((st.mode & 0o077) !== 0) return false   // any group/other bit → unsafe
+    return true
+  } catch { return false }
+}
+
+/**
+ * Probe the desktop inbox over the IPC socket. Resolves { count, sessions } -
+ * always {count:0,sessions:[]} on any non-inbox reply, missing socket, or error.
+ */
+export function probeInbox() {
+  return new Promise((resolve) => {
+    const empty = { count: 0, sessions: [] }
+    const sp = socketPath()
+    if (!sp || !dirIsSafe(sp.dir) || !fs.existsSync(sp.sock)) return resolve(empty)
+
+    let buf = ''
+    let done = false
+    let sock
+    const finish = (v) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      try { sock && sock.destroy() } catch { /* already closed */ }
+      resolve(v)
+    }
+    const timer = setTimeout(() => finish(empty), TIMEOUT_MS)
+
+    try {
+      sock = net.connect(sp.sock)
+    } catch { return finish(empty) }
+
+    sock.on('connect', () => {
+      try { sock.write(JSON.stringify({ op: 'list_inbox' }) + '\n') } catch { finish(empty) }
+    })
+    sock.on('data', (chunk) => {
+      buf += chunk.toString('utf8')
+      const idx = buf.indexOf('\n')
+      if (idx < 0) return
+      let frame
+      try { frame = JSON.parse(buf.slice(0, idx)) } catch { return finish(empty) }
+      if (frame && frame.op === 'inbox') {
+        return finish({ count: frame.count ?? 0, sessions: Array.isArray(frame.sessions) ? frame.sessions : [] })
+      }
+      // denied / no_session / no_session_stale / error → silently empty.
+      return finish(empty)
+    })
+    sock.on('error', () => finish(empty))
+  })
+}
+
+// ── Right-checkout helpers (Stop hook gate, §5.2) ────────────────────────────
+
+function normalizeRemote(u) {
+  if (!u || typeof u !== 'string') return null
+  return u.trim()
+    .replace(/\.git$/, '')
+    .replace(/^git@([^:]+):/, 'https://$1/')   // git@host:owner/repo → https://host/owner/repo
+    .replace(/\/+$/, '')
+    .toLowerCase()
+}
+
+/** The origin remote of the repo at `cwd`, normalized - or null (no git / no origin). */
+export function cwdGitRemote(cwd) {
+  try {
+    const cfg = fs.readFileSync(path.join(cwd, '.git', 'config'), 'utf8')
+    const m = cfg.match(/\[remote "origin"\][^[]*?url\s*=\s*([^\n]+)/)
+    return m ? normalizeRemote(m[1]) : null
+  } catch { return null }
+}
+
+/** True when two git remotes name the same repo (normalized). */
+export function remotesMatch(a, b) {
+  const na = normalizeRemote(a)
+  const nb = normalizeRemote(b)
+  return !!na && !!nb && na === nb
+}
+
+const sum = (rows, key) => rows.reduce((a, s) => a + Number(s[key] || 0), 0)
+
+/** Whether a page session is drainable from `cwd` (right checkout, §5.2). */
+function pageDrainableHere(s, origin) {
+  // Unknown checkout identity (no repo_remote, or no git here) → let the agent
+  // decide per-op; a known mismatch routes the user instead of a wrong apply.
+  return s.repo_remote ? remotesMatch(origin, s.repo_remote) : true
+}
+
+/**
+ * Build the agent-facing wake text from the inbox rows, routed by surface and
+ * checkout (§5.1/§5.2). Returns '' when there is nothing actionable to say.
+ */
+export function summarizeInbox(sessions, cwd) {
+  const origin = cwdGitRemote(cwd)
+  const here = [], elsewhere = [], artefact = [], annotations = [], attention = [], recoverable = []
+  for (const s of sessions) {
+    if (Number(s.n_page || 0) > 0) (pageDrainableHere(s, origin) ? here : elsewhere).push(s)
+    if (Number(s.n_artefact || 0) > 0) artefact.push(s)
+    if (Number(s.n_annotation || 0) > 0) annotations.push(s)
+    if (Number(s.n_needs_human || 0) > 0) attention.push(s)
+    if (s.recoverable) recoverable.push(s)
+  }
+  const lines = []
+  if (here.length) {
+    lines.push(`${sum(here, 'n_page')} page edit(s) are drainable from this checkout - drain with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), then let the canvas re-capture.`)
+  }
+  for (const s of elsewhere) {
+    lines.push(`${Number(s.n_page || 0)} page edit(s) target ${s.repo_remote || s.source_hint || 'another repo'}; this session is rooted elsewhere - tell the user to run /designless from that repo (do NOT claim here).`)
+  }
+  if (artefact.length) {
+    lines.push(`${sum(artefact, 'n_artefact')} artefact edit(s) waiting - inspect via less_canvas_status (artefact apply is rolling out; do not claim them yet).`)
+  }
+  if (annotations.length) {
+    lines.push(`${sum(annotations, 'n_annotation')} annotation(s) waiting - read as context with less_canvas_ops action=peek, form your judgment, then ack them applied. They are not mechanical edits.`)
+  }
+  if (attention.length) {
+    lines.push(`${sum(attention, 'n_needs_human')} edit(s) need the user - an earlier edit could not be safely applied (the file moved since the canvas captured it); ask them to re-open the canvas and redo it.`)
+  }
+  if (recoverable.length) {
+    lines.push(`${recoverable.length} expired session(s) still hold un-applied edits; they revive in place when you drain them (no work is lost).`)
+  }
+  return lines.join(' ')
+}
