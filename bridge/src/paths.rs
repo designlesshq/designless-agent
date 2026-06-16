@@ -9,12 +9,6 @@
 //!     104-byte `sun_path` limit.
 //!   - Linux: `${XDG_RUNTIME_DIR}/Designless/ipc.sock` with `/tmp` fallback.
 //!   - Windows: `\\.\pipe\com.designless.canvas`.
-//!
-//! - **Auth file path** for standalone mode: `~/.designless/auth.json`.
-//!
-//! - **Keychain service names** (anchored mode reads only; Electron writes):
-//!   `designless-canvas:access-token`, `designless-canvas:refresh-token`,
-//!   `designless-mcp:granted` (consent grant flag).
 
 use std::path::PathBuf;
 
@@ -70,20 +64,4 @@ pub enum IpcEndpoint {
     UnixSocket(PathBuf),
     #[allow(dead_code)] // dead on Unix builds
     NamedPipe(String),
-}
-
-/// `~/.designless/auth.json` — standalone-mode token storage. Used by phase 3.
-#[allow(dead_code)]
-pub fn standalone_auth_file() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".designless").join("auth.json"))
-}
-
-/// Keychain service names used by the Electron desktop app. Anchored mode reads;
-/// never writes these (rotation is Electron's responsibility). Consumed by
-/// phase 2.1 (keychain reader) and phase 4 (granted flag check).
-#[allow(dead_code)]
-pub mod keychain {
-    pub const ACCESS_TOKEN: &str = "designless-canvas:access-token";
-    pub const REFRESH_TOKEN: &str = "designless-canvas:refresh-token";
-    pub const GRANT_FLAG: &str = "designless-mcp:granted";
 }
