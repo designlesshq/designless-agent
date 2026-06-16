@@ -145,6 +145,16 @@ The flow is **detect → init → verify → compose → drive the ops loop**, a
 
 A `previous_value` mismatch alone is never "applied," and an absent anchor is never a license to re-run a non-idempotent edit. `needs_human`/`failed` ops are retained server-side (never silently dropped). Failures surface inline on the canvas, never silently. Loop until the user is done.
 
+**Resolving data-driven repeats (which row, edit-what).** A Type-2 `replace_text` can target a data-driven repeat - one JSX line that `.map()`s N instances (e.g. 37 cards), so every instance carries the SAME `source_file:source_line`. The op carries signals the canvas derived from the rendered DOM: `previous_value` (the PRIMARY content anchor), `instance_ordinal` (a TIEBREAK only - this is RENDERED order, which a client-side filter/sort can reorder relative to the source array), `marker_chain` (the `(file,line)` of enclosing marked ancestors), `dom_path` (a structural fallback). Resolution is YOURS, agent-side - none of it ships to the customer (their bundle stays a dumb `(file,line)` stamper):
+
+- Read `source_file`; inspect the JSX at `source_line`.
+- **Static literal** (`<h1>About</h1>`): edit it in place; a shared component propagates to every page that uses it (correct).
+- **Interpolation inside a `.map()`** (`{skill.title}`): trace the mapped array (`skill` from `SKILL_REGISTRY`) and the field (`.title`). Find the row by CONTENT first - `arr.find(r => r[field] === previous_value)`. Only if the content is non-unique, fall back to `instance_ordinal` mapped THROUGH the current filter/sort state; if still ambiguous, use `dom_path`/`marker_chain` or ask.
+- **Edit-what** - pick the target by op kind: `replace_text` on interpolated content edits the DATA ROW (the registry/data file, `arr[i][field]`) - that one item, everywhere it renders; `set_style`/structural edits the COMPONENT (the card's className/markup) - all instances; a one-off static literal edits in place.
+- **Low confidence** (no unique `previous_value` match, unclear target): do NOT guess - round-trip a clarifying question to the canvas (Dim B), e.g. "Change the data for 'Code Reviewer' (1 item) or the card style (all 37)?" (confirm-by-default).
+
+The marker LOCATES; you decide the real file (a data edit writes the data file, not the marker's render site). Anchor the write on `previous_value` as always - `source_line` is a hint.
+
 6. **Brand-lint bridge (discoverable intent).** After applying source edits, close the loop back to the brand: discover and run a brand-lint pass over the changed files (flag hardcoded style values and migrate them to brand tokens), then push any net-new brand values back to the runtime design system, where they land in edit-staging for review. Describe these intents to the tool search; do not hardcode the tool names (they live outside the `canvas-*` family and are entitlement-gated, so route through discovery and skip gracefully if they aren't in this user's toolset). This is what turns *editing* a running app into *adopting* it under the brand.
 
 Page mode is owner-only and desktop-only by construction (the capture is a canvas capability of the Electron app). When `less_canvas_init` or the markers aren't available, the agent-composed app-preview path is always the safe fallback.
