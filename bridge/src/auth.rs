@@ -1,21 +1,16 @@
 //! Auth provider abstraction.
 //!
-//! Both anchored and standalone modes implement `AuthProvider`. The proxy loop
-//! calls `bearer_or_refresh()` for each forwarded frame, gets back a current
-//! Bearer string, attaches it as `Authorization: Bearer <token>`, and forwards
-//! to the remote MCP endpoint.
+//! The proxy loop calls `bearer_or_refresh()` for each forwarded frame, gets
+//! back a current Bearer string, attaches it as `Authorization: Bearer <token>`,
+//! and forwards to the remote MCP endpoint.
 //!
-//! Refresh policy is owned by each provider:
-//!
-//! - Anchored: bridge re-reads the keychain entry on every call (Electron is
-//!   the rotation authority; bridge is a read-only consumer). When `exp` is
-//!   within 60s, bridge IPCs back to Electron to request a fresh token rather
-//!   than refreshing itself.
-//!
-//! - Standalone: bridge owns the access+refresh pair in `~/.designless/auth.json`.
-//!   When access expires within 60s, the bridge POSTs to `/less/oauth/token`
-//!   with `grant_type=refresh_token`, rotates the pair atomically, and returns
-//!   the new access token.
+//! The desktop app is the single trust anchor and the token-rotation authority;
+//! the bridge is a read-only consumer. `AnchoredAuth` fetches the current JWT
+//! via a fresh IPC `get_token` on every call (the desktop app reads its
+//! keychain just-in-time and refreshes on demand), so no token is cached or
+//! refreshed bridge-side. `DeniedAuth` is the no-session fallback: it returns a
+//! recovery-hint error on every call when the desktop app is unreachable or has
+//! denied access.
 
 use crate::error::BridgeResult;
 

@@ -31,9 +31,6 @@ thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
-# Cross-platform user directory lookup (~/.designless, $TMPDIR, etc.)
-dirs = "5"
-
 # POSIX getuid() — builds the per-user IPC socket dir /tmp/designless-<uid> so
 # the path is identical across launch contexts (independent of $TMPDIR).
 libc = "0.2"
@@ -44,35 +41,10 @@ libc = "0.2"
 # through it means the unsigned-during-dev bridge never triggers a keychain
 # permission prompt. The `keyring` crate is therefore not a dependency.
 
-# JWT decoding — bridge inspects `exp` claim to decide refresh timing (no verification needed; server is the trust boundary)
-jsonwebtoken = "9"
-
-# URL parsing for outbound MCP endpoint construction
-url = "2"
-
 # async-trait shim — required for `dyn AuthProvider` with async methods on stable Rust.
 # (Native async fn in traits is stable but doesn't yet support dyn-compatible trait objects
 # for our use case without this crate.)
 async-trait = "0.1"
-
-# ── Standalone-mode OAuth (Phase 3) ──
-
-# tiny_http — sync HTTP server for the loopback OAuth callback. Single-request
-# lifetime; spawned on a blocking thread via tokio::task::spawn_blocking.
-tiny_http = "0.12"
-
-# SHA-256 for PKCE S256 code_challenge derivation
-sha2 = "0.10"
-
-# Base64 URL-safe encoding for PKCE verifier + challenge
-base64 = "0.22"
-
-# CSPRNG for PKCE verifier + state parameter
-rand = "0.8"
-
-# Date/time for token expiry tracking (`expires_at` ISO8601, refresh leeway).
-# default-features = false drops `oldtime` (avoids the older time crate).
-chrono = { version = "0.4", default-features = false, features = ["std", "serde", "clock"] }
 
 [profile.release]
 opt-level = "z"      # Optimize for size (security-sensitive single-purpose binary)

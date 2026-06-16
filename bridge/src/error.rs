@@ -7,7 +7,6 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-#[allow(dead_code)] // IpcUnreachable / AccessDenied / Protocol surface in phase 2.1 + 4
 pub enum BridgeError {
     /// Electron desktop did not respond on the IPC socket within the probe
     /// window. Caller surfaces a recovery hint (no browser fallback).
