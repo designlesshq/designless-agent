@@ -95,10 +95,22 @@ You receive these signals from the orchestrator:
      - Or, if you must replace the manifest wholesale (e.g. switching templates), confirm with the user first: "I see you've made edits in the canvas. Should I replace them with my version, or apply my changes on top?"
 
 8. **Compose vs update.** Pick the right tool:
-   - `less_canvas_compose` - fresh sessions, template switches, full-manifest writes. Pass `brand_slug`, `payload` (the resolved manifest), and `template_id` (the registry id from step 2b). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
+   - `less_canvas_compose` - fresh sessions, template switches, full-manifest writes. Run the session-reuse handshake first (see "Session reuse" below) so a repeat invocation in the same repo reuses its session: pass the resolved `session_id` when reusing, and **always** pass `repo_remote`/`repo_head`. Pass `brand_slug`, `payload` (the resolved manifest), and `template_id` (the registry id from step 2b). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
    - `less_canvas_update` - incremental edits within an active session: operation-level changes that preserve the user's edits, not whole-manifest overwrites.
 
 9. Return structured output, including the deep link so the orchestrator can launch the desktop app.
+
+## Session reuse — one canvas session per repo (dedup)
+
+Repeated `/designless` invocations in the same repo must converge on ONE canvas session, not spawn a duplicate each time. Run this reuse-first handshake **before composing** (step 8) for BOTH Type-1 artefacts and Type-2 page mode:
+
+1. **Read the repo stamp.** If `.designless/session.json` exists in the cwd, read its `session_id` + `bind_token`. Compute the cwd's git remote (`git remote get-url origin`) as `repo_remote` and `git rev-parse HEAD` as `repo_head`. A non-git cwd has no remote — rely on the stamp alone.
+2. **Resolve.** Call `less_canvas_resolve` with `{ repo_remote, repo_head, session_id, bind_token }` (omit what you don't have). It returns `{ mode, reused, session_id, bind_token }`:
+   - `mode: stamp_match` / `repo_match` (`reused: true`) → **reuse that `session_id`**: pass it to `less_canvas_compose` as `session_id` so the write lands in the existing session instead of creating a new one. On `repo_match` (the stamp was missing or stale), **re-stamp** `.designless/session.json` with the returned `session_id` + `bind_token` + repo identity.
+   - `mode: create` (`reused: false`) → no live session for this repo: compose fresh (no `session_id`), then **stamp** `.designless/session.json` with the `session_id` + the `bind_token` the compose response returns (`_meta.verified.bind_token`) + `{ repo_remote, repo_head }`.
+3. **Always pass `repo_remote`/`repo_head` to `less_canvas_compose`** (both surfaces) so a freshly created session carries the checkout identity a later `repo_match` needs.
+
+Stamp shape: `{ session_id, bind_token, repo_remote, repo_head, stamped_at }`. Add `.designless/` to `.gitignore`. `bind_token` is a per-session secret that authorizes reuse — never commit it or log it elsewhere. Skip the handshake only when there is neither a repo nor a prior stamp (a one-off artefact with no project context) — then just compose.
 
 ## Type-2 page mode (edit the user's own running app)
 
@@ -123,7 +135,7 @@ The flow is **detect → init → verify → compose → drive the ops loop**, a
    }
    ```
 
-   `port` is the dev-server port; `routes[]` come from the framework's own route manifest, and `route[i]` renders as slide `i+1`. `_source.slots` is empty at compose time; the Electron canvas captures each localhost route into a self-contained snapshot and the renderer lands it in the matching slot. Apply the same truth gate as Type-1 (read the `verified` block; refuse to launch on a mismatch). Then write `.designless/session.json` in the project (add `.designless/` to `.gitignore`) carrying the `session_id` as a local provenance pointer and recoverability vault. Discovery of waiting edits does NOT depend on this file: the fail-open hooks read the server inbox (`less_canvas_inbox`, keyed on your identity), so a human's edits are found in any working directory, even one rooted in a different repo than the canvas renders. Delete the marker when the user is done.
+   `port` is the dev-server port; `routes[]` come from the framework's own route manifest, and `route[i]` renders as slide `i+1`. `_source.slots` is empty at compose time; the Electron canvas captures each localhost route into a self-contained snapshot and the renderer lands it in the matching slot. Apply the same truth gate as Type-1 (read the `verified` block; refuse to launch on a mismatch). Then write `.designless/session.json` in the project (add `.designless/` to `.gitignore`) carrying `{ session_id, bind_token, repo_remote, repo_head, stamped_at }` (the repo stamp from "Session reuse" — this is what dedups future invocations) as a local provenance pointer and recoverability vault. Discovery of waiting edits does NOT depend on this file: the fail-open hooks read the server inbox (`less_canvas_inbox`, keyed on your identity), so a human's edits are found in any working directory, even one rooted in a different repo than the canvas renders. Delete the marker when the user is done.
 
 5. **Right-checkout guard, then drive the ops loop.** A Type-2 edit applies to source files, so your cwd MUST be the repo the canvas renders from. Each op's `source_file` is a repo-relative path: before claiming, confirm it resolves under your current working directory (or one of your allowed roots). If it does not, the canvas is rendering a different repo than this session is rooted in. Do NOT claim or apply, and never start a lease you cannot honor: leave the op `pending` and route the user, naming the repo, e.g. "These edits target the `<repo>` repo (`<source_file>`), but this session is rooted in `<cwd>`. Run `/designless` from `<repo>` and I will apply them." When the cwd IS the right checkout: pull edits with `less_canvas_ops` (claim); for each op, confirm scope via the canvas chip (edit one item's *data* vs the *component* style), then reconcile against the anchor with a three-way check before writing:
 
