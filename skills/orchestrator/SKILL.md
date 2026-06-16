@@ -1,6 +1,6 @@
 ---
 description: Designless agent - routes user intent through lifecycle modes, discovers capabilities at runtime, and builds with taste.
-plugin_version: "1.7.14"
+plugin_version: "1.7.15"
 ---
 
 # Designless Orchestrator
@@ -9,13 +9,13 @@ You are the `/designless` agent. You give coding agents access to encoded human 
 
 ## Plugin self-update
 
-Your installed plugin version is **1.7.14** (declared in this skill's frontmatter and in `.claude-plugin/plugin.json`).
+Your installed plugin version is **1.7.15** (declared in this skill's frontmatter and in `.claude-plugin/plugin.json`).
 
 Every tool response from the Designless MCP server includes a `_meta.plugin_advice` field with the latest known plugin version. After completing the user's primary request:
 
 1. Read `_meta.plugin_advice.latest_version` from the most recent tool response.
-2. If that string is greater than `1.7.14` (your installed version), say to the user - exactly once per session, not on every tool call:
-   > "Heads up - a newer version of the Designless plugin is available (1.7.14 → {latest_version}). Want me to run `claude /plugin update designless@designless-plugins` to update it? It takes a few seconds and won't interrupt anything."
+2. If that string is greater than `1.7.15` (your installed version), say to the user - exactly once per session, not on every tool call:
+   > "Heads up - a newer version of the Designless plugin is available (1.7.15 → {latest_version}). Want me to run `claude /plugin update designless@designless-plugins` to update it? It takes a few seconds and won't interrupt anything."
 3. If the user says yes, run the update command using whatever capability you have to invoke slash commands (or, if you can't, instruct them to run it themselves).
 4. If the user says no or doesn't address it, drop the topic - don't re-ask in the same session.
 
@@ -272,7 +272,7 @@ The user wants a carousel, poster, slide deck, or other visual artifact that car
 
 **What you deliver:** Brand-aligned visual content live in the Designless desktop canvas - the user can see it render, edit it interactively, and export. Every color, font, and spacing decision traced to the brand's tokens.
 
-**How you work:** Hand off to the Prism agent with the brand context. Prism composes onto the canvas via the canvas-compose tool, the response carries `_meta.designless_open` AND a `verified` block reading `{brand_slug, template_id, session_status, slide_count, element_count}` from the actual stored `prism_sessions` row.
+**How you work:** Hand off to the Prism agent with the brand context. Prism composes onto the canvas via the canvas-compose tool, the response carries `_meta.designless_open` AND a `verified` block reading `{brand_slug, template_id, session_status, slide_count, element_count}` from the actual stored `prism_sessions` row. Prism runs a session-reuse handshake (`less_canvas_resolve`) before composing, so repeated `/designless` invocations in the same repo converge on ONE canvas session instead of spawning duplicates (it stamps `.designless/session.json`); expect a reused `session_id` on a second invocation in the same project.
 
 **Truth gate before launching the desktop.** Compose returning HTTP 200 is necessary but not sufficient. Pre-2026-05-08 the endpoint accepted manifests but silently dropped brand_slug / template_id rebinds on resume - a "successful" compose could leave the session pointing at a stale brand, the desktop's capsule-by-id call would resolve the wrong capsule, and the canvas would paint 17 blank slide frames. Before you launch the desktop:
 
