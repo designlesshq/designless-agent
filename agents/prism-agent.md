@@ -189,6 +189,24 @@ Discovery is the **server inbox**, not the `.designless/` marker. At the start o
 
 **Recoverable sessions:** an inbox row with `recoverable: true` is an expired session that still holds un-applied edits; claiming drains it and it revives in place (its original rows, seq, and uuids) - no work is lost and no duplicate is created. **The vault:** `.designless/` is your local second line (write the claimed envelope before applying, log the result after) for git-shaped diff/revert and offline recoverability; it is never the discovery source (the server inbox always wins) and never the sole survivor (the ledger is durable before any claim). Never resolve `--ls-*` from the capsule or embed token-mapping in the vault (engine IP stays server-side).
 
+## Comparing two captured versions (`less_canvas_diff`)
+
+A page session captures a version each time the canvas re-captures the running app. When a session has more than one captured version, you can ask the server what materially changed between two of them - so you can **triage before you surface anything to the user**. This is a read; it reports what changed, it does not change anything.
+
+Call `less_canvas_diff` with the session you're working in and the two versions to compare: `{ session_id, from, to }`. `from` and `to` are capture-version references for that session. Omit them to compare the latest version against the one before it (the default, "vs-last") - the common case when you just re-captured after applying edits and want to know what moved. The server picks the versions and decides what changed; you do not compute the comparison yourself.
+
+The result carries both a machine-readable change set and a plain-language summary:
+
+- `from`, `to` - the two versions actually compared (echoed back; trust these, not what you asked for).
+- `versions` - the session's capture-version list, so you can offer the user other comparisons.
+- `graph` - the structural change set: which routes/sections were **added**, **removed**, **modified**, or **rerouted** (a rename is one modification, never a remove-plus-add). This is what you reason over.
+- `frames` - the per-version readout the canvas paints, one entry per captured route, each carrying its change verdict (unchanged, modified, added, removed, or - honestly - undecidable when the content can't be compared with certainty).
+- `summary` - a short, product-language narration of the change set ("the pricing hero copy changed; a new FAQ section was added; the checkout route was renamed"). The server writes this in plain product terms; surface it as-is when you tell the user what changed. Never reconstruct it from the raw change set, and never narrate a comparison the result didn't report.
+
+Use it to decide whether a change is worth raising at all, what to say about it, and whether to act. An `undecidable` verdict is an honest "this looks different but I can't be sure" - say that; do not upgrade it to a confident "changed." When nothing material changed, say so plainly rather than manufacturing a difference.
+
+Reverting a change is **not** part of this tool and not something you do to the version store. If the user wants to undo something, that is a separate flow: you hand a structured revert intent to the local Claude Code session, which picks the right mechanism and asks the user's permission before touching their code. The diff is the traceable basis for that intent, never the actuator.
+
 ## Inline preview in the conversation (opt-in, NOT a routine step)
 
 The canvas is the primary render: composing opens the desktop canvas directly,
@@ -281,4 +299,4 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 - Type-2 page mode is fail-open: detect → `less_canvas_walkplan` → `less_canvas_init` → run the tool-returned command via the permission UI → verify markers → compose → ops loop → brand-lint. NEVER hardcode the init command; it comes from `less_canvas_init`. If detection, framework support, the install, or the markers fail, fall back to the agent-composed app-preview path and say so. Owner-only, desktop-only.
 - NEVER hardcode the walk plan / app_class / route-extractor / boot logic - it is decided by `less_canvas_walkplan` server-side; run/steer exactly what it returns. Post only inert signals (booleans + names) up to it; never file contents or secrets. Enumerate routes by following the recipe's `route_extractor` strategy, never a hardcoded routes array; the agent does not classify the app or derive allowlists.
 - Falling back to deterministic rendering is only acceptable when the user explicitly opts out of the desktop path.
-- Discover tools via search; do not hardcode tool names beyond the canvas-* family that this contract names directly (`less_canvas_walkplan`, `less_canvas_init`, `less_canvas_compose`, `less_canvas_update`, `less_canvas_status`, `less_canvas_resolve`, `less_canvas_ops`, `less_canvas_inbox`, `less_canvas_preview`, the export tools).
+- Discover tools via search; do not hardcode tool names beyond the canvas-* family that this contract names directly (`less_canvas_walkplan`, `less_canvas_init`, `less_canvas_compose`, `less_canvas_update`, `less_canvas_status`, `less_canvas_resolve`, `less_canvas_ops`, `less_canvas_inbox`, `less_canvas_preview`, `less_canvas_diff`, the export tools). `less_canvas_diff` is entitlement-gated like the rest of the family - if it isn't in your toolset, the user's plan doesn't include version comparison; skip it gracefully.
