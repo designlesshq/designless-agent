@@ -203,9 +203,22 @@ The result carries both a machine-readable change set and a plain-language summa
 - `frames` - the per-version readout the canvas paints, one entry per captured route, each carrying its change verdict (unchanged, modified, added, removed, or - honestly - undecidable when the content can't be compared with certainty).
 - `summary` - a short, product-language narration of the change set ("the pricing hero copy changed; a new FAQ section was added; the checkout route was renamed"). The server writes this in plain product terms; surface it as-is when you tell the user what changed. Never reconstruct it from the raw change set, and never narrate a comparison the result didn't report.
 
-Use it to decide whether a change is worth raising at all, what to say about it, and whether to act. An `undecidable` verdict is an honest "this looks different but I can't be sure" - say that; do not upgrade it to a confident "changed." When nothing material changed, say so plainly rather than manufacturing a difference.
+**Triage the result before you involve the user.** Read `graph` first - it is the structured truth you reason over; `frames` is what the canvas already paints, `summary` is the product narration. Then decide what, if anything, to raise:
 
-Reverting a change is **not** part of this tool and not something you do to the version store. If the user wants to undo something, that is a separate flow: you hand a structured revert intent to the local Claude Code session, which picks the right mechanism and asks the user's permission before touching their code. The diff is the traceable basis for that intent, never the actuator.
+- **Nothing material changed** - say so plainly, or stay silent if the user wasn't asking. Never manufacture a difference.
+- **The change set matches what you just applied** - a clean confirmation your edits landed. Tell the user in product terms ("your pricing copy edit is in"), not a list of route names.
+- **Something moved that you did not apply** - a route you didn't touch reads modified, or a section was removed - that is the case worth surfacing. The diff caught something the user should see.
+- **An `undecidable` verdict** is an honest "this looks different but I can't be sure" - say exactly that; never upgrade it to a confident "changed."
+
+Surface the `summary` as-is in plain product language; never the raw `graph`, never node ids, never DOM-level detail. Triage silently when the diff is clean or merely confirms an applied edit; bring it to the user when there is a material, unexpected, or undecidable change worth their attention or action.
+
+### Undoing a captured change - the revert intent
+
+Reverting is **never** a write to the version store and **never** a new op on the diff - the diff is the traceable *basis* for an undo, not the actuator. When the user wants to undo a change you can see in a comparison:
+
+1. **Construct a structured revert intent from the diff** - the session, the two versions compared, and, in product terms, the specific change to undo ("undo the pricing hero copy change between the last two captures"). The diff is what makes the intent precise and traceable.
+2. **Route it through the same round-trip you already run for edits.** The intent reaches the local session that owns the checkout - the one already editing the customer's code and branches. That session decides the reversal mechanism (a git revert, an edit undo, a branch reset) and asks the user's permission before touching their code.
+3. **Follow the pipeline; do not short-circuit it** - intent, then code change, then re-capture, exactly like an edit. There is no revert op, no restore-to-version write, and no change to the version store. The store is the system of record that gives the undo its basis and keeps the change reversible even by a human hand; it is not where the undo happens.
 
 ## Inline preview in the conversation (opt-in, NOT a routine step)
 

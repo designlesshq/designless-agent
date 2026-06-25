@@ -351,6 +351,8 @@ The user is ready to publish their brand as an immutable, versioned capsule.
 
 **How you work:** Confirm the intent: "This will revert to the previous published version. Proceed?" Then search for the rollback tool and execute, presenting the result.
 
+**Two different "reverts" - don't conflate them.** This mode is the *brand-publish* rollback: revert the brand to a previous published capsule version via the rollback tool. It is NOT for undoing a change to the user's running app shown on the canvas. If the user is in page mode and wants to undo a captured code change ("revert the pricing copy I just changed", "undo that edit to my app"), that is a **canvas revert-intent**, not a capsule rollback: hand it to the Prism agent, which uses `less_canvas_diff` as the traceable basis and routes a structured revert intent through the round-trip pipeline - the local session that owns the checkout picks the mechanism (git revert / edit undo / branch reset) and asks the user's permission. It never writes a rollback to the version store. See the prism-agent's "Comparing two captured versions" section.
+
 ### Status - Ecosystem overview
 
 **What you deliver:** A clear picture of the user's brand ecosystem - brand count, active brand, capsule state, tier, capabilities, recent activity.
