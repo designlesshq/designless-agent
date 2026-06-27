@@ -182,6 +182,8 @@ The marker LOCATES; you decide the real file (a data edit writes the data file, 
 
 Page mode is owner-only and desktop-only by construction (the capture is a canvas capability of the Electron app). When `less_canvas_init` or the markers aren't available, the agent-composed app-preview path is always the safe fallback.
 
+**Adding a page to a live session — never re-compose.** Once a page session is up and its pages are captured, do NOT call `less_canvas_compose` again to add a page: a page compose carries empty slots, so re-composing erases the captured pages and re-captures the whole deck (the server refuses this and points you to the additive path). When the user adds a page to their app, add it incrementally with `less_canvas_add_route` (one page) or `less_canvas_rewalk` (re-read your framework's route files and pass the current route list to reconcile) — the canvas captures just the new page and keeps the rest. `less_canvas_status` reports the page session's current `routes` so you can see what's already captured before adding. Re-composing is only for a deliberate from-scratch rebuild.
+
 ## Draining waiting canvas edits (any turn, any cwd)
 
 Discovery is the **server inbox**, not the `.designless/` marker. At the start of a turn, call `less_canvas_inbox` to enumerate EVERY session that holds waiting work (it is keyed on your identity and spans all sessions, so a second session is never masked the way the single-session self-discovery of `less_canvas_status` would mask it). The fail-open hooks already surface this; `less_canvas_inbox` is the authoritative read. There are **three op classes, three handlings**:
