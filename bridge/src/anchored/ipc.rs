@@ -33,6 +33,21 @@ enum Stream {
     Pipe(tokio::net::windows::named_pipe::NamedPipeClient),
 }
 
+/// Classify a connect() IO error. A missing socket file (`NotFound`) or a
+/// refused connection (`ConnectionRefused`, a stale socket left by a crashed
+/// app) means the Designless desktop app is not running: surface the actionable
+/// `AppNotOpen` rather than a raw `io error: No such file or directory`. Any
+/// other IO error (permissions, etc.) stays a generic `Io`.
+#[cfg_attr(not(any(unix, windows)), allow(dead_code))]
+fn classify_connect_error(e: std::io::Error) -> BridgeError {
+    match e.kind() {
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused => {
+            BridgeError::AppNotOpen
+        }
+        _ => BridgeError::Io(e),
+    }
+}
+
 async fn connect_inner(t: Duration) -> BridgeResult<Stream> {
     let endpoint = ipc_endpoint();
     let fut = async {
@@ -55,7 +70,7 @@ async fn connect_inner(t: Duration) -> BridgeResult<Stream> {
                     tokio::net::UnixStream::connect(&path)
                         .await
                         .map(Stream::Unix)
-                        .map_err(BridgeError::Io)
+                        .map_err(classify_connect_error)
                 } else {
                     Err(BridgeError::IpcUnreachable)
                 }
@@ -66,7 +81,7 @@ async fn connect_inner(t: Duration) -> BridgeResult<Stream> {
                 ClientOptions::new()
                     .open(&path)
                     .map(Stream::Pipe)
-                    .map_err(BridgeError::Io)
+                    .map_err(classify_connect_error)
             }
             #[allow(unreachable_patterns)]
             _ => Err(BridgeError::IpcUnreachable),
@@ -201,4 +216,36 @@ pub enum IpcResponse {
     NoSession,
     #[serde(rename = "error")]
     Error { reason: Option<String> },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn missing_socket_maps_to_app_not_open() {
+        // A closed app leaves no socket file: connect() returns NotFound.
+        assert!(matches!(
+            classify_connect_error(Error::from(ErrorKind::NotFound)),
+            BridgeError::AppNotOpen
+        ));
+    }
+
+    #[test]
+    fn refused_socket_maps_to_app_not_open() {
+        // A crashed app can leave a stale socket that refuses connections.
+        assert!(matches!(
+            classify_connect_error(Error::from(ErrorKind::ConnectionRefused)),
+            BridgeError::AppNotOpen
+        ));
+    }
+
+    #[test]
+    fn other_io_errors_stay_generic() {
+        assert!(matches!(
+            classify_connect_error(Error::from(ErrorKind::PermissionDenied)),
+            BridgeError::Io(_)
+        ));
+    }
 }

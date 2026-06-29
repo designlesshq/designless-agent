@@ -167,6 +167,10 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
             -32001,
             "Open the Designless desktop app and sign in, then reconnect this MCP server from the /mcp panel.",
         ),
+        BridgeError::AppNotOpen => (
+            -32006,
+            "The Designless desktop app is not open. Canvas tools run through the live app, so open Designless (and sign in), then retry.",
+        ),
         BridgeError::AccessDenied(_) => (
             -32002,
             "Open the Designless app and approve the access request.",

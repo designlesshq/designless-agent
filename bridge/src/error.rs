@@ -13,6 +13,15 @@ pub enum BridgeError {
     #[error("electron ipc not reachable")]
     IpcUnreachable,
 
+    /// The desktop app's IPC socket is absent or refusing connections, i.e. the
+    /// app is not running. Distinct from IpcUnreachable (a present-but-slow app,
+    /// e.g. a probe timeout): here we know the app is closed, so the caller
+    /// surfaces an actionable "open the Designless app" hint instead of a raw
+    /// "io error: No such file or directory". Every bridged tool needs a JWT
+    /// fetched from the app over this socket, so this blocks all of them.
+    #[error("Designless desktop app is not open")]
+    AppNotOpen,
+
     /// Anchored mode: Electron declined the access-request handshake (user
     /// clicked Deny in the native consent dialog, or no signed-in user).
     #[error("electron denied access: {0}")]
