@@ -293,6 +293,8 @@ If a Prism session is already in flight, Prism reads its status first via the ca
 
 *Path A, template-direct (the common case).* Search for the template registry (`less_list_templates`) and pick a `template_id`, then read its slots with `detail: full`. Write a value for every slot each slide declares, and compose it with `less_canvas_compose`. Use this when the document is one-off, the brief is specific to this user, or no shared version is likely to exist yet.
 
+Whichever path you compose through, pass `less_canvas_compose` a `title` — a short, content-derived name for the doc (the piece's subject or headline, e.g. "The cost of context switching"), NOT the template name. For a page (Type-2) session the title is the repo name. The `title` is a display identifier only: it labels the session on the canvas and is never rendered into the artifact's content; `brand_slug` stays the tag. See "Session title" in the Prism agent doc.
+
 *Path B, compose-and-cache.* Use this for common document shapes that many users request, where a ready-made version is worth reusing across runs.
 
 1. Search for the template registry (`less_list_templates`) and pick a `template_id`.
