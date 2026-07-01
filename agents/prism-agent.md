@@ -160,6 +160,78 @@ The flow is **detect → plan the walk → init → verify → compose → drive
 
    **Hand off when compose returns — don't wait on the capture.** Capturing the routes is the canvas's job. Once `less_canvas_compose` returns its `verified` block and the open link, return the structure below so the orchestrator opens the canvas, and end your turn. Don't poll `less_canvas_status` waiting for the frames — the canvas captures the routes progressively, shows each as it lands, and surfaces any it can't capture with a per-frame Re-capture; reopening or reusing the session retries the unfinished ones. Tell the user in product terms and let them watch, e.g. "Opening the canvas — it's capturing your <N> routes; pages appear as they finish, and any that can't be captured will say why with a Re-capture button." The only status read after compose is the defensive read on a later follow-up request (step 6).
 
+### Boot authoring — self-contained dynamic apps (`serve.mode === 'boot'`)
+
+Most page-mode apps serve their pages from a build dir (`static-serve`) or an already-running dev server (`external`). A **self-contained dynamic app** — one with no pre-built output and no dev server already up, but that can start its own — is the third arm: `less_canvas_walkplan` returns `serve.mode === 'boot'`. This is the ONLY arm where the manifest carries a runnable command, so it has its own authoring contract and its own consent gate.
+
+Boot never invents a command. The walkplan returns the serve *class* (`boot`) and the egress/env allowlists, not a command line — the command is the **repo's own**. Author `_page.serve.boot` from two sources:
+
+- **`command` + `args`** come from the repo's OWN `scripts.dev` in `package.json` (read it locally — the same local read as framework detection; nothing leaves the machine). Split that script into the executable and its argument vector; do not synthesize a command the repo doesn't already define, and do not "improve" it.
+- **`cwd`** is the project root (where that `package.json` lives).
+- **`allowedDomains` / `deniedDomains` / `envAllowlist`** come from the walkplan's classification — the egress allowlist and the env **key-names** (never values) it returned. Copy them through verbatim; the agent does not widen egress or add env keys.
+- **`expectPort`** (optional) is the port the dev script is expected to bind, when you can read it from the script or config; omit it and the desktop discovers the bound port itself.
+
+Shape (inside the page manifest's `_page`):
+
+```json
+"_page": {
+  "serve": {
+    "mode": "boot",
+    "boot": {
+      "command": "npm",
+      "args": ["run", "dev"],
+      "cwd": ".",
+      "allowedDomains": ["localhost", "127.0.0.1"],
+      "deniedDomains": [],
+      "envAllowlist": { "NODE_ENV": null, "PORT": null },
+      "expectPort": 3000
+    }
+  }
+}
+```
+
+Leave `_page.port` UNSET for a boot app (the desktop starts the command, reads the bound port, and stamps it — the same way it stamps the loopback port for `static-serve`). `envAllowlist` carries key-**names** only; the value slots stay `null` in the manifest — the desktop resolves values from the user's environment at boot, and they are never written into the manifest or persisted.
+
+**Per-boot consent (F7).** Booting runs the user's own dev command on their machine, so it is gated on **explicit, per-boot consent**: the desktop shows the user the VERBATIM `command`/`args`/`cwd` it is about to run and boots only after they approve it. The agent's job is to author the honest command — the repo's own, unmodified — so the consent dialog shows the user exactly what will run; it is not the agent's job to approve it or to run it directly. If the user declines, fall open to the app-preview path and say so; the boot arm is fail-open like every other Type-2 step.
+
+**Fence.** The boot command is the **repo's own under consent** — never a command the server invents (the walkplan returns a serve class + allowlists, never a runnable line) and never one the agent synthesizes. Egress and env stay exactly as the walkplan classified them; the agent does not widen them. Credential/env **values** are never authored into the manifest and never persisted (key-names only).
+
+### Authed-walk authoring — routes that need a logged-in view (P3)
+
+Some routes only paint correctly behind auth — a dashboard, an account page, anything gated by a session. Captured as an anonymous visitor, they yield a login wall, not the page the user wanted. **Authed-walk** lets you author, per route, how the capture should present itself so the honest logged-in (or role-specific) frame is what lands.
+
+Use `less_auth_detect` first — it returns an **inert** auth classification for the app (the auth method, and the markers that distinguish a logged-in view from a logged-out one) that informs WHICH directives to author. Like the walkplan, it consumes inert signals only and returns a recipe, not a decision you invent; the confidence/scoring behind the classification stays server-side (IP fence) — you consume the classification, not the reasoning.
+
+Per authed route, author on `_page.routes[i]` (and mirror the durable intent onto the matching `_walk.nodes[i]`):
+
+- **`role_marker_contract`** — the honesty check for the frame: `{ logged_in_markers, logged_out_markers, role_markers, expected_role }`. These are the DOM/content markers (from `less_auth_detect`) that prove the capture reached the intended state. The capture VERIFY step **honest-fails** a frame whose markers say it's the wrong auth state — a login wall captured for a route you declared `expected_role: "user"` — rather than silently landing a logged-out page; surface that as a per-frame Re-capture reason, don't paper over it.
+- **`user_type`** — which identity this route captures as. `walk_id` is minted **once per walk**; distinct `user_type`s get **isolated captures** (an `admin` frame and an `anon` frame of the same route never share state). Author `authed_walk: { walk_id, user_type }` on the node.
+- **`inject_headers`** (optional) — `{ name: value }` headers the capture sends (e.g. an auth header) when the app's method is header-based.
+- **`steps`** (optional) — an ordered list of **declarative DRIVE steps** (a login form fill-and-submit, a navigation) the capture replays to reach the authed state when the method is interactive rather than header-based. Keep them declarative — a step describes WHAT to do at WHICH marker, not imperative browser code.
+
+Shape (on a route node):
+
+```json
+"_page": {
+  "routes": [
+    {
+      "path": "/dashboard",
+      "inject_headers": { "Authorization": "Bearer <supplied-at-capture>" },
+      "steps": [{ "kind": "drive", "action": "…declarative…" }],
+      "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "user" },
+      "role_marker_contract": {
+        "logged_in_markers": ["[data-account-menu]"],
+        "logged_out_markers": ["form[action='/login']"],
+        "role_markers": { "admin": ["[data-admin-nav]"] },
+        "expected_role": "user"
+      }
+    }
+  ]
+}
+```
+
+**Fence — credentials are never persisted.** Any credential a capture needs (a token in `inject_headers`, a password in a login `step`) is a **capture-time secret**: supplied at capture, used to reach the authed frame, and never written into the manifest, the `_walk` catalogue, the vault, or any log. This is the scrub-seam + never-durable rule — the same discipline the sanitizer applies to captured page bytes applies to the walk directives that produced them. Author the SHAPE (which header, which marker, which role) in the manifest; the VALUES stay ephemeral. And as with the walkplan, the classification's confidence/scoring stays server-side — the agent authors from the returned markers, not from any score.
+
 6. **Right-checkout guard, then drive the ops loop.** A Type-2 edit applies to source files, so your cwd MUST be the repo the canvas renders from. Each op's `source_file` is a repo-relative path: before claiming, confirm it resolves under your current working directory (or one of your allowed roots). If it does not, the canvas is rendering a different repo than this session is rooted in. Do NOT claim or apply, and never start a lease you cannot honor: leave the op `pending` and route the user, naming the repo, e.g. "These edits target the `<repo>` repo (`<source_file>`), but this session is rooted in `<cwd>`. Run `/designless` from `<repo>` and I will apply them." When the cwd IS the right checkout: pull edits with `less_canvas_ops` (claim); for each op, confirm scope via the canvas chip (edit one item's *data* vs the *component* style), then reconcile against the anchor with a three-way check before writing:
 
 - **desired value already present** at the anchor (the post-edit text is there) -> the op is already applied -> `ack applied` without editing (a safe redelivery, e.g. a lost ack).
