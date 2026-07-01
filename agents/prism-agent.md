@@ -95,10 +95,19 @@ You receive these signals from the orchestrator:
      - Or, if you must replace the manifest wholesale (e.g. switching templates), confirm with the user first: "I see you've made edits in the canvas. Should I replace them with my version, or apply my changes on top?"
 
 8. **Compose vs update.** Pick the right tool:
-   - `less_canvas_compose` - fresh sessions, template switches, full-manifest writes. Run the session-reuse handshake first (see "Session reuse" below) so a repeat invocation in the same repo reuses its session: pass the resolved `session_id` when reusing, and **always** pass `repo_remote`/`repo_head`. Pass `brand_slug`, `payload` (the resolved manifest), and `template_id` (the registry id from step 2b). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
+   - `less_canvas_compose` - fresh sessions, template switches, full-manifest writes. Run the session-reuse handshake first (see "Session reuse" below) so a repeat invocation in the same repo reuses its session: pass the resolved `session_id` when reusing, and **always** pass `repo_remote`/`repo_head`. Pass `brand_slug`, `payload` (the resolved manifest), `template_id` (the registry id from step 2b), and a `title` (see "Session title" below - a short content-derived name for this doc). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
    - `less_canvas_update` - incremental edits within an active session: operation-level changes that preserve the user's edits, not whole-manifest overwrites.
 
 9. Return structured output, including the deep link so the orchestrator can launch the desktop app.
+
+## Session title — a human-readable name for the doc
+
+Every `less_canvas_compose` carries a `title`: the human-readable name the canvas shows for this session (in the session tile and the desktop's list of open docs). Set it so the user recognizes their work at a glance, instead of a generic "Untitled" or the raw template name.
+
+- **Artefact (Type-1: carousel, tweet card, poster, slide, …)** — a short title derived from the **content**, i.e. the piece's subject or headline, NOT the template name. A tweet card quoting an essay gets the essay's topic ("The cost of context switching"), not "Twitter Card Spine". A thought-leadership carousel gets its thesis in a few words, not "LinkedIn Document". Keep it to a handful of words.
+- **Page (Type-2: repo capture)** — the **repo name** (e.g. `"designless-website"`), so the session reads as that project.
+
+**Fence — `title` is a display identifier only.** It labels the doc; it is NEVER rendered into the artefact or page content, and it never becomes a slot value or copy. `brand_slug` stays the **tag** (the capsule name the session composes against); `title` does not replace it and does not affect brand resolution. The two are orthogonal: `brand_slug` says which brand, `title` says which doc.
 
 ## Session reuse — one canvas session per repo (dedup)
 
@@ -127,7 +136,7 @@ The flow is **detect → plan the walk → init → verify → compose → drive
 
 4. **Verify the markers wired in** (three-way diagnostic): the dependency installed, the config was edited (the `wire` import/wrapper the tool named is present), and a dev build doesn't error. The annotator fails loud and never crashes the dev server - if it didn't wire (a version gate or loud no-op), surface the diagnostic and fall back. Do not compose a page session against unmarked source.
 
-5. **Compose the page session.** Call `less_canvas_compose` with a **page manifest** as the `payload`. You author this manifest the same way you author a Type-1 template manifest; the server persists it as-is (there are no separate `port`/`routes` params, they live inside the manifest) and the renderer fills `_source.slots` per captured route.
+5. **Compose the page session.** Call `less_canvas_compose` with a **page manifest** as the `payload`, and a `title` set to the **repo name** (e.g. `"designless-website"`) so the session reads as that project on the canvas (see "Session title" below). You author this manifest the same way you author a Type-1 template manifest; the server persists it as-is (there are no separate `port`/`routes` params, they live inside the manifest) and the renderer fills `_source.slots` per captured route.
 
    Author **both** a `_walk` catalogue **and** project it to `_page.routes`. The `_walk` catalogue is the durable route node list - the routes you enumerated in step 2 by following the recipe's `route_extractor` strategy, written as nodes. `_page.routes` is the **capture-loop projection of `_walk.nodes`** (path-only), so the existing sequential capture loop runs unchanged. The shape:
 
