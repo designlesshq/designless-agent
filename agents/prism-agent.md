@@ -226,7 +226,11 @@ Shape (on a route node):
     {
       "path": "/dashboard",
       "inject_headers": { "Authorization": "Bearer <supplied-at-capture>" },
-      "steps": [{ "kind": "drive", "action": "…declarative…" }],
+      "steps": [
+        { "kind": "drive", "action": "fill input[name='email'] with owner@example.com" },
+        { "kind": "drive", "action": "fill input[name='password'] with <supplied-at-capture:password>" },
+        { "kind": "drive", "action": "submit form[action='/login']" }
+      ],
       "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "user" },
       "role_marker_contract": {
         "logged_in_markers": ["[data-account-menu]"],
@@ -238,6 +242,12 @@ Shape (on a route node):
   ]
 }
 ```
+
+**Capture-time placeholders.** The substring `<supplied-at-capture>` or `<supplied-at-capture:label>` inside a directive string value declares a **secret slot** — a value that arrives at capture, never in the manifest. Embedded use is valid (`"Bearer <supplied-at-capture>"` above declares a slot inside a larger header value). Labels are short (`[A-Za-z0-9_.-]`, up to 64 chars) and name the slot when the value is asked for; omit the label and the slot takes the header name or fill target. Placeholders are valid ONLY in `inject_headers` values and fill-step values — nowhere else in the manifest.
+
+**How supply works.** When the capture runs, the Designless app asks the owner for each declared slot's value. The values are used once for that capture, kept in memory on their Mac, and never saved, synced, or sent anywhere. If the owner cancels, any route still carrying an unresolved slot reports an honest capture failure (`auth_secret_required`) instead of capturing a logged-out page.
+
+**Never author a literal.** Never put a real token or password in the manifest — author the placeholder and let capture supply the value. The server warns when a directive value looks like a live secret; treat that warning as a directive authored wrong, not as noise.
 
 **Fence — credentials are never persisted.** Any credential a capture needs (a token in `inject_headers`, a password in a login `step`) is a **capture-time secret**: supplied at capture, used to reach the authed frame, and never written into the manifest, the `_walk` catalogue, the vault, or any log. This is the scrub-seam + never-durable rule — the same discipline the sanitizer applies to captured page bytes applies to the walk directives that produced them. Author the SHAPE (which header, which marker, which role) in the manifest; the VALUES stay ephemeral. And as with the walkplan, the classification's confidence/scoring stays server-side — the agent authors from the returned markers, not from any score.
 
