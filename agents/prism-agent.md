@@ -216,7 +216,7 @@ Per authed route, author on `_page.routes[i]` (and mirror the durable intent ont
 - **`role_marker_contract`** — the honesty check for the frame: `{ logged_in_markers, logged_out_markers, role_markers, expected_role }`. These are the DOM/content markers (from `less_auth_detect`) that prove the capture reached the intended state. The capture VERIFY step **honest-fails** a frame whose markers say it's the wrong auth state — a login wall captured for a route you declared `expected_role: "user"` — rather than silently landing a logged-out page; surface that as a per-frame Re-capture reason, don't paper over it.
 - **`user_type`** — which identity this route captures as. `walk_id` is minted **once per walk**; distinct `user_type`s get **isolated captures** (an `admin` frame and an `anon` frame of the same route never share state). Author `authed_walk: { walk_id, user_type }` on the node.
 - **`inject_headers`** (optional) — `{ name: value }` headers the capture sends (e.g. an auth header) when the app's method is header-based.
-- **`steps`** (optional) — an ordered list of **declarative DRIVE steps** (a login form fill-and-submit, a navigation) the capture replays to reach the authed state when the method is interactive rather than header-based. Keep them declarative — a step describes WHAT to do at WHICH marker, not imperative browser code.
+- **`steps`** (optional) — an ordered list of **declarative DRIVE steps** (a login form fill-and-submit, a navigation) the capture replays to reach the authed state when the method is interactive rather than header-based. Each step is `{ "op": <name>, ...fields }` from a closed vocabulary — `goto{url}`, `click{sel}`, `fill{sel,value}`, `hover{sel}`, `focus{sel}`, `scroll{sel|to}`, `wait_for{sel|networkidle|ms}`, `assert_visible{sel}`, `set_viewport{width,height}`, `dismissOverlay{sel?}`, `openNamed{sel,state?}`. A step with any other op is refused at capture, so never invent free-form actions; describe WHAT to do at WHICH marker with these ops, not imperative browser code.
 
 Shape (on a route node):
 
@@ -227,9 +227,10 @@ Shape (on a route node):
       "path": "/dashboard",
       "inject_headers": { "Authorization": "Bearer <supplied-at-capture>" },
       "steps": [
-        { "kind": "drive", "action": "fill input[name='email'] with owner@example.com" },
-        { "kind": "drive", "action": "fill input[name='password'] with <supplied-at-capture:password>" },
-        { "kind": "drive", "action": "submit form[action='/login']" }
+        { "op": "fill", "sel": "input[name='email']", "value": "owner@example.com" },
+        { "op": "fill", "sel": "input[name='password']", "value": "<supplied-at-capture:password>" },
+        { "op": "click", "sel": "button[type='submit']" },
+        { "op": "wait_for", "sel": "[data-account-menu]" }
       ],
       "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "user" },
       "role_marker_contract": {
