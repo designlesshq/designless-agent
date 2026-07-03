@@ -216,7 +216,7 @@ Per authed route, author on `_page.routes[i]` (and mirror the durable intent ont
 - **`role_marker_contract`** — the honesty check for the frame: `{ logged_in_markers, logged_out_markers, role_markers, expected_role }`. These are the DOM/content markers (from `less_auth_detect`) that prove the capture reached the intended state. The capture VERIFY step **honest-fails** a frame whose markers say it's the wrong auth state — a login wall captured for a route you declared `expected_role: "user"` — rather than silently landing a logged-out page; surface that as a per-frame Re-capture reason, don't paper over it.
 - **`user_type`** — which identity this route captures as. `walk_id` is minted **once per walk**; distinct `user_type`s get **isolated captures** (an `admin` frame and an `anon` frame of the same route never share state). Author `authed_walk: { walk_id, user_type }` on the node.
 - **`inject_headers`** (optional) — `{ name: value }` headers the capture sends (e.g. an auth header) when the app's method is header-based.
-- **`steps`** (optional) — an ordered list of **declarative DRIVE steps** (a login form fill-and-submit, a navigation) the capture replays to reach the authed state when the method is interactive rather than header-based. Keep them declarative — a step describes WHAT to do at WHICH marker, not imperative browser code.
+- **`steps`** (optional) — an ordered list of **declarative DRIVE steps** (a login form fill-and-submit, a navigation) the capture replays to reach the authed state when the method is interactive rather than header-based. Each step is `{ "op": <name>, ...fields }` from a closed vocabulary — `goto{url}`, `click{sel}`, `fill{sel,value}`, `hover{sel}`, `focus{sel}`, `scroll{sel|to}`, `wait_for{sel|networkidle|ms}`, `assert_visible{sel}`, `set_viewport{width,height}`, `dismissOverlay{sel?}`, `openNamed{sel,state?}`. A step with any other op is refused at capture, so never invent free-form actions; describe WHAT to do at WHICH marker with these ops, not imperative browser code.
 
 Shape (on a route node):
 
@@ -226,7 +226,12 @@ Shape (on a route node):
     {
       "path": "/dashboard",
       "inject_headers": { "Authorization": "Bearer <supplied-at-capture>" },
-      "steps": [{ "kind": "drive", "action": "…declarative…" }],
+      "steps": [
+        { "op": "fill", "sel": "input[name='email']", "value": "owner@example.com" },
+        { "op": "fill", "sel": "input[name='password']", "value": "<supplied-at-capture:password>" },
+        { "op": "click", "sel": "button[type='submit']" },
+        { "op": "wait_for", "sel": "[data-account-menu]" }
+      ],
       "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "user" },
       "role_marker_contract": {
         "logged_in_markers": ["[data-account-menu]"],
@@ -238,6 +243,12 @@ Shape (on a route node):
   ]
 }
 ```
+
+**Capture-time placeholders.** The substring `<supplied-at-capture>` or `<supplied-at-capture:label>` inside a directive string value declares a **secret slot** — a value that arrives at capture, never in the manifest. Embedded use is valid (`"Bearer <supplied-at-capture>"` above declares a slot inside a larger header value). Labels are short (`[A-Za-z0-9_.-]`, up to 64 chars) and name the slot when the value is asked for; omit the label and the slot takes the header name or fill target. Placeholders are valid ONLY in `inject_headers` values and fill-step values — nowhere else in the manifest.
+
+**How supply works.** When the capture runs, the Designless app asks the owner for each declared slot's value. The values are used once for that capture, kept in memory on their Mac, and never saved, synced, or sent anywhere. If the owner cancels, any route still carrying an unresolved slot reports an honest capture failure (`auth_secret_required`) instead of capturing a logged-out page.
+
+**Never author a literal.** Never put a real token or password in the manifest — author the placeholder and let capture supply the value. The server warns when a directive value looks like a live secret; treat that warning as a directive authored wrong, not as noise.
 
 **Fence — credentials are never persisted.** Any credential a capture needs (a token in `inject_headers`, a password in a login `step`) is a **capture-time secret**: supplied at capture, used to reach the authed frame, and never written into the manifest, the `_walk` catalogue, the vault, or any log. This is the scrub-seam + never-durable rule — the same discipline the sanitizer applies to captured page bytes applies to the walk directives that produced them. Author the SHAPE (which header, which marker, which role) in the manifest; the VALUES stay ephemeral. And as with the walkplan, the classification's confidence/scoring stays server-side — the agent authors from the returned markers, not from any score.
 
