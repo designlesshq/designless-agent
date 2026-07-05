@@ -252,6 +252,83 @@ Shape (on a route node):
 
 **Fence — credentials are never persisted.** Any credential a capture needs (a token in `inject_headers`, a password in a login `step`) is a **capture-time secret**: supplied at capture, used to reach the authed frame, and never written into the manifest, the `_walk` catalogue, the vault, or any log. This is the scrub-seam + never-durable rule — the same discipline the sanitizer applies to captured page bytes applies to the walk directives that produced them. Author the SHAPE (which header, which marker, which role) in the manifest; the VALUES stay ephemeral. And as with the walkplan, the classification's confidence/scoring stays server-side — the agent authors from the returned markers, not from any score.
 
+**Record mode — demonstrate a walk instead of hand-authoring it.** Authoring `steps` by hand is one path; the other is to **demonstrate** them. In the Designless app's record mode, the owner clicks and fills directly on the **inert** snapshot of the route and their actions are recorded into the same closed DRIVE step vocabulary — no hand-authoring, nothing executes, no live drive. The recorded steps persist onto that route node's `steps` exactly as if you had authored them, and any credential fill is auto-placeholdered `<supplied-at-capture:label>` on the way in (the literal is never captured and never persists — the same fence as above). This is an alternative way to produce the `steps` this section and the states below consume, not a new protocol; the shape they land in is identical.
+
+### Runtime states — loading / empty / error / filter of the SAME route (P3)
+
+A route often has more than one honest face: a list that is **empty** before data arrives, a **loading** shimmer, an **error** panel, a **filtered** view after a facet is picked. These are not different routes — they are runtime *states* of the same page. Author them as `states` on a route node so the canvas can show each real one without ever inventing a face the app can't produce.
+
+Per route, author `states: [{ ui_state, steps }]` on `_page.routes[i]` (and mirror the durable intent onto the matching `_walk.nodes[i]`):
+
+- **`ui_state`** — a short slug naming the state (`[A-Za-z0-9_-]`, up to 64 chars): `empty`, `loading`, `error`, `filter-active`. **At most 4 states per route** (v1). Pick names that read as product states, not internal labels.
+- **`steps`** — the SAME closed DRIVE op vocabulary the authed-walk uses (`goto`/`click`/`fill`/`wait_for`/…) — a declarative sequence that **REACHES** the state from the freshly loaded route: click a filter to reach `filter-active`, clear a list to reach `empty`. A credential value in a state's fill step uses the same `<supplied-at-capture:label>` placeholder grammar (see "Capture-time placeholders" above) — never a literal.
+
+**Author only states the steps can honestly reach.** If there is no honest step sequence that produces `empty` (the list is always populated), **omit it** — never fabricate a state. A state whose steps can't reach it is left unauthored, not faked.
+
+States are captured as **snapshot variants on the SAME slot**, not as new routes or new slots — a state does not consume a route node or a slot, it rides the parent route's slot as an alternate revision. The route's default (primary) face is always the plain load; the states are additional reachable faces of it. This keeps the route/slot keyspace linear: N states add zero routes and zero slots.
+
+Shape (on a route node, alongside any authed-walk directives):
+
+```json
+"_page": {
+  "routes": [
+    {
+      "path": "/skills",
+      "states": [
+        {
+          "ui_state": "filter-active",
+          "steps": [
+            { "op": "click", "sel": "[data-facet='design']" },
+            { "op": "wait_for", "sel": "[data-results]" }
+          ]
+        },
+        {
+          "ui_state": "empty",
+          "steps": [
+            { "op": "fill", "sel": "input[type='search']", "value": "zzzznomatch" },
+            { "op": "wait_for", "sel": "[data-empty-state]" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+The canvas renders a **state toggle** on a frame that has captured states, plus an **"N states" dot** counting the real captured states (default is always the primary face; selecting a state swaps to that captured variant). Only states that actually captured appear — a state whose reach failed surfaces as an honest per-frame reason, never as a silent or invented face.
+
+### Masters — ×N instance sets of one dynamic route (P3)
+
+A dynamic route like `/skills/[slug]` renders one page per slug — dozens of concrete instances (`/skills/a`, `/skills/b`, …) off a **single** source template. Capturing every instance as its own route would flood the deck with near-identical frames. Instead, group them under a **master**: author ONE representative node for the template and list the instances against it, so the deck stays one-node-per-template while the canvas still shows the multiplicity.
+
+The dynamic route shows up as a `dynamic_patterns` entry in `less_canvas_status`'s `discovered_routes` (the literal pattern strings — `/skills/[slug]`, catch-alls — sitting alongside the concrete discovered paths the same walk found). **You consume that provided data — you do NOT decide which routes are dynamic.** Which routes are patterns is a structural fact the desktop's route walk reports from the customer's own repo; the agent never classifies or computes it (IP fence). Your job is purely to **group**: for each provided pattern, collect the concrete discovered routes that match it and author a master entry.
+
+Author `_walk.masters = [{ master_route, instance_routes[] }]`:
+
+- **`master_route`** — the provided pattern string, verbatim (`/skills/[slug]`).
+- **`instance_routes`** — the concrete discovered paths that match it (`["/skills/a", "/skills/b", …]`), grouped from the discovered set — not synthesized.
+
+Then author **ONE representative route node** for the master (the pattern's template) and **do NOT author a node or slot for any instance** — the instances consume **ZERO** slots. They are catalogued in `instance_routes`, not rendered as separate route nodes; the master's single node is what captures.
+
+Shape (in the page manifest's `_walk`, alongside `nodes`):
+
+```json
+"_walk": {
+  "walk_version": "walk/v1",
+  "masters": [
+    {
+      "master_route": "/skills/[slug]",
+      "instance_routes": ["/skills/design-critique", "/skills/ux-copy", "/skills/user-research"]
+    }
+  ],
+  "nodes": [
+    { "node_id": null, "slide_index": 1, "route": "/skills/[slug]", "coord": { "route": "/skills/[slug]", "user_type": null }, "reachable": true, "entry_action": { "kind": "goto" } }
+  ]
+}
+```
+
+The canvas surfaces masters **read-only**: the master node renders with a **×N badge** (N = the instance count) and, where instances diverge from the representative, the owner can **pin an instance** to materialize that specific one. Pinning is the canvas's affordance, not the agent's — you author the master + its instance list; the collapse-to-one and the ×N / pin-on-divergence rendering are the canvas's. Never author N instance nodes to "help" the render; that defeats the collapse and re-floods the keyspace.
+
 6. **Right-checkout guard, then drive the ops loop.** A Type-2 edit applies to source files, so your cwd MUST be the repo the canvas renders from. Each op's `source_file` is a repo-relative path: before claiming, confirm it resolves under your current working directory (or one of your allowed roots). If it does not, the canvas is rendering a different repo than this session is rooted in. Do NOT claim or apply, and never start a lease you cannot honor: leave the op `pending` and route the user, naming the repo, e.g. "These edits target the `<repo>` repo (`<source_file>`), but this session is rooted in `<cwd>`. Run `/designless` from `<repo>` and I will apply them." When the cwd IS the right checkout: pull edits with `less_canvas_ops` (claim); for each op, confirm scope via the canvas chip (edit one item's *data* vs the *component* style), then reconcile against the anchor with a three-way check before writing:
 
 - **desired value already present** at the anchor (the post-edit text is there) -> the op is already applied -> `ack applied` without editing (a safe redelivery, e.g. a lost ack).
