@@ -130,7 +130,7 @@ The flow is **detect → plan the walk → init → verify → compose → drive
 
 1. **Detect the framework** from repo files you already read - `package.json` dependencies and config files (`next.config.*`, `vite.config.*`). Detection is local; repo contents never leave the machine.
 
-2. **Plan the walk via `less_canvas_walkplan`.** Before you enumerate any routes, hand the server the *signals* you detected locally and let it decide how this app should be walked. POST **inert signals only** - the framework tokens you detected, dependency **names** (not versions, not contents), file-presence **booleans** (e.g. `sitemap.xml` present, a config file present), and an optional `app_class` *hint*. **Post booleans and names, never file contents or secrets; repo contents never leave the machine.** The tool returns an **inert recipe**: `{ app_class, route_extractor (a strategy + a where-to-look source), serve (a CLASS like static-serve/boot/external/none - never a runnable command), allowlists (egress + env key-NAMES), display_mode }`. **The walk plan is decided server-side; never hardcode or guess the app_class, the route-extractor, or the allowlists - use exactly what the tool returns.** Then **steer per the returned arm**: the agent does NOT classify the app and does NOT compute the route set itself - it *enumerates* routes by following the recipe's `route_extractor` strategy against the repo (e.g. for the `static-sitemap` arm whose strategy is `sitemap`, read the `sitemap.xml` it names) and fills the manifest from what it found. **Enumerate by a FIXED rule, never by judgment, so the same repo yields the same route set every session.** A `sitemap.xml` can omit real pages, so for the `static-sitemap` arm compute two sets: (A) the sitemap routes (every `<loc>`, origin stripped) and (B) all servable `*.html` in the build dir minus a test-file denylist (`*-test.html`, `e2e-*.html`), `index.html` → `/`. If A differs from A∪B, hand the user the choice with `AskUserQuestion` ("Render N pages from sitemap.xml" vs "Render M pages, all HTML found") and enumerate the pick; if they are equal, just use the set. Framework arms declare their routes, so there is no ambiguity and no question. Whatever set results is the authoritative count (step 5 stores it canonically, growing `_walk` in lockstep), so there is no per-session route-count drift. If the tool can't plan a walk (an unsupported or `repo-is-not-the-app` class), fall back to app-preview and say so. **Honor the returned `serve.mode`:** for `static-serve` (e.g. a `static-sitemap` app), ensure the static build output exists first - run the repo's own `scripts.build` if it isn't built - then put `_page.serve = { mode: 'static-serve', dir: "<the build-output dir>" }` in the manifest and leave `_page.port` UNSET; the desktop serves that dir on a loopback port and stamps the port itself. For `external`, set `_page.port` to the already-running dev server's port as before. For `boot`, the dev command + consent are the desktop's job (S2).
+2. **Plan the walk via `less_canvas_walkplan`.** Before you enumerate any routes, hand the server the *signals* you detected locally and let it decide how this app should be walked. POST **inert signals only** - the framework tokens you detected, dependency **names** (not versions, not contents), file-presence **booleans** (e.g. `sitemap.xml` present, a config file present), and an optional `app_class` *hint*. **Post booleans and names, never file contents or secrets; repo contents never leave the machine.** The tool returns an **inert recipe**: `{ app_class, route_extractor (a strategy + a where-to-look source), serve (a CLASS like static-serve/boot/external/none - never a runnable command), allowlists (egress + env key-NAMES), display_mode }`. **The walk plan is decided server-side; never hardcode or guess the app_class, the route-extractor, or the allowlists - use exactly what the tool returns.** Then **steer per the returned arm**: the agent does NOT classify the app and does NOT compute the route set itself - it *enumerates* routes by following the recipe's `route_extractor` strategy against the repo (e.g. for the `static-sitemap` arm whose strategy is `sitemap`, read the `sitemap.xml` it names) and fills the manifest from what it found. **Enumerate by a FIXED rule, never by judgment, so the same repo yields the same route set every session.** A `sitemap.xml` can omit real pages, so for the `static-sitemap` arm compute two sets: (A) the sitemap routes (every `<loc>`, origin stripped) and (B) all servable `*.html` in the build dir minus a test-file denylist (`*-test.html`, `e2e-*.html`), `index.html` → `/`. If A differs from A∪B, hand the user the choice with `AskUserQuestion` ("Render N pages from sitemap.xml" vs "Render M pages, all HTML found") and enumerate the pick; if they are equal, just use the set. Framework arms declare their routes, so there is no ambiguity and no question. Whatever set results is the authoritative count (step 5 stores it canonically, growing `_walk` in lockstep), so there is no per-session route-count drift. If the tool can't plan a walk (an unsupported or `repo-is-not-the-app` class), fall back to app-preview and say so. **Honor the returned `serve.mode`:** for `static-serve` (e.g. a `static-sitemap` app), ensure the static build output exists first - run the repo's own `scripts.build` if it isn't built - then put `_page.serve = { mode: 'static-serve', dir: "<the build-output dir>" }` in the manifest and leave `_page.port` UNSET; the desktop serves that dir on a loopback port and stamps the port itself. For `boot`, author `_page.serve` per the Boot authoring section below (the dev command + per-boot consent are the desktop's job — S2). An `external` classification (an already-running dev server) has NO desktop capture arm — the retired renderer-side leg is gone and a `_page.port`-only manifest fails honestly with `unsupported_serve_mode` — so treat `external` like `boot`: author the boot shape and let the desktop start its OWN sandboxed instance of the repo's dev command.
 
 3. **Init via `less_canvas_init(framework)`.** Pass the framework id/alias you detected. It returns the command to scaffold `@designless/annotate` into the project, the engine, and how the markers wire in. The command is decided server-side, so **never hardcode or guess it** - run exactly what the tool returns, through the host's permission UI so the user approves it. If the tool reports the framework isn't supported, offer the closest one it lists, or fall back to app-preview.
 
@@ -186,18 +186,24 @@ Shape (inside the page manifest's `_page`):
 "_page": {
   "serve": {
     "mode": "boot",
+    "dir": "<the project root — REQUIRED>",
     "boot": {
       "command": "npm",
       "args": ["run", "dev"],
-      "cwd": ".",
       "allowedDomains": ["localhost", "127.0.0.1"],
       "deniedDomains": [],
       "envAllowlist": { "NODE_ENV": null, "PORT": null },
-      "expectPort": 3000
+      "expectPort": 3000,
+      "node_bin_dir": "<dirname $(which node) from the repo shell>"
     }
   }
 }
 ```
+
+Two fields here are load-bearing and easy to miss:
+
+- **`_page.serve.dir` is REQUIRED for boot** (same as static-serve). It is the source dir the desktop WATCHES for hot-reload recapture, and the boot's working directory when `boot.cwd` is absent (omitting `boot.cwd` is preferred — the desktop binds `serve.dir` as the cwd, which also keys the per-repo consent correctly). **Omitting `serve.dir` fails the whole serve arm immediately (`unsupported_serve_mode`) — before the consent dialog ever shows** (proven live 2026-07-05).
+- **`node_bin_dir`** — the node toolchain dir, resolved in YOUR shell: `dirname $(which node)`. A GUI-launched desktop app does not inherit the shell PATH, so a version-manager toolchain (nvm, homebrew) is invisible to the boot without it. The desktop has a fallback probe over common install locations, but the authored dir is authoritative — author it whenever you can run the command.
 
 Leave `_page.port` UNSET for a boot app (the desktop starts the command, reads the bound port, and stamps it — the same way it stamps the loopback port for `static-serve`). `envAllowlist` carries key-**names** only; the value slots stay `null` in the manifest — the desktop resolves values from the user's environment at boot, and they are never written into the manifest or persisted.
 
@@ -308,7 +314,7 @@ Author `_walk.masters = [{ master_route, instance_routes[] }]`:
 - **`master_route`** — the provided pattern string, verbatim (`/skills/[slug]`).
 - **`instance_routes`** — the concrete discovered paths that match it (`["/skills/a", "/skills/b", …]`), grouped from the discovered set — not synthesized.
 
-Then author **ONE representative route node** for the master (the pattern's template) and **do NOT author a node or slot for any instance** — the instances consume **ZERO** slots. They are catalogued in `instance_routes`, not rendered as separate route nodes; the master's single node is what captures.
+Then author **ONE representative route node** for the master and **do NOT author a node or slot for any instance** — the instances consume **ZERO** slots. They are catalogued in `instance_routes`, not rendered as separate route nodes; the master's single node is what captures. **The representative node's `route` (and its `_page.routes[i].path`) must be a CONCRETE instance route — pick the FIRST entry of `instance_routes` — never the literal pattern string.** A capture navigates the node's route verbatim, and a real dev server 404s a literal `/skills/[slug]` path (proven live 2026-07-05); the canvas associates the master with its representative through `instance_routes`, so a concrete route keeps both the capture AND the ×N badge working.
 
 Shape (in the page manifest's `_walk`, alongside `nodes`):
 
@@ -322,7 +328,7 @@ Shape (in the page manifest's `_walk`, alongside `nodes`):
     }
   ],
   "nodes": [
-    { "node_id": null, "slide_index": 1, "route": "/skills/[slug]", "coord": { "route": "/skills/[slug]", "user_type": null }, "reachable": true, "entry_action": { "kind": "goto" } }
+    { "node_id": null, "slide_index": 1, "route": "/skills/design-critique", "coord": { "route": "/skills/design-critique", "user_type": null }, "reachable": true, "entry_action": { "kind": "goto" } }
   ]
 }
 ```
