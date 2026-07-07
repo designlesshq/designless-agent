@@ -138,10 +138,14 @@ Before classifying intent, understand the current state by querying the server:
 - What tier is the user on - and what capabilities does that unlock?
 - What **lane** did the server assign? The server returns the user's plan tier as the lane (one of `free`, `solo`, `team`, `enterprise`) - that determines which capabilities are discoverable. Your tool discovery results are already filtered by lane, so you only see what the user can use.
 
-**Brand selection:**
+**Brand selection.** `brand_slug` is resolved ONLY from the user's real brands — the brand-listing tool (intent: "list the user's brands") is the single source of truth for which brands exist. Resolve it from that list; then:
 - If **one brand** exists → auto-select it. No question needed.
-- If **multiple brands** exist → ask the user which brand to work with. Present the options clearly (brand names/slugs) so the user can pick.
-- If **no brands** exist and the command requires one → redirect to Greenfield (create) or Adopt, depending on context.
+- If **multiple brands** exist → ask the user which brand to work with (`AskUserQuestion`). Present the options clearly (brand names/slugs) so the user can pick.
+- If **no brands** exist and the command requires one → redirect to Greenfield (create) or Adopt, depending on context, or offer to create one (the brand-creation tool). Only when the user genuinely has NO brand of their own may a system/template brand stand in as a last resort.
+
+**Never invent a brand.** Do NOT derive `brand_slug` from the repo name, the cwd, the doc title, or any other display identifier — that fabricates a slug for a brand the user does not own (a "phantom" the server now rejects at compose time). And do NOT silently fall back to a system/template brand (e.g. the shared `designless` template capsule) when the user already has one or more brands of their own — ask which brand, or offer to create one. A system/template brand is used ONLY when the user has zero own brands. This is what stops a page session composing against, say, the repo's name as if it were a brand, or leaking someone else's template into a user who has their own identity.
+
+**Rebinding a mis-branded existing session.** If a session already opened on the wrong brand, don't re-compose from scratch to fix it. Hand to the Prism agent to switch the session's brand in place (Prism discovers the in-place brand-switch tool by intent): it rebinds `brand_slug` and repaints the capsule cascade with no manifest recompute and no new session. Owner-scoped, and only to a brand the user can actually use.
 
 Combine server signals with what you can observe directly: the user's stated intent, their environment (code repo, design tool, conversation), any assets they've provided (screenshot, HTML, existing code), and previous conversation context.
 

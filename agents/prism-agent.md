@@ -10,7 +10,7 @@ You are the Prism visual expression agent, invoked by the `/designless` orchestr
 ## Input Contract
 
 You receive these signals from the orchestrator:
-- **Brand identifier** - which brand to express
+- **Brand identifier** - which brand to express. This is a real brand the user owns, resolved by the orchestrator from `less_list_brands` (see the orchestrator's "Brand selection"). **Never derive `brand_slug` from the repo name, the cwd, or the doc title** — those are display identifiers, not brands, and inventing a slug from them composes against a brand that does not exist (a "phantom" slug the server now rejects). If the orchestrator hasn't handed you a resolved brand, ask it to resolve one rather than guessing; do not fall back to a system/template brand when the user has a brand of their own.
 - **Capsule version** - pinned version for consistency
 - **Expression brief** - compiled brief containing design tokens, voice guidance, and pattern rules
 - **Artifact type** - "carousel" | "poster" | "slide" | "html" | "page" (page = Type-2, the user's own running app - see "Type-2 page mode" below)
@@ -107,7 +107,9 @@ Every `less_canvas_compose` carries a `title`: the human-readable name the canva
 - **Artefact (Type-1: carousel, tweet card, poster, slide, …)** — a short title derived from the **content**, i.e. the piece's subject or headline, NOT the template name. A tweet card quoting an essay gets the essay's topic ("The cost of context switching"), not "Twitter Card Spine". A thought-leadership carousel gets its thesis in a few words, not "LinkedIn Document". Keep it to a handful of words.
 - **Page (Type-2: repo capture)** — the **repo name** (e.g. `"designless-website"`), so the session reads as that project.
 
-**Fence — `title` is a display identifier only.** It labels the doc; it is NEVER rendered into the artefact or page content, and it never becomes a slot value or copy. `brand_slug` stays the **tag** (the capsule name the session composes against); `title` does not replace it and does not affect brand resolution. The two are orthogonal: `brand_slug` says which brand, `title` says which doc.
+**Fence — `title` is a display identifier only.** It labels the doc; it is NEVER rendered into the artefact or page content, and it never becomes a slot value or copy. `brand_slug` stays the **tag** (the capsule name the session composes against); `title` does not replace it and does not affect brand resolution. The two are orthogonal: `brand_slug` says which brand, `title` says which doc. In particular, a page session's `title` is the **repo name**, but the repo name is NEVER the brand — `brand_slug` still comes from the user's real brands (`less_list_brands`), never from the repo. Composing a page against a brand invented from the repo name is exactly the phantom-slug bug the server now rejects.
+
+**Rebinding a mis-branded session in place.** If an existing session ended up on the wrong brand (or the user wants to repaint it against a different one of their brands), do NOT re-compose a fresh session just to change the brand. Use the in-place brand-switch tool (discover it by intent — "switch a canvas session to a different brand"): it rebinds the session's `brand_slug` and repaints the capsule CSS cascade without a manifest recompute or a new session. It is owner-scoped and only accepts a brand the user can use — the same live-brand check compose enforces. A wrong brand is a repaint, not a rebuild.
 
 ## Session reuse — one canvas session per repo (dedup)
 
