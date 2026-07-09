@@ -217,11 +217,11 @@ Leave `_page.port` UNSET for a boot app (the desktop starts the command, reads t
 
 Some routes only paint correctly behind auth — a dashboard, an account page, anything gated by a session. Captured as an anonymous visitor, they yield a login wall, not the page the user wanted. **Authed-walk** lets you author, per route, how the capture should present itself so the honest logged-in (or role-specific) frame is what lands.
 
-Use `less_auth_detect` first — it returns an **inert** auth classification for the app (the auth method, and the markers that distinguish a logged-in view from a logged-out one) that informs WHICH directives to author. Like the walkplan, it consumes inert signals only and returns a recipe, not a decision you invent; the confidence/scoring behind the classification stays server-side (IP fence) — you consume the classification, not the reasoning.
+Use `less_auth_detect` first — it returns an **inert** auth classification for the app (the auth method, and how an authed state is reached) that informs WHICH directives to author. It does not emit marker fields: the markers come from the app's own DOM conventions (see `role_marker_contract` below). Like the walkplan, it consumes inert signals only and returns a recipe, not a decision you invent; the confidence/scoring behind the classification stays server-side (IP fence) — you consume the classification, not the reasoning.
 
 Per authed route, author on `_page.routes[i]` (and mirror the durable intent onto the matching `_walk.nodes[i]`):
 
-- **`role_marker_contract`** — the honesty check for the frame: `{ logged_in_markers, logged_out_markers, role_markers, expected_role }`. Each of the three marker groups is an **array of `{ present, sel }` objects** (NOT bare selector strings): `present: true` asserts the selector IS in the DOM, `present: false` asserts it is ABSENT. `expected_role` is a plain string (provenance, never a predicate). These markers (from `less_auth_detect`) prove the capture reached the intended state. The capture VERIFY step **honest-fails** a frame whose markers say it's the wrong auth state — a login wall captured for a route you declared `expected_role: "user"` — rather than silently landing a logged-out page; surface that as a per-frame Re-capture reason, don't paper over it.
+- **`role_marker_contract`** — the honesty check for the frame: `{ logged_in_markers, logged_out_markers, role_markers, expected_role }`. Each of the three marker groups is an **array of `{ present, sel }` objects** (NOT bare selector strings): `present: true` asserts the selector IS in the DOM, `present: false` asserts it is ABSENT. `expected_role` is a plain string (provenance, never a predicate). The markers are read from the app's own DOM conventions (the selectors the repo itself defines and documents, e.g. in its markers README); `less_auth_detect` informs the auth approach only, never the marker fields. They prove the capture reached the intended state. The capture VERIFY step **honest-fails** a frame whose markers say it's the wrong auth state — a login wall captured for a route you declared `expected_role: "user"` — rather than silently landing a logged-out page; surface that as a per-frame Re-capture reason, don't paper over it.
 - **`user_type`** — which identity this route captures as. `walk_id` is minted **once per walk**; distinct `user_type`s get **isolated captures** (an `admin` frame and an `anon` frame of the same route never share state). Author `authed_walk: { walk_id, user_type }` on the node.
 - **`inject_headers`** (optional) — `{ name: value }` headers the capture sends (e.g. an auth header) when the app's method is header-based.
 - **`steps`** (optional) — an ordered list of **declarative DRIVE steps** (a login form fill-and-submit, a navigation) the capture replays to reach the authed state when the method is interactive rather than header-based. Each step is `{ "op": <name>, ...fields }` from a closed vocabulary — `goto{url}`, `click{sel}`, `fill{sel,value}`, `hover{sel}`, `focus{sel}`, `scroll{sel|to}`, `wait_for{sel|networkidle|ms}`, `assert_visible{sel}`, `set_viewport{width,height}`, `dismissOverlay{sel?}`, `openNamed{sel,state?}`. A step with any other op is refused at capture, so never invent free-form actions; describe WHAT to do at WHICH marker with these ops, not imperative browser code. **`goto{url}` needs an ABSOLUTE loopback URL** (the capture re-gates it to loopback), and you do NOT know the served port at compose time — so do not author a `goto` to a relative path. For redirect-based auth (the common case: a middleware bounces an unauthed request to `/login`), OMIT `goto` entirely — the capture already loads the protected route, the app redirects it to the login form, and your `fill`/`click` steps run right there. Only use `goto` for a same-origin navigation the app itself would honor as an absolute URL.
@@ -252,13 +252,58 @@ Shape (on a route node):
 }
 ```
 
+**One route, several roles.** Authoring the same route under two roles is legal and is the intended shape for a role comparison (`/dashboard` as `user` next to `/dashboard` as `admin`). To capture one route as N roles, author N distinct `_walk.nodes` entries with the SAME `route` and a DISTINCT `authed_walk.user_type` (with `coord.user_type` matching it), each with its own `slide_index` and its own positional `_page.routes` entry carrying that role's `steps` and `role_marker_contract`. The `_page.routes` projection is positional, in node order, so two entries with the same `path` are NOT a duplicate: each position is a distinct capture with its own directives and its own frame. One `walk_id` spans all the entries (minted once per walk); the distinct `user_type`s are what keep the captures isolated. Role names are supplied, never invented: use the names the user asked for or the repo's own conventions (its role markers, its seeded accounts); when neither names a role, ask rather than coin one. A minimal two-role sketch:
+
+```json
+"_walk": {
+  "nodes": [
+    { "node_id": null, "slide_index": 1, "route": "/dashboard", "coord": { "route": "/dashboard", "user_type": "user" }, "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "user" }, "reachable": true, "entry_action": { "kind": "goto" } },
+    { "node_id": null, "slide_index": 2, "route": "/dashboard", "coord": { "route": "/dashboard", "user_type": "admin" }, "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "admin" }, "reachable": true, "entry_action": { "kind": "goto" } }
+  ]
+},
+"_page": {
+  "routes": [
+    {
+      "path": "/dashboard",
+      "steps": [
+        { "op": "fill", "sel": "input[name='email']", "value": "user@example.com" },
+        { "op": "fill", "sel": "input[name='password']", "value": "<supplied-at-capture:user_password>" },
+        { "op": "click", "sel": "button[type='submit']" },
+        { "op": "wait_for", "sel": "[data-account-menu]" }
+      ],
+      "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "user" },
+      "role_marker_contract": {
+        "logged_in_markers": [{ "present": true, "sel": "[data-account-menu]" }],
+        "role_markers": [{ "present": true, "sel": "[data-role='user']" }],
+        "expected_role": "user"
+      }
+    },
+    {
+      "path": "/dashboard",
+      "steps": [
+        { "op": "fill", "sel": "input[name='email']", "value": "admin@example.com" },
+        { "op": "fill", "sel": "input[name='password']", "value": "<supplied-at-capture:admin_password>" },
+        { "op": "click", "sel": "button[type='submit']" },
+        { "op": "wait_for", "sel": "[data-account-menu]" }
+      ],
+      "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "admin" },
+      "role_marker_contract": {
+        "logged_in_markers": [{ "present": true, "sel": "[data-account-menu]" }],
+        "role_markers": [{ "present": true, "sel": "[data-role='admin']" }],
+        "expected_role": "admin"
+      }
+    }
+  ]
+}
+```
+
 **Capture-time placeholders.** The substring `<supplied-at-capture>` or `<supplied-at-capture:label>` inside a directive string value declares a **secret slot** — a value that arrives at capture, never in the manifest. Embedded use is valid (`"Bearer <supplied-at-capture>"` above declares a slot inside a larger header value). Labels are short (`[A-Za-z0-9_.-]`, up to 64 chars) and name the slot when the value is asked for; omit the label and the slot takes the header name or fill target. Placeholders are valid ONLY in `inject_headers` values and fill-step values — nowhere else in the manifest.
 
 **How supply works.** When the capture runs, the Designless app asks the owner for each declared slot's value. The values are used once for that capture, kept in memory on their Mac, and never saved, synced, or sent anywhere. If the owner cancels, any route still carrying an unresolved slot reports an honest capture failure (`auth_secret_required`) instead of capturing a logged-out page.
 
 **Never author a literal.** Never put a real token or password in the manifest — author the placeholder and let capture supply the value. The server warns when a directive value looks like a live secret; treat that warning as a directive authored wrong, not as noise.
 
-**Fence — credentials are never persisted.** Any credential a capture needs (a token in `inject_headers`, a password in a login `step`) is a **capture-time secret**: supplied at capture, used to reach the authed frame, and never written into the manifest, the `_walk` catalogue, the vault, or any log. This is the scrub-seam + never-durable rule — the same discipline the sanitizer applies to captured page bytes applies to the walk directives that produced them. Author the SHAPE (which header, which marker, which role) in the manifest; the VALUES stay ephemeral. And as with the walkplan, the classification's confidence/scoring stays server-side — the agent authors from the returned markers, not from any score.
+**Fence — credentials are never persisted.** Any credential a capture needs (a token in `inject_headers`, a password in a login `step`) is a **capture-time secret**: supplied at capture, used to reach the authed frame, and never written into the manifest, the `_walk` catalogue, the vault, or any log. This is the scrub-seam + never-durable rule — the same discipline the sanitizer applies to captured page bytes applies to the walk directives that produced them. Author the SHAPE (which header, which marker, which role) in the manifest; the VALUES stay ephemeral. And as with the walkplan, the classification's confidence/scoring stays server-side — the agent authors from the app's own markers, not from any score.
 
 **Record mode — demonstrate a walk instead of hand-authoring it.** Authoring `steps` by hand is one path; the other is to **demonstrate** them. In the Designless app's record mode, the owner clicks and fills directly on the **inert** snapshot of the route and their actions are recorded into the same closed DRIVE step vocabulary — no hand-authoring, nothing executes, no live drive. The recorded steps persist onto that route node's `steps` exactly as if you had authored them, and any credential fill is auto-placeholdered `<supplied-at-capture:label>` on the way in (the literal is never captured and never persists — the same fence as above). This is an alternative way to produce the `steps` this section and the states below consume, not a new protocol; the shape they land in is identical.
 
