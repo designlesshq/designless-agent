@@ -350,7 +350,19 @@ Shape (on a route node, alongside any authed-walk directives):
 
 The canvas renders a **state toggle** on a frame that has captured states, plus an **"N states" dot** counting the real captured states (default is always the primary face; selecting a state swaps to that captured variant). Only states that actually captured appear — a state whose reach failed surfaces as an honest per-frame reason, never as a silent or invented face.
 
-### Masters — ×N instance sets of one dynamic route (P3)
+### Responsive viewport capture — structural mobile/tablet variants of a route
+
+A page can render a **structurally-different** DOM at a narrower width: a mobile navigation that mounts a *different* component, a drawer or menu that a `useMediaQuery`-style hook toggles by adding/removing elements, a server- or UA-branched mobile layout. That is a genuine second face of the route — the element tree itself changes, not just its arrangement. To capture it, declare the widths to check as **`viewports`** on `_page.routes[i]` (mirror the durable intent onto the matching `_walk.nodes[i]`), exactly as you author `states`:
+
+- **`viewports`** — an array of raw pixel **widths** to structurally check this route at (e.g. `[768, 375]` for tablet + mobile). Positive integers, **at most 3** per route. Widths, never device names.
+
+```json
+"_page": { "routes": [ { "path": "/", "viewports": [768, 375] } ] }
+```
+
+The desktop renders the route at each declared width and keeps a **separate capture ONLY when the DOM structure genuinely differs** from the base capture; a width that merely **reflows** — the same elements rearranged by CSS media queries (the common case: columns restack, a hamburger that a `display` rule toggles) — is detected and **skipped**, no separate frame stored. So declaring a width is always safe: at worst it is a no-op, never a fabricated "mobile view." The renderer already reflows any width for free at view time (the width switcher), so a captured `@width` variant only ever appears for a route that truly swaps its structure.
+
+**Declare intelligently — this is your judgment, from the repo, not a default.** Add `viewports` ONLY to routes whose responsive behavior is a real structural swap you can see in the source: a conditional component render by breakpoint (`<MobileNav/>` vs `<DesktopNav/>`), a media-query **hook** driving what mounts, a distinct mobile route/layout. Do **not** blanket-declare `viewports` on every route, and do **not** declare them for a route that is responsive by **CSS alone** (media queries that only restack or hide/show via `display`) — that reflows at view time and needs no capture. When in doubt, leave it off; a genuinely-needed variant is far rarer than a plain reflow. Like states, `viewports` ride the parent route's slot keyspace — a captured width is a variant of the same route, consuming no extra route node.
 
 A dynamic route like `/skills/[slug]` renders one page per slug — dozens of concrete instances (`/skills/a`, `/skills/b`, …) off a **single** source template. Capturing every instance as its own route would flood the deck with near-identical frames. Instead, group them under a **master**: author ONE representative node for the template and list the instances against it, so the deck stays one-node-per-template while the canvas still shows the multiplicity.
 
