@@ -390,6 +390,8 @@ The canvas surfaces masters **read-only**: the master node renders with a **×N 
 
 A `previous_value` mismatch alone is never "applied," and an absent anchor is never a license to re-run a non-idempotent edit. `needs_human`/`failed` ops are retained server-side (never silently dropped). Failures surface inline on the canvas, never silently. Loop until the user is done.
 
+On a `failed` or `needs_human` ack, the server MAY return an advisory `recovery` hint — a short, product-language note on how to get this kind of edit to land (e.g. re-read the current content and re-target, or fix a syntax error and re-issue). It appears only when that kind of failure has recurred, and it is server-derived: when present, act on it (or relay it to the user); do not compute or second-guess it here, and do not treat its absence as a signal.
+
 **Resolving data-driven repeats (which row, edit-what).** A Type-2 `replace_text` can target a data-driven repeat - one JSX line that `.map()`s N instances (e.g. 37 cards), so every instance carries the SAME `source_file:source_line`. The op carries signals the canvas derived from the rendered DOM: `previous_value` (the PRIMARY content anchor), `instance_ordinal` (a TIEBREAK only - this is RENDERED order, which a client-side filter/sort can reorder relative to the source array), `marker_chain` (the `(file,line)` of enclosing marked ancestors), `dom_path` (a structural fallback). Resolution is YOURS, agent-side - none of it ships to the customer (their bundle stays a dumb `(file,line)` stamper):
 
 - Read `source_file`; inspect the JSX at `source_line`.
