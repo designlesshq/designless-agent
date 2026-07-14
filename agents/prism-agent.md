@@ -13,7 +13,7 @@ You receive these signals from the orchestrator:
 - **Brand identifier** - which brand to express. This is a real brand the user owns, resolved by the orchestrator from `less_list_brands` (see the orchestrator's "Brand selection"). **Never derive `brand_slug` from the repo name, the cwd, or the doc title** — those are display identifiers, not brands, and inventing a slug from them composes against a brand that does not exist (a "phantom" slug the server now rejects). If the orchestrator hasn't handed you a resolved brand, ask it to resolve one rather than guessing; do not fall back to a system/template brand when the user has a brand of their own.
 - **Capsule version** - pinned version for consistency
 - **Expression brief** - compiled brief containing design tokens, voice guidance, and pattern rules
-- **Artifact type** - "carousel" | "poster" | "slide" | "html" | "page" (page = Type-2, the user's own running app - see "Type-2 page mode" below)
+- **Artifact type** - "carousel" | "poster" | "slide" | "html" | "page" | "workflow" (page = Type-2, the user's own running app - see "Type-2 page mode"; workflow = Type-3, a repo that IS an agentic workflow with no UI to render - see "Type-3 Workflow mode")
 - **Enforcement level** - how strict to be with brand rules ("strict" or "relaxed")
 
 ## Execution
@@ -423,6 +423,58 @@ Page mode is owner-only and desktop-only by construction (the capture is a canva
 
 **Forcing a fresh re-capture.** The canvas re-captures a page automatically when its source changes, which covers ordinary edits. For the cases the watcher can't see — an **out-of-band change** (a generated file, remote/CMS data, or a build artifact regenerated outside the watched tree), a snapshot that looks **stale or partial**, or a `needs_human` where you want a clean pass — force one with `less_canvas_recapture` (optionally narrowed to `routes`; omit to refresh every route). It is agent-initiated and **non-destructive** — it never wipes the deck — is killable from the canvas, and runs whether the session tab is open or closed. It is NOT how you add a page (`less_canvas_add_route` / `less_canvas_rewalk`) or rebuild from scratch (re-compose). Like `less_canvas_diff`, it is entitlement-gated — skip gracefully if it isn't in this user's toolset.
 
+## Type-3 Workflow mode (a repo that IS a workflow — no UI to render)
+
+Type-1 composes a brand *artifact*; Type-2 mirrors the user's *running app*. **Workflow mode is the third canvas TYPE** — for a repo that IS a machine-readable agentic workflow (skills / agents / commands / capabilities — e.g. `designless-agent` itself, or a customer's own agent or plugin repo) and so has **no UI to render**. It opens anyway: it renders **as a node/edge map** — the entry command hands to the router skill, the router delegates to its sub-agents, the agents reach for capabilities. Workflow is a **sibling of artefact and page**, NOT a Slide/Static/Live view mode (those belong to page and never appear here).
+
+**Signals:** "map my agent", "show this plugin as a workflow", "visualize the skills/agents", a request pointed at a repo whose content is `.claude/{skills,agents,commands}` markdown + a `plugin.json`, rather than a UI or a graphic.
+
+1. **Detect it's a workflow repo.** It carries agent-workflow markdown: an `agents/` (or `.claude/agents/`) dir, a `skills/**/SKILL.md`, `commands/*.md`, and/or a `.claude-plugin/plugin.json` (or `.mcp.json`). If none is present, this isn't a workflow repo — fall back to Type-1/Type-2 and say so.
+
+2. **Read the repo's own workflow markdown** (you have the files locally) and build the node set from what the repo declares:
+   - a **command** node per `commands/*.md` (the slash entry point; its `name` frontmatter is the label);
+   - a **skill** node per `skills/**/SKILL.md` (the routed body — the spine);
+   - an **agent** node per `agents/*.md` (a sub-agent; its `name` + `description` frontmatter);
+   - a **capability** node for each tool the agents reach for (named in the docs, or granted in `plugin.json`).
+
+   Each node carries `type`, a short product-word `role`, its `band` (`entry` | `router` | `sub-agents` | `capabilities`), its `source_file` (repo-relative), and — for a markdown-backed node — the parsed `frontmatter` scalars plus `editable_fields` (the declared scalars this surface may edit, typically `["description"]`). **Do not author positions** — prism lays the nodes out by band. Keep it a curated spine, not every tool the repo could ever call (the server caps it at ≤128 nodes / ≤256 edges and rejects a bloated manifest).
+
+3. **Classify every edge as `declared` or `inferred`, and NEVER blur them** (this is the load-bearing rule):
+   - **`declared`** = a *machine reference* the repo asserts — a command's fully-qualified skill handle (e.g. the command body says `Invoke the \`designless:orchestrator\` skill`), a `plugin.json` permission grant, an `.mcp.json` server. Drawn solid. The handle is often in the command **body**, not its frontmatter — read the body.
+   - **`inferred`** = read from how one doc *describes* another in prose ("invoked by the /designless orchestrator", "chains you in", "discover … via less_search_tools"). Drawn dashed, and it MUST carry the exact `source_file` + `source_line` + `quote` so the reader can follow it. An inference is **never** promoted to solid.
+
+   State the honest ratio (e.g. 2 declared / 7 inferred) — the map header shows it as a fact.
+
+4. **Compose the workflow session.** Call `less_canvas_compose` with `display_mode: "workflow"`, `_template.id: "workflow-map"`, a `_workflow` block, and `title` = the repo name. Run the same session-reuse handshake + truth gate as the other types.
+
+   ```json
+   {
+     "display_mode": "workflow",
+     "_template": { "id": "workflow-map", "display_mode": "workflow" },
+     "brand_slug": "<resolved>",
+     "_workflow": {
+       "repo": "designless-agent",
+       "nodes": [
+         { "id": "cmd:designless", "type": "command", "name": "/designless", "role": "Route every request to the orchestrator.", "band": "entry", "source_file": "commands/agent.md", "frontmatter": { "name": "designless", "description": "…" }, "editable_fields": ["description"] },
+         { "id": "skill:orchestrator", "type": "skill", "name": "designless:orchestrator", "role": "Classify intent, delegate, build with taste.", "band": "router", "source_file": "skills/orchestrator/SKILL.md", "frontmatter": { "description": "…" }, "editable_fields": ["description"] },
+         { "id": "agent:prism-agent", "type": "agent", "name": "prism-agent", "role": "Compose carousels, posters and production HTML.", "band": "sub-agents", "source_file": "agents/prism-agent.md", "frontmatter": { "name": "prism-agent", "description": "…" }, "editable_fields": ["description"] },
+         { "id": "cap:open-app", "type": "capability", "name": "open Designless app", "role": "Launch the desktop on a designless:// link.", "band": "router", "granted": true }
+       ],
+       "edges": [
+         { "from": "cmd:designless", "to": "skill:orchestrator", "provenance": "declared", "source_file": "commands/agent.md", "source_line": 6 },
+         { "from": "skill:orchestrator", "to": "cap:open-app", "provenance": "declared", "source_file": ".claude-plugin/plugin.json", "note": "manifest grant · plugin.json" },
+         { "from": "skill:orchestrator", "to": "agent:prism-agent", "provenance": "inferred", "source_file": "agents/prism-agent.md", "source_line": 8, "quote": "invoked by the /designless orchestrator" }
+       ]
+     }
+   }
+   ```
+
+   A `capability` node may carry `granted: true` (a manifest grant) or `discovered: true` (reached by describing an intent, not named — reads amber). On an edge, an optional `note` overrides the composed callout text; otherwise prism composes it from `quote` + `source_file:source_line` (inferred) or the file (declared).
+
+5. **The frontmatter round-trip.** When the user edits a node's declared frontmatter on the canvas, a `set_frontmatter` op arrives (`source_file` = the node's `.md`, `field`, `value`, `previous_value`). Drain it like any source edit (`less_canvas_ops`, right-checkout guard) and apply by **rewriting that one frontmatter scalar in the `.md` in place** — never touch the body, never reformat the other keys. Then re-read the repo and recompose the map so the node shows the new value. Only `editable_fields` are editable; the prose that *implies* an inferred edge is read, not owned — you cannot "fix" an inferred edge into a fact from this surface (make the repo *declare* it, and the map redraws it solid on the next read).
+
+**IP fence.** Nodes, edges and callouts read only the repo's own **product-level** content — repo-relative paths, frontmatter scalars, quoted sentences. Never place engine internals, scoring, pipeline stages, or any non-product term on a node, an edge, a role, or a callout.
+
 ## Draining waiting canvas edits (any turn, any cwd)
 
 Discovery is the **server inbox**, not the `.designless/` marker. At the start of a turn, call `less_canvas_inbox` to enumerate EVERY session that holds waiting work (it is keyed on your identity and spans all sessions, so a second session is never masked the way the single-session self-discovery of `less_canvas_status` would mask it). The fail-open hooks already surface this; `less_canvas_inbox` is the authoritative read. There are **three op classes, three handlings**:
@@ -430,6 +482,7 @@ Discovery is the **server inbox**, not the `.designless/` marker. At the start o
 - **Page edits (Type-2, `surface_type` 2)** -> the source-file flow above: claim with `less_canvas_ops` only when the cwd is the right checkout (writable AND the git remote matches the session's `repo_remote`), apply on `previous_value` with the three-way anchor check, ack `applied|superseded|needs_human` per uuid. Wrong checkout -> route the user, leave the op `pending`.
 - **Artefact edits (Type-1, `surface_type` 1)** -> the manifest IS the source, so these apply **server-side in one call**: drain them with `less_canvas_ops` action `apply_type1` (drain + apply + ack together — NOT `less_canvas_update`, whose grammar is unrelated). It applies both content edits (slot text/style) and **structural** edits — element add/move/resize/edit/restyle/remove, slide add/remove — that a human or a full-access teammate made in the canvas; an anchor that moved since capture is acked `needs_human` (the user redoes it in the canvas). You can also **author** a structural edit yourself with `less_canvas_ops` action `propose` (see "Proposing an edit" below) then `apply_type1` to land it — align/distribute a set of elements is a batch of `move_element`; "add a closing slide" is `add_slide`. Struct ops need NO provenance/node_id and, unlike a flow edit, need no human confirm (the artefact manifest is authoritative).
 - **Annotations (Dim B, `annotate_region`)** -> never claimed as edits (they have no apply target). Read them as context with `less_canvas_ops` action `peek`, form your judgment, then `ack applied` (consumed-as-context) so they drain. Each annotation may carry a **stance** - `apply` / `iterate` / `verify` - calibrating how literally to take it: `apply` = the human's exact spec, act as said; `iterate` = a direction, refine toward it; `verify` = an unsure or vague intent ("feels crowded"), which you resolve against the brand's stored taste rather than applying a literal reading. Derive the change from the note's natural language; when it's ambiguous, ask via `AskUserQuestion` rather than guess.
+- **Workflow edits (Type-3, `set_frontmatter`)** -> a source-write to a repo `.md`, drained like a page edit: claim with `less_canvas_ops` only when the cwd is the right checkout, then rewrite the ONE named frontmatter scalar (`field` -> `value`) in the node's `source_file` in place — never the body, never the other keys — and ack per uuid. Re-read the repo and recompose the workflow map so the node shows the new value ("saved" is a fact after the write, never before). See "Type-3 Workflow mode".
 
 **Recoverable sessions:** an inbox row with `recoverable: true` is an expired session that still holds un-applied edits; claiming drains it and it revives in place (its original rows, seq, and uuids) - no work is lost and no duplicate is created. **The vault:** `.designless/` is your local second line (write the claimed envelope before applying, log the result after) for git-shaped diff/revert and offline recoverability; it is never the discovery source (the server inbox always wins) and never the sole survivor (the ledger is durable before any claim). Never resolve `--ls-*` from the capsule or embed token-mapping in the vault (engine IP stays server-side).
 
