@@ -257,10 +257,13 @@ The user wants a carousel, poster, slide deck, or other visual artifact that car
 
 1. Read Prism's `verified` block. If Prism returned no `verified` (older plugin or sub-agent regression), call `less_canvas_status` and use that.
 2. Assert `verified.brand_slug` equals the brand you asked Prism to use.
-3. Assert `verified.element_count > 0` (a successful manifest always has elements; zero means the manifest didn't land).
-4. If either assertion fails, do NOT launch the desktop. Tell the user: `"Compose returned 200 but the server stored brand_slug=<verified.brand_slug>, expected <requested>. Refusing to open an off-brand canvas."` This is the inverse of the open-the-app handshake - it stops the user from spending attention on a canvas that won't paint correctly.
+3. Assert the manifest landed by the RIGHT signal for the canvas shape — `verified.manifest_shape` names it:
+   - **artefact / deck** (any slot/slide shape): assert `verified.element_count > 0`. Slots are composed inline, so a healthy artefact always carries elements; zero means it didn't land.
+   - **page** (`manifest_shape: "page"`): assert `verified.route_count > 0`, NOT `element_count`. A page captures its bodies LATER on the desktop, so `verified.element_count` (the captured-body count) is honestly 0 at compose/handoff time — `element_count === 0` with `route_count > 0` is the normal, healthy pre-capture state. Gating a page on `element_count > 0` false-negatives every good page compose and refuses a launch that would paint fine.
+   - **workflow** (`manifest_shape: "workflow"`): assert `verified.element_count > 0`, read as the node count — a workflow's content is its `_workflow.nodes`, which the server reports as `element_count`. Zero nodes means the graph didn't land; do NOT read "no slot elements" as empty (a workflow manifest has none by design).
+4. If the brand assertion OR the shape's content assertion fails, do NOT launch the desktop. On a brand mismatch tell the user: `"Compose returned 200 but the server stored brand_slug=<verified.brand_slug>, expected <requested>. Refusing to open an off-brand canvas."` On a content-signal failure name the shape's signal: `"Compose returned 200 but the server stored 0 <routes|nodes|elements> for a <shape> manifest. Refusing to open an empty canvas."` This is the inverse of the open-the-app handshake - it stops the user from spending attention on a canvas that won't paint correctly.
 
-If both assertions pass, proceed with the desktop launch (see "Open Designless desktop after canvas operations" above). Don't fall back to a static render unless the user explicitly opts out of the desktop path.
+If the brand and content assertions pass, proceed with the desktop launch (see "Open Designless desktop after canvas operations" above). Don't fall back to a static render unless the user explicitly opts out of the desktop path.
 
 If a Prism session is already in flight, Prism reads its status first via the canvas-status tool - if the user has been driving the canvas via the in-canvas AI input within the cooldown window, Prism applies changes incrementally rather than stomping the user's edits.
 
