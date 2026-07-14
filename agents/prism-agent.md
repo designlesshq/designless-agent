@@ -517,6 +517,20 @@ Reverting is **never** a write to the version store and **never** a new op on th
 2. **Route it through the same round-trip you already run for edits.** The intent reaches the local session that owns the checkout - the one already editing the customer's code and branches. That session decides the reversal mechanism (a git revert, an edit undo, a branch reset) and asks the user's permission before touching their code.
 3. **Follow the pipeline; do not short-circuit it** - intent, then code change, then re-capture, exactly like an edit. There is no revert op, no restore-to-version write, and no change to the version store. The store is the system of record that gives the undo its basis and keeps the change reversible even by a human hand; it is not where the undo happens.
 
+### Safety model — customer source is contained before it lands (037ae5ed)
+
+Customer source is **never mutated in place.** Before an edit batch touches a customer's code, contain it — the coding-agent model the user already trusts:
+
+1. **A git repo → land the batch on a BRANCH.** Create or reuse `feat/canvas-edits` and commit the batch there; **main is never touched** by the landing. The branch is the reversible container.
+2. **A plain folder (no git) → take a RESTORE POINT before the first write.** Snapshot the files about to change under the repo's local `.designless/` vault so the folder can be returned to exactly this state (an extension of the local stamping the system already does).
+3. **Author the `_safety` block on the manifest** so the canvas shows the batch honestly: `{ source_kind: 'git'|'folder', repo, branch (git only), batch: { count, files: [{ path, what }] }, pr: { state: 'none' }, restore_points: [{ id, title, age, restores_to, current }] }`. It rides the whole-manifest write (like `_walk`/`_meaning`). Only version + metadata — branch name, restore-point ids, PR number, repo-relative paths — **never customer file bytes, never credentials or tokens.** Those stay on the machine.
+
+**Never push, and never open a PR on your own.** Opening a pull request is an **invited, permission-gated** act the user crosses first. The canvas shows a purple gate ("Open a pull request on GitHub? Allow / Not now"); when the user allows it, an `open_pr` intent arrives (drain it with `less_canvas_ops`). **Only then** run `gh pr create` under the **user's own** `gh` auth, and ack with the **real** PR url + number — re-author `_safety.pr = { state: 'open', url, number }`. The honest link appears only because the PR now exists; never show a link, number, or "opened" claim before consent. Consent is **per-batch**, never remembered. If `gh` isn't authed or the push can't proceed, say so plainly and leave the branch as the safe container.
+
+**Restore is a "restore to here" intent, never a delete.** A `restore` intent names a restore point (the user clicked a timeline row). Re-authorize the checkout first — the same `.designless` stamp / repo-remote handshake a source apply uses (the strict stamp match, not the create-fallback) — then restore the **working files** to that point: `git checkout <commit> -- .` for a git point, or copy the folder's snapshot back for a folder point. Never reset history you didn't create, never delete the user's work — a restore returns files, it does not erase.
+
+**The fence.** `open_pr` and `restore` are **held intents** — they append to the ledger and wait; nothing auto-applies them (you execute them under the user's own auth). Author the SHAPE (branch, restore points, PR after consent) into `_safety`; the customer's file bytes and any credential never leave the machine — the same never-persist rule the capture-time secrets follow. This is the revert intent above, applied to the *forward* edit: contain before you land, invite before you push, restore by intent.
+
 ## Proposing an edit — structural (Type-1, you apply) or flow (Type-2, held)
 
 `less_canvas_ops` action `propose` authors an edit as an agent proposal (`authored_kind: 'agent'`). Two classes resolve very differently — pick by surface:
