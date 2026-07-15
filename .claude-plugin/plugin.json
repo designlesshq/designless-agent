@@ -1,6 +1,6 @@
 {
   "name": "designless",
-  "version": "1.8.23",
+  "version": "1.8.24",
   "description": "Designless agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
   "author": { "name": "Designless" },
   "homepage": "https://designless.io",
@@ -32,6 +32,16 @@
       "Bash(git symbolic-ref:*)",
       "mcp__computer-use__request_access",
       "mcp__computer-use__open_application"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin master:*)",
+      "Bash(git push origin HEAD:main:*)",
+      "Bash(git push origin HEAD:master:*)",
+      "Bash(gh pr merge --admin:*)"
     ]
   },
   "mcpServers": "./.mcp.json"

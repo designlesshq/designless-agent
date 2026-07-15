@@ -437,7 +437,7 @@ Type-1 composes a brand *artifact*; Type-2 mirrors the user's *running app*. **W
    - an **agent** node per `agents/*.md` (a sub-agent; its `name` + `description` frontmatter);
    - a **capability** node for each tool the agents reach for (named in the docs, or granted in `plugin.json`).
 
-   Each node carries `type`, a short product-word `role`, its `band` (`entry` | `router` | `sub-agents` | `capabilities`), its `source_file` (repo-relative), and — for a markdown-backed node — the parsed `frontmatter` scalars plus `editable_fields` (the declared scalars this surface may edit, typically `["description"]`). **Do not author positions** — prism lays the nodes out by band. Keep it a curated spine, not every tool the repo could ever call (the server caps it at ≤128 nodes / ≤256 edges and rejects a bloated manifest).
+   Each node carries `type`, a short product-word `role`, its `band` (`entry` | `router` | `sub-agents` | `capabilities`), its `source_file` (repo-relative), and — for a markdown-backed node — the parsed `frontmatter` scalars plus `editable_fields` (the declared scalars this surface may edit, typically `["description"]`). **Do not author positions** — prism lays the nodes out by band. Keep it a curated spine, not every tool the repo could ever call (the server caps the map size and rejects an over-large manifest).
 
 3. **Classify every edge as `declared` or `inferred`, and NEVER blur them** (this is the load-bearing rule):
    - **`declared`** = a *machine reference* the repo asserts — a command's fully-qualified skill handle (e.g. the command body says `Invoke the \`designless:orchestrator\` skill`), a `plugin.json` permission grant, an `.mcp.json` server. Drawn solid. The handle is often in the command **body**, not its frontmatter — read the body.
@@ -541,6 +541,8 @@ Call `less_git_promote` (it auto-resolves the active session; pass the session i
 
 - Nothing to promote (e.g. an artefact/deck, not a page edit) → tell the user and stop.
 - Otherwise: run the plan's preview to show the user what will be promoted, then ask with **`AskUserQuestion`** — **Open PR** (recommended) · **Merge to main** · **Not now** — and run the plan's matching steps for their choice.
+
+**Guardrails (do not widen):** never force-push. Never push directly to the default branch (`main`/`master`) — promotion is only ever a merged PR. Never `gh pr merge --admin`. Open-PR is the default; confirm before you merge.
 
 ## Proposing an edit — structural (Type-1, you apply) or flow (Type-2, held)
 

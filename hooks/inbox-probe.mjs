@@ -17,6 +17,48 @@ import path from 'node:path'
 
 const TIMEOUT_MS = 700
 
+// ── Server/IPC input validation (trust boundary) ─────────────────────────────
+// safety_branch and repo_remote arrive from the desktop IPC / server and get
+// embedded VERBATIM into git checkout/push instruction text handed to the agent.
+// Validate them at the boundary so a malformed value can never reach that text.
+
+/**
+ * A safety branch must live under the server-owned `designless/` namespace. The
+ * suffix is deliberately permissive — legitimate names are BOTH `designless/<hex>`
+ * AND agent-authored names like `designless/skilldesign-edits` — but restricted to
+ * safe branch characters only: no whitespace, no shell metacharacters (; & $ ( ) | < > etc.).
+ */
+export function isSafeBranchName(b) {
+  return typeof b === 'string' && /^designless\/[A-Za-z0-9._/-]+$/.test(b)
+}
+
+/**
+ * A repo remote must look like a URL or `owner/repo` and carry no shell
+ * metacharacters — never an injectable string.
+ */
+export function isSafeRepoRemote(r) {
+  if (typeof r !== 'string') return false
+  const s = r.trim()
+  if (!s || /[\s;&$()|<>`'"\\]/.test(s)) return false
+  return /^(https?:\/\/|git@)[\w.@:/~-]+$/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s)
+}
+
+/**
+ * Drop any inbox row carrying a PRESENT-but-malformed server/IPC identifier. A
+ * null/absent safety_branch (un-stamped legacy) or repo_remote (unknown checkout)
+ * is allowed through — only a present, malformed value is rejected. Fail closed:
+ * a bad row is simply not surfaced (consistent with the probe's fail-open-to-empty).
+ */
+export function sanitizeInboxRows(rows) {
+  if (!Array.isArray(rows)) return []
+  return rows.filter((s) => {
+    if (!s || typeof s !== 'object') return false
+    if (s.safety_branch != null && !isSafeBranchName(s.safety_branch)) return false
+    if (s.repo_remote != null && !isSafeRepoRemote(s.repo_remote)) return false
+    return true
+  })
+}
+
 /** The desktop IPC socket path + its parent dir, derived from getuid(). */
 function socketPath() {
   const uid = typeof process.getuid === 'function' ? process.getuid() : null
@@ -79,7 +121,8 @@ export function probeInbox() {
       let frame
       try { frame = JSON.parse(buf.slice(0, idx)) } catch { return finish(empty) }
       if (frame && frame.op === 'inbox') {
-        return finish({ count: frame.count ?? 0, sessions: Array.isArray(frame.sessions) ? frame.sessions : [] })
+        const sessions = sanitizeInboxRows(frame.sessions)
+        return finish({ count: sessions.length, sessions })
       }
       // denied / no_session / no_session_stale / error → silently empty.
       return finish(empty)
@@ -130,7 +173,7 @@ const sum = (rows, key) => rows.reduce((a, s) => a + Number(s[key] || 0), 0)
 function requiredBranchHint(rows) {
   const branches = [...new Set(
     rows
-      .map((s) => (s && typeof s.safety_branch === 'string' && s.safety_branch ? s.safety_branch : null))
+      .map((s) => (s && isSafeBranchName(s.safety_branch) ? s.safety_branch : null))
       .filter(Boolean),
   )]
   if (!branches.length) return ''
