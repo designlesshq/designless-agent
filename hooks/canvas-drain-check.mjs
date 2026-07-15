@@ -8,7 +8,7 @@
 // Type-1 edits (ledger apply rolling out) or annotations (context). The
 // stop_hook_active guard prevents a stop loop; any error allows the stop.
 
-import { probeInbox, cwdGitRemote, remotesMatch } from './inbox-probe.mjs'
+import { probeInbox, cwdGitRemote, remotesMatch, isSafeBranchName, isSafeRepoRemote } from './inbox-probe.mjs'
 
 async function main() {
   let raw = ''
@@ -23,8 +23,13 @@ async function main() {
   if (!count) return
 
   const origin = cwdGitRemote(cwd)
+  // repo_remote / safety_branch are server/IPC-supplied and get embedded into git
+  // instruction text below — validate before trusting. probeInbox already drops
+  // malformed rows; this is the second, explicit guard at the point of embedding.
   const drainableHere = sessions.filter((s) =>
-    Number(s.n_page || 0) > 0 && (s.repo_remote ? remotesMatch(origin, s.repo_remote) : true))
+    Number(s.n_page || 0) > 0 &&
+    (s.repo_remote == null || isSafeRepoRemote(s.repo_remote)) &&
+    (s.repo_remote ? remotesMatch(origin, s.repo_remote) : true))
   if (!drainableHere.length) return        // nothing applies here - let the stop through
 
   // Name the required safety branch(es) so the drainer can go branch-first without
@@ -34,7 +39,7 @@ async function main() {
   // is an un-stamped legacy session: no branch required, so it is omitted.
   const branches = [...new Set(
     drainableHere
-      .map((s) => (s && typeof s.safety_branch === 'string' && s.safety_branch ? s.safety_branch : null))
+      .map((s) => (s && isSafeBranchName(s.safety_branch) ? s.safety_branch : null))
       .filter(Boolean),
   )]
   const branchHint = branches.length
