@@ -117,6 +117,23 @@ export function remotesMatch(a, b) {
 
 const sum = (rows, key) => rows.reduce((a, s) => a + Number(s[key] || 0), 0)
 
+/**
+ * Surface the required safety-branch name(s) for the drainable page sessions.
+ * The gate compares repo_branch against the session's server-declared
+ * _safety.branch, which is `designless/<session_id>` by construction (the
+ * inbox row carries session_id, not the branch string). We name it so the
+ * drainer can checkout without a round-trip; confirm against _safety.branch
+ * via less_canvas_status if it ever diverges. Returns '' when no session ids.
+ */
+function requiredBranchHint(rows) {
+  const branches = rows
+    .map((s) => (s && s.session_id ? `designless/${s.session_id}` : null))
+    .filter(Boolean)
+  if (!branches.length) return ''
+  const label = branches.length > 1 ? 'Required safety branches' : 'Required safety branch'
+  return ` ${label}: ${branches.join(', ')} (confirm against each session's _safety.branch).`
+}
+
 /** Whether a page session is drainable from `cwd` (right checkout, §5.2). */
 function pageDrainableHere(s, origin) {
   // Unknown checkout identity (no repo_remote, or no git here) → let the agent
@@ -140,7 +157,16 @@ export function summarizeInbox(sessions, cwd) {
   }
   const lines = []
   if (here.length) {
-    lines.push(`${sum(here, 'n_page')} page edit(s) are drainable from this checkout - drain with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), then let the canvas re-capture.`)
+    lines.push(
+      `${sum(here, 'n_page')} page edit(s) are drainable from this checkout. These are Type-2 SOURCE ops - work BRANCH-FIRST: ` +
+      `read the session's _safety.branch (from less_canvas_inbox / less_canvas_status), then ` +
+      `git checkout -b designless/<session> (or git checkout it if it already exists) BEFORE you claim - the server ` +
+      `withholds every source op unless you are on that safety branch. On EVERY source claim AND ack pass ` +
+      `repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). ` +
+      `Then drain with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), ` +
+      `then let the canvas re-capture.` +
+      requiredBranchHint(here),
+    )
   }
   for (const s of elsewhere) {
     lines.push(`${Number(s.n_page || 0)} page edit(s) target ${s.repo_remote || s.source_hint || 'another repo'}; this session is rooted elsewhere - tell the user to run /designless from that repo (do NOT claim here).`)
