@@ -23,16 +23,36 @@ async function main() {
   if (!count) return
 
   const origin = cwdGitRemote(cwd)
-  const stallWorthy = sessions.some((s) =>
+  const drainableHere = sessions.filter((s) =>
     Number(s.n_page || 0) > 0 && (s.repo_remote ? remotesMatch(origin, s.repo_remote) : true))
-  if (!stallWorthy) return                 // nothing applies here - let the stop through
+  if (!drainableHere.length) return        // nothing applies here - let the stop through
+
+  // Name the required safety branch(es) so the drainer can go branch-first without
+  // a round-trip. The branch is a SERVER-OWNED contract carried verbatim on the inbox
+  // row as safety_branch (manifest._safety.branch) — READ it, never derive
+  // designless/<session_id> client-side (derivation = drift risk). A null safety_branch
+  // is an un-stamped legacy session: no branch required, so it is omitted.
+  const branches = [...new Set(
+    drainableHere
+      .map((s) => (s && typeof s.safety_branch === 'string' && s.safety_branch ? s.safety_branch : null))
+      .filter(Boolean),
+  )]
+  const branchHint = branches.length
+    ? ` Required safety branch(es): ${branches.join(', ')} (server-owned; read from each row's safety_branch, do NOT derive).`
+    : ''
 
   process.stdout.write(JSON.stringify({
     continue: false,
     stopReason:
-      'Designless canvas: page edits are waiting and drainable from this checkout. Before finishing, ' +
-      'enumerate with less_canvas_inbox and apply with less_canvas_ops (claim -> apply on previous_value ' +
-      '-> ack). If none remain claimable from here, you are done.',
+      'Designless canvas: page (Type-2 SOURCE) edits are waiting and drainable from this checkout. ' +
+      'These are source ops - work BRANCH-FIRST: READ the required branch from the session\'s safety_branch field ' +
+      '(on the less_canvas_inbox row, also on less_canvas_status), then git checkout -b <safety_branch> (or git ' +
+      'checkout it if it exists) BEFORE you claim - the server withholds every source op unless you are on that safety ' +
+      'branch. If safety_branch is null the session is un-stamped: no branch is required. On EVERY source ' +
+      'claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). ' +
+      'Enumerate with less_canvas_inbox, then apply with less_canvas_ops (claim -> apply on previous_value -> ack). ' +
+      'If none remain claimable from here, you are done.' +
+      branchHint,
   }))
 }
 
