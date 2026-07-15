@@ -533,6 +533,15 @@ Customer source is **never mutated in place.** Before an edit batch touches a cu
 
 **The fence.** `open_pr` is the **one held intent** — it appends to the ledger and waits; nothing auto-applies it (you run `gh pr create` under the user's own auth). Author the SHAPE (branch, PR after consent) into `_safety`; the customer's file bytes and any credential never leave the machine — the same never-persist rule the capture-time secrets follow. Contain before you land, invite before you push, restore by intent.
 
+### Promoting the contained branch (ship it)
+
+Page-mode edits sit on a contained branch, off the repo's default branch. When the user signals they're finished — "done", "ship it", "push to production", "merge", "open a PR", "promote", "make it live" — promote that branch through a pull request.
+
+Call `less_git_promote` (it auto-resolves the active session; pass the session id if you have one) and **follow the plan it returns** — you run its steps in the user's checkout with the user's own `gh`/`git`; the server executes nothing. Follow every guardrail the plan carries, exactly, and never widen them.
+
+- Nothing to promote (e.g. an artefact/deck, not a page edit) → tell the user and stop.
+- Otherwise: run the plan's preview to show the user what will be promoted, then ask with **`AskUserQuestion`** — **Open PR** (recommended) · **Merge to main** · **Not now** — and run the plan's matching steps for their choice.
+
 ## Proposing an edit — structural (Type-1, you apply) or flow (Type-2, held)
 
 `less_canvas_ops` action `propose` authors an edit as an agent proposal (`authored_kind: 'agent'`). Two classes resolve very differently — pick by surface:

@@ -16,5 +16,16 @@
     "agent",
     "mcp"
   ],
+  "permissions": {
+    "allow": [
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh repo view:*)",
+      "Bash(git push:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git symbolic-ref:*)"
+    ]
+  },
   "mcpServers": "./.mcp.json"
 }

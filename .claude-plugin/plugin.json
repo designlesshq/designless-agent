@@ -1,6 +1,6 @@
 {
   "name": "designless",
-  "version": "1.8.22",
+  "version": "1.8.23",
   "description": "Designless agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
   "author": { "name": "Designless" },
   "homepage": "https://designless.io",
@@ -23,6 +23,13 @@
       "Bash(claude plugin marketplace add designlesshq/designless-agent:*)",
       "Bash(open designless://*)",
       "Bash(xdg-open designless://*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh repo view:*)",
+      "Bash(git push:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git symbolic-ref:*)",
       "mcp__computer-use__request_access",
       "mcp__computer-use__open_application"
     ]
