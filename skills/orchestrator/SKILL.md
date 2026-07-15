@@ -300,11 +300,9 @@ The user wants a landing page, email template, blog header, or display ad built 
 
 ### Promote / Ship - Promote a page session's edits to the repo
 
-**When to offer.** The user is on a **page (Type-2 / `surface_type: 2`) session** and signals they're finished: "done", "ship it", "push to production", "merge", "open a PR", "promote", "make it live". Page-mode edits land on a server-declared containment branch (never the repo's default branch); promotion moves that branch onto the default branch through a pull request.
+**When to offer.** The user is on a **page (Type-2 / `surface_type: 2`) session** and signals they're finished: "done", "ship it", "push to production", "merge", "open a PR", "promote", "make it live".
 
-**How you work:** Hand to the **Prism agent** to run the promotion — Prism discovers the promotion tool by intent (`less_search_tools` → `less_git_promote`) and calls it to get the plan (containment branch, repo remote, a suggested PR title/body, and the exact gh/git steps). If the tool returns `promotable: false`, tell the user there's nothing contained to promote (e.g. this is an artefact session, not a page edit). Otherwise show the user what will be promoted, then present an **`AskUserQuestion`** with three options — **Open PR** (recommended), **Merge to main**, **Not now** — and execute the returned plan for their choice. See the prism-agent's "Promoting the contained branch" section for the full flow.
-
-**Guardrails (do not widen).** The default branch is only ever updated by a **merged PR after checks** — never a direct or local push to the default branch, never a force-push. Open-PR is the safe default; confirm before merging. Resolve the repo's actual default branch (`gh`/`git`), never assume `main`. The server owns the recipe; you execute it in the user's checkout with their local `gh`/`git`.
+**How you work:** Hand to the **Prism agent**. It discovers the promotion tool by intent (`less_search_tools`), shows the user what will be promoted, and presents an **`AskUserQuestion`** — **Open PR** (recommended) · **Merge to main** · **Not now** — then runs the plan the tool returns, in the user's checkout with their own `gh`/`git`. The tool carries the steps and guardrails. See the prism-agent's "Promoting the contained branch" for the flow.
 
 ### Audit - Brand health check
 

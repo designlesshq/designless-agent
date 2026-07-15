@@ -533,25 +533,14 @@ Customer source is **never mutated in place.** Before an edit batch touches a cu
 
 **The fence.** `open_pr` is the **one held intent** — it appends to the ledger and waits; nothing auto-applies it (you run `gh pr create` under the user's own auth). Author the SHAPE (branch, PR after consent) into `_safety`; the customer's file bytes and any credential never leave the machine — the same never-persist rule the capture-time secrets follow. Contain before you land, invite before you push, restore by intent.
 
-### Promoting the contained branch (ship it to the repo's default branch)
+### Promoting the contained branch (ship it)
 
-The containment branch above holds the user's edits off the default branch. When the user signals they're finished — "done", "ship it", "push to production", "merge", "open a PR", "promote", "make it live" — **promotion** moves that branch onto the repo's default branch. The **server owns the recipe**; you execute it in the user's checkout with their own `gh`/`git`. There is no server-side GitHub token and no GitHub API call from the server.
+Page-mode edits sit on a contained branch, off the repo's default branch. When the user signals they're finished — "done", "ship it", "push to production", "merge", "open a PR", "promote", "make it live" — promote that branch through a pull request.
 
-1. **Get the plan.** Discover the promotion tool by intent (`less_search_tools` → `less_git_promote`) and call `less_git_promote({ session_id })` (omit `session_id` to auto-resolve the active owner-scoped session). It resolves the session's containment branch (`safety_branch`), `repo_remote`, and a session/brand-aware suggested `pr_title` + `pr_body`, and returns the exact steps + guardrails. It does **not** execute anything.
-2. **Nothing to promote.** If the tool returns `{ promotable: false }`, tell the user in product terms that there's nothing contained to promote (e.g. this is an artefact session, not a page edit) and stop.
-3. **Show what will be promoted.** Resolve the repo's **default branch first** — `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` (or `git symbolic-ref --short refs/remotes/origin/HEAD` and strip the `origin/` prefix). **Never assume `main`;** `base_hint` is only a fallback. Then show the user the delta: `git log --oneline <default_branch>..<safety_branch>` and/or `git diff --stat <default_branch>..<safety_branch>`.
-4. **Ask, then execute.** Present an **`AskUserQuestion`** with three options and act on the choice:
-   - **Open PR** (recommended) → run the plan's `open_pr` steps: `git push -u origin <safety_branch>`, then `gh pr create --base <default_branch> --head <safety_branch> --title "<pr_title>" --body "<pr_body>"`. Return the PR URL to the user. This is the safe default — it never merges; a human (or checks) decides from there.
-   - **Merge to main** → open the PR (or reuse the existing one for the branch), then `gh pr merge <pr> --squash --auto`. `--auto` merges **only after required checks pass** — it does not merge immediately. Never `--admin`, never `--merge`/`--rebase` (leave it squash unless the repo demands otherwise), never a local `git push` to the default branch, never `--force`.
-   - **Not now** → stop. Leave the branch as the safe container; nothing is pushed or merged.
+Call `less_git_promote` (it auto-resolves the active session; pass the session id if you have one) and **follow the plan it returns** — you run its steps in the user's checkout with the user's own `gh`/`git`; the server executes nothing. Follow every guardrail the plan carries, exactly, and never widen them.
 
-**Guardrails (verbatim, do not widen):**
-- main/master only via a merged PR
-- never force-push
-- never push directly to the default branch
-- open-PR is the default; confirm before merge
-
-The default branch is **resolved (gh/git), never assumed**. The promotion is only ever completed by a **merged PR after checks** — you never fast-forward, force, or push the user's edits straight onto the default branch. This is standard `git`/`gh` under the user's own auth; no engine internals are involved.
+- Nothing to promote (e.g. an artefact/deck, not a page edit) → tell the user and stop.
+- Otherwise: run the plan's preview to show the user what will be promoted, then ask with **`AskUserQuestion`** — **Open PR** (recommended) · **Merge to main** · **Not now** — and run the plan's matching steps for their choice.
 
 ## Proposing an edit — structural (Type-1, you apply) or flow (Type-2, held)
 
