@@ -119,19 +119,23 @@ const sum = (rows, key) => rows.reduce((a, s) => a + Number(s[key] || 0), 0)
 
 /**
  * Surface the required safety-branch name(s) for the drainable page sessions.
- * The gate compares repo_branch against the session's server-declared
- * _safety.branch, which is `designless/<session_id>` by construction (the
- * inbox row carries session_id, not the branch string). We name it so the
- * drainer can checkout without a round-trip; confirm against _safety.branch
- * via less_canvas_status if it ever diverges. Returns '' when no session ids.
+ * The branch is a SERVER-OWNED contract: the inbox row now carries it verbatim as
+ * `safety_branch` (manifest._safety.branch, the same value the gate returns as
+ * required_branch on a rejected claim). We READ it — never derive
+ * `designless/<session_id>` client-side, which would drift from the server if the
+ * stamping convention ever changes. A row with a null safety_branch is an un-stamped
+ * legacy session: no branch is required, so it is simply omitted. Returns '' when no
+ * row carries a branch.
  */
 function requiredBranchHint(rows) {
-  const branches = rows
-    .map((s) => (s && s.session_id ? `designless/${s.session_id}` : null))
-    .filter(Boolean)
+  const branches = [...new Set(
+    rows
+      .map((s) => (s && typeof s.safety_branch === 'string' && s.safety_branch ? s.safety_branch : null))
+      .filter(Boolean),
+  )]
   if (!branches.length) return ''
   const label = branches.length > 1 ? 'Required safety branches' : 'Required safety branch'
-  return ` ${label}: ${branches.join(', ')} (confirm against each session's _safety.branch).`
+  return ` ${label}: ${branches.join(', ')} (server-owned; read from each row's safety_branch, do NOT derive).`
 }
 
 /** Whether a page session is drainable from `cwd` (right checkout, §5.2). */
@@ -159,10 +163,10 @@ export function summarizeInbox(sessions, cwd) {
   if (here.length) {
     lines.push(
       `${sum(here, 'n_page')} page edit(s) are drainable from this checkout. These are Type-2 SOURCE ops - work BRANCH-FIRST: ` +
-      `read the session's _safety.branch (from less_canvas_inbox / less_canvas_status), then ` +
-      `git checkout -b designless/<session> (or git checkout it if it already exists) BEFORE you claim - the server ` +
-      `withholds every source op unless you are on that safety branch. On EVERY source claim AND ack pass ` +
-      `repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). ` +
+      `READ the required branch from the session's safety_branch field (on the less_canvas_inbox row, also on less_canvas_status), then ` +
+      `git checkout -b <safety_branch> (or git checkout it if it already exists) BEFORE you claim - the server ` +
+      `withholds every source op unless you are on that safety branch. If a session's safety_branch is null it is un-stamped: no branch is required. ` +
+      `On EVERY source claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). ` +
       `Then drain with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), ` +
       `then let the canvas re-capture.` +
       requiredBranchHint(here),
