@@ -108,6 +108,23 @@ Prism generates the carousel using your published Brand Capsule — colors, typo
 
 Prism generates production HTML where every color, font, spacing value, and shadow comes from your brand tokens. No generic CSS — it's your brand, enforced at the infrastructure level.
 
+## Promote to Production (via Prism)
+
+When you edit your own running app on the canvas, those edits land on a contained working branch — never your default branch. When you're ready, promote them.
+
+**What you can do:**
+- Promote a page session's contained edits to your repo's default branch through a pull request
+- Open a PR for review (the safe default), or merge it after your required checks pass
+- Runs in your own checkout with your own `gh`/`git` — Designless never holds a GitHub token and never touches your repo directly
+
+**Example:**
+```
+> /designless
+> Looks good — ship it.
+```
+
+The agent resolves the contained branch, shows you exactly what will be promoted, then asks whether to Open a PR, Merge to main, or hold off. Your default branch is only ever updated by a merged PR after checks — never a direct or force push.
+
 ## Ecosystem Status
 
 See your full Designless environment at a glance.
