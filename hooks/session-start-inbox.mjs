@@ -16,7 +16,24 @@ async function main() {
   try { cwd = JSON.parse(raw).cwd } catch { cwd = process.cwd() }
   if (!cwd || typeof cwd !== 'string') cwd = process.cwd()
 
-  const { count, sessions } = await probeInbox()
+  const { count, sessions, unknown } = await probeInbox()
+
+  // An indeterminate probe must not read as "no waiting edits" — see canvas-wake
+  // for the incident. At session start this matters most: it is the one moment the
+  // agent forms its picture of what is outstanding, and a false all-clear here
+  // persists for the whole session.
+  if (unknown) {
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext:
+          `Designless canvas: could not reach the desktop inbox accelerator (${unknown}). ` +
+          `This is NOT a signal that nothing is waiting. Call less_canvas_inbox to check for real.`,
+      },
+    }))
+    return
+  }
+
   if (!count) return
   const text = summarizeInbox(sessions, cwd)
   if (!text) return

@@ -6,10 +6,12 @@
 // live prism-vs-skilldesign miss). Discovery is now keyed on USER IDENTITY via
 // the desktop IPC `list_inbox` accelerator, so it surfaces waiting edits in ANY
 // cwd. One honest dependency: a reachable, signed-in desktop. When the socket is
-// absent / denied / stale, the probe is silently empty and the canvas "waiting"
-// pill remains the human floor.
+// absent the probe reports empty (no canvas running = nothing to miss); when it
+// is present but slow, denied or stale the probe reports UNKNOWN, never empty —
+// see probeInbox. The canvas "waiting" pill remains the human floor either way.
 //
-// Node built-ins only, fail-open on any error or timeout. Never throws.
+// Node built-ins only, fail-open on any error or timeout. Never throws. Fail-open
+// means "never block the turn"; it does NOT mean "report all clear".
 
 import net from 'node:net'
 import fs from 'node:fs'
@@ -86,13 +88,39 @@ function dirIsSafe(dir) {
 }
 
 /**
- * Probe the desktop inbox over the IPC socket. Resolves { count, sessions } -
- * always {count:0,sessions:[]} on any non-inbox reply, missing socket, or error.
+ * Probe the desktop inbox over the IPC socket.
+ *
+ * Resolves { count, sessions, unknown } where `unknown` is null when the answer
+ * is TRUSTWORTHY and a short reason string when the probe could not determine
+ * anything. Callers MUST distinguish the two:
+ *
+ *     count 0, unknown null    -> the desktop says nothing is waiting
+ *     count 0, unknown set     -> we could not find out. NOT the same thing.
+ *
+ * WHY THIS SPLIT EXISTS. This function used to return {count:0,sessions:[]} for
+ * six distinct outcomes — missing socket, connect throw, write throw, TIMEOUT,
+ * unparseable frame, and any non-inbox reply (denied / no_session /
+ * no_session_stale / error) — so "couldn't ask" was byte-identical to "nothing
+ * waiting". Measured 2026-07-20 on a live signed-in desktop with a REAL pending
+ * artefact edit: the socket answered `op=inbox count=1` correctly every time, in
+ * 797 / 1483 / 2002 / 1430 ms — 0 of 4 inside the 700ms budget. Every hook that
+ * consumes this therefore read "all clear" while the user's edit sat undrained,
+ * and a separate call in the same minute returned `no_session_stale` against a
+ * session whose heartbeat was 58 seconds old. Both failures were invisible.
+ *
+ * The timeout stays deliberately SHORT rather than being raised past the slowest
+ * observed reply: this runs on every UserPromptSubmit and must not tax the
+ * prompt. The probe is an ACCELERATOR, never the authority — `less_canvas_inbox`
+ * is the authority, and it is server-side and reliable. So the correct behaviour
+ * on a slow or refusing socket is to say "ask the server", not to invent silence.
  */
 export function probeInbox() {
   return new Promise((resolve) => {
-    const empty = { count: 0, sessions: [] }
+    const unknown = (reason) => ({ count: 0, sessions: [], unknown: reason })
+    const empty = { count: 0, sessions: [], unknown: null }
     const sp = socketPath()
+    // No desktop socket at all is a legitimate 'nothing to report' — the canvas
+    // is not running, so there is no inbox to miss. That one stays `empty`.
     if (!sp || !dirIsSafe(sp.dir) || !fs.existsSync(sp.sock)) return resolve(empty)
 
     let buf = ''
@@ -105,29 +133,31 @@ export function probeInbox() {
       try { sock && sock.destroy() } catch { /* already closed */ }
       resolve(v)
     }
-    const timer = setTimeout(() => finish(empty), TIMEOUT_MS)
+    const timer = setTimeout(() => finish(unknown(`timeout after ${TIMEOUT_MS}ms`)), TIMEOUT_MS)
 
     try {
       sock = net.connect(sp.sock)
-    } catch { return finish(empty) }
+    } catch { return finish(unknown('socket connect failed')) }
 
     sock.on('connect', () => {
-      try { sock.write(JSON.stringify({ op: 'list_inbox' }) + '\n') } catch { finish(empty) }
+      try { sock.write(JSON.stringify({ op: 'list_inbox' }) + '\n') } catch { finish(unknown('socket write failed')) }
     })
     sock.on('data', (chunk) => {
       buf += chunk.toString('utf8')
       const idx = buf.indexOf('\n')
       if (idx < 0) return
       let frame
-      try { frame = JSON.parse(buf.slice(0, idx)) } catch { return finish(empty) }
+      try { frame = JSON.parse(buf.slice(0, idx)) } catch { return finish(unknown('unparseable frame')) }
       if (frame && frame.op === 'inbox') {
         const sessions = sanitizeInboxRows(frame.sessions)
-        return finish({ count: sessions.length, sessions })
+        return finish({ count: sessions.length, sessions, unknown: null })
       }
-      // denied / no_session / no_session_stale / error → silently empty.
-      return finish(empty)
+      // denied / no_session / no_session_stale / error. These are REFUSALS, not
+      // emptiness — `no_session_stale` was observed against a session whose
+      // heartbeat was 58s old. Report the refusal so a caller can say so.
+      return finish(unknown(`desktop replied ${String(frame && frame.op || 'unknown')}`))
     })
-    sock.on('error', () => finish(empty))
+    sock.on('error', (e) => finish(unknown(`socket error: ${e && e.message ? e.message : 'unknown'}`)))
   })
 }
 
@@ -219,7 +249,17 @@ export function summarizeInbox(sessions, cwd) {
     lines.push(`${Number(s.n_page || 0)} page edit(s) target ${s.repo_remote || s.source_hint || 'another repo'}; this session is rooted elsewhere - tell the user to run /designless from that repo (do NOT claim here).`)
   }
   if (artefact.length) {
-    lines.push(`${sum(artefact, 'n_artefact')} artefact edit(s) waiting - inspect via less_canvas_status (artefact apply is rolling out; do not claim them yet).`)
+    // Type-1 artefact apply went GA on 2026-06-16 (designsystem c054c03 removed
+    // the TYPE1_APPLY flag entirely after a real-user e2e; nothing gates it now).
+    // This line said "artefact apply is rolling out; do not claim them yet" until
+    // 2026-07-20 — written 2026-06-16 01:59, ~2h BEFORE GA, and never revisited.
+    // The sibling copy in agents/prism-agent.md was corrected on 2026-07-12
+    // (1ff4652) but that commit touched only that one file, so the plugin shipped
+    // two contradictory instructions at the same HEAD: the agent doc said drain
+    // with apply_type1, this hook said do not claim. Production had already
+    // applied 18 artefact ops by then. Keep this line in lockstep with
+    // prism-agent.md — they are the same instruction to the same reader.
+    lines.push(`${sum(artefact, 'n_artefact')} artefact edit(s) waiting - drain them with less_canvas_ops action 'apply_type1' (drain + apply + ack in one call; the manifest IS the source, so it applies server-side and needs NO checkout and no branch).`)
   }
   if (annotations.length) {
     lines.push(`${sum(annotations, 'n_annotation')} annotation(s) waiting - read as context with less_canvas_ops action=peek, form your judgment, then ack them applied. They are not mechanical edits.`)

@@ -4,9 +4,27 @@
 //
 // Replaces page-session-drain.mjs. Stalls the turn (continue:false) ONCE only
 // when there is a PAGE edit drainable FROM THIS CHECKOUT - so it never
-// false-stalls on a session the agent cannot apply (wrong checkout) nor on
-// Type-1 edits (ledger apply rolling out) or annotations (context). The
-// stop_hook_active guard prevents a stop loop; any error allows the stop.
+// false-stalls on a session the agent cannot apply (wrong checkout), nor on
+// Type-1 artefact edits, nor on annotations (context). The stop_hook_active
+// guard prevents a stop loop; any error allows the stop.
+//
+// WHY TYPE-1 IS EXCLUDED. The original reason given here was "ledger apply
+// rolling out", which went stale on 2026-06-16 when designsystem c054c03 removed
+// the TYPE1_APPLY flag and artefact apply went GA. That justification is corrected
+// rather than deleted, because the exclusion still holds for a DIFFERENT and
+// durable reason: stalling a turn is only warranted when the work is bound to
+// THIS agent in THIS checkout. A page op is - its source files exist only here, so
+// if the turn ends undrained nobody else can apply it. A Type-1 op is not:
+// apply_type1 applies server-side against the manifest with no cwd dependency, so
+// any session can drain it at any time and ending the turn loses nothing. The
+// whole stopReason payload below is likewise branch-first Type-2 instruction that
+// does not describe an artefact drain at all.
+//
+// Artefact edits are surfaced instead by the UserPromptSubmit wake
+// (canvas-wake.mjs -> summarizeInbox) and backstopped by the server's
+// pending_ops_conflict refusal on compose/set_image. Whether this hook SHOULD also
+// stall on Type-1 is an open architectural question (brain 61e158c1, status
+// proposed) - it is deliberately NOT decided here.
 
 import { probeInbox, cwdGitRemote, remotesMatch, isSafeBranchName, isSafeRepoRemote } from './inbox-probe.mjs'
 

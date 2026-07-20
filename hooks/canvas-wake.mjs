@@ -21,7 +21,27 @@ async function main() {
   try { cwd = JSON.parse(raw).cwd } catch { return }
   if (!cwd || typeof cwd !== 'string') return
 
-  const { count, sessions } = await probeInbox()
+  const { count, sessions, unknown } = await probeInbox()
+
+  // The probe could not determine anything (slow socket, denied, stale reply).
+  // Say so — do NOT stay silent. Silence here is read as "no edits waiting", and
+  // on 2026-07-20 that exact conflation hid a real pending artefact edit: the
+  // socket answered correctly in 797-2002ms against a 700ms budget, so every
+  // prompt saw "all clear" while the user's work sat undrained. The probe is only
+  // an accelerator; less_canvas_inbox is the authority and is server-side, so the
+  // honest fallback is to tell the agent to ask it.
+  if (unknown) {
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext:
+          `Designless canvas: could not reach the desktop inbox accelerator (${unknown}). ` +
+          `This is NOT a signal that nothing is waiting. Call less_canvas_inbox to check for real.`,
+      },
+    }))
+    return
+  }
+
   if (!count) return
   const text = summarizeInbox(sessions, cwd)
   if (!text) return
