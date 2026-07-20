@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// UserPromptSubmit wake (Phase-5 v3, brain d8db8b78) - FAIL-OPEN, cwd-INDEPENDENT.
+// UserPromptSubmit wake - FAIL-OPEN, cwd-INDEPENDENT.
 //
 // Replaces page-session-nudge.mjs. Drops the existsSync(cwd/.designless/
 // session.json) gate that missed the prism-vs-skilldesign case: discovery is now

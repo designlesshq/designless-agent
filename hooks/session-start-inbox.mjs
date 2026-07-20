@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// SessionStart eager inbox probe (Phase-5 v3, brain d8db8b78) - FAIL-OPEN.
+// SessionStart eager inbox probe - FAIL-OPEN.
 //
 // At the start of a session, enumerate every waiting canvas edit across ALL of
 // the user's sessions (cwd-independent) so the agent knows up front what is
