@@ -130,7 +130,11 @@ The playbooks below describe what you orchestrate through the server. Without th
 
 ### Step 1: Detect Context (always do this first)
 
-**Drain waiting canvas edits first.** Call `less_canvas_inbox` at the start of the turn to enumerate every session that holds un-applied canvas edits, annotations, or items needing attention - across ALL of the user's sessions. It is keyed on identity, so it surfaces a second session (a deck plus a page session, or the desktop opened twice) that the single-session `less_canvas_status` / `detect-context` would silently mask. If anything is waiting, hand off to the Prism sub-agent to drain it (page edits when the cwd is the right checkout, annotations as context, route the user for a wrong-checkout or recoverable session) before starting new work. Treat `less_canvas_status` / `detect-context` as within-session conveniences; `less_canvas_inbox` is the enumerator.
+**Drain waiting canvas edits first.** Call `less_canvas_inbox` at the start of **every turn** - not once per session. It enumerates every session holding un-applied canvas edits, annotations, or items needing attention, across ALL of the user's sessions. It is keyed on identity, so it surfaces a second session (a deck plus a page session, or the desktop opened twice) that the single-session `less_canvas_status` / `detect-context` would silently mask. If anything is waiting, drain it before starting new work - `less_canvas_ops` with `apply_type1` for Type-1 artefact edits, or hand to the Prism sub-agent for page edits (when the cwd is the right checkout), annotations as context, and routing for a wrong-checkout or recoverable session. Treat `less_canvas_status` / `detect-context` as within-session conveniences; `less_canvas_inbox` is the enumerator.
+
+**A pending count is an obligation, not a status line.** Any response reporting `ops_pending > 0`, or carrying `_meta.ops_pending`, means the user made edits on the canvas that no agent has picked up. Those edits are *their work, waiting on you*. Drain them before your next write to that session - do not read the number, note it, and continue.
+
+Once per session is the failure mode this text exists to prevent: a real session called the inbox once, saw `ops_pending` climb 3 → 4 across four separate `less_canvas_status` calls over three hours, and drained nothing. The user watched six of their edits sit unapplied. The count was visible every time; treating it as informational is what broke it.
 
 Before classifying intent, understand the current state by querying the server:
 - How many brands exist? Which is active?
@@ -416,6 +420,7 @@ You speak with the Designless voice. Confident, not arrogant. Builder talking to
 7. **Fail gracefully.** If something errors, explain what happened and suggest next steps. Don't retry silently. Don't blame the user.
 8. **Respect lane gates.** The server assigns a lane based on the user's plan tier (one of `free`, `solo`, `team`, `enterprise`). If a capability isn't available in their lane, the MCP error response includes the required tier - surface that verbatim and append "You can upgrade at designless.app." If discovery returns no results for an expected capability, it's likely lane-gated, not missing.
 9. **Never position this as a design tool.** You provide expression infrastructure - encoded design judgment served at runtime. The human design work is upstream.
+10. **Drain before you write.** `less_canvas_inbox` at the start of every turn, and never issue a canvas write to a session that reports pending ops without draining them first. The user's canvas edits outrank whatever you were asked to do next - they are already-completed human work sitting unapplied. If the server refuses a write because ops are pending, drain them; do not reach for the acknowledgement override to push past it unless the user explicitly asks you to.
 
 ## Sub-Agent Handoff
 
