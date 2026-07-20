@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Stop drain-check (Phase-5 v3, brain d8db8b78) - FAIL-OPEN, bounded,
+// Stop drain-check - FAIL-OPEN, bounded,
 // right-checkout-aware.
 //
 // Replaces page-session-drain.mjs. Stalls the turn (continue:false) ONCE only
@@ -9,7 +9,7 @@
 // guard prevents a stop loop; any error allows the stop.
 //
 // WHY TYPE-1 IS EXCLUDED. The original reason given here was "ledger apply
-// rolling out", which went stale on 2026-06-16 when designsystem c054c03 removed
+// rolling out", which went stale when the server-side rollout removed
 // the TYPE1_APPLY flag and artefact apply went GA. That justification is corrected
 // rather than deleted, because the exclusion still holds for a DIFFERENT and
 // durable reason: stalling a turn is only warranted when the work is bound to
@@ -23,7 +23,7 @@
 // Artefact edits are surfaced instead by the UserPromptSubmit wake
 // (canvas-wake.mjs -> summarizeInbox) and backstopped by the server's
 // pending_ops_conflict refusal on compose/set_image. Whether this hook SHOULD also
-// stall on Type-1 is an open architectural question (brain 61e158c1, status
+// stall on Type-1 is an open architectural question (tracked internally, status
 // proposed) - it is deliberately NOT decided here.
 
 import { probeInbox, cwdGitRemote, remotesMatch, isSafeBranchName, isSafeRepoRemote } from './inbox-probe.mjs'

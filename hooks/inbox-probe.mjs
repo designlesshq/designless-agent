@@ -1,6 +1,6 @@
 // inbox-probe.mjs - shared cwd-independent canvas-edit probe for the wake hooks.
 //
-// Phase-5 v3 (brain d8db8b78, §5). The old wakes gated on
+// The old wakes gated on
 // existsSync(cwd/.designless/session.json), which missed every case where the
 // canvas renders a different repo than the Claude Code session is rooted in (the
 // live prism-vs-skilldesign miss). Discovery is now keyed on USER IDENTITY via
@@ -249,7 +249,7 @@ export function summarizeInbox(sessions, cwd) {
     lines.push(`${Number(s.n_page || 0)} page edit(s) target ${s.repo_remote || s.source_hint || 'another repo'}; this session is rooted elsewhere - tell the user to run /designless from that repo (do NOT claim here).`)
   }
   if (artefact.length) {
-    // Type-1 artefact apply went GA on 2026-06-16 (designsystem c054c03 removed
+    // Type-1 artefact apply is GA (the server-side rollout removed
     // the TYPE1_APPLY flag entirely after a real-user e2e; nothing gates it now).
     // This line said "artefact apply is rolling out; do not claim them yet" until
     // 2026-07-20 — written 2026-06-16 01:59, ~2h BEFORE GA, and never revisited.
