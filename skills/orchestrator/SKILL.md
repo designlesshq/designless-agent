@@ -111,7 +111,8 @@ Attempt a server query. Three outcomes:
    Stop and wait for confirmation.
 
 3. **Auth error / bridge error** - the bridge spawned but couldn't authenticate. The bridge surfaces structured error messages with embedded recovery hints; **relay them verbatim** instead of inventing your own wording. Common shapes:
-   - `"Designless app has no signed-in user"` → "Open the Designless desktop app and sign in, then ask me again."
+   - `"Designless app has no signed-in user"` → **do not state this as fact.** The desktop emits this same sentence for a genuinely signed-out user AND for a transient failure it could not classify: a network blip, a wedged refresh, a token rotation race. The app is very often still signed in and shows the user so, which makes a confident "you are signed out" both wrong and confusing. Say instead: "I couldn't reach your Designless sign-in just now. If the desktop app is open and shows you signed in, this usually clears on its own — ask me again in a moment. If it shows you signed out, sign in there first."
+     Then **stop and wait for the user**. Do not re-call the tool inside this turn: every retry re-enters the desktop's refresh path, and a rotating refresh token spent twice is what triggers reuse detection, which is itself a forced logout. Waiting for the user's next message is the recovery, and it is also what the desktop's own renderer does (it holds and lets the next pull recover). Do not tell the user to reconnect the MCP server from the `/mcp` panel unless they have actually signed in again — reconnecting does not fix a transient refresh failure.
    - `"Designless denied Claude Code access. Click 'Disconnect Claude Code' in the menu bar..."` → relay as-is; the bridge already names the recovery path.
    - Anything else → relay verbatim. Bridge errors carry their own recovery instructions.
 
