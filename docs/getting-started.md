@@ -173,6 +173,8 @@ The agent brings your app onto the Designless canvas (in the Designless desktop 
 
 The agent shows you exactly what will be promoted and asks whether to open a PR or merge, running in your own checkout with your own `gh`/`git`.
 
+On Team plans, you can share the session with your team so teammates propose edits while you stay in control of what promotes.
+
 ## Troubleshooting
 
 **"Not authenticated".** Run `/designless connect` to trigger the sign-in flow and authenticate in your browser.

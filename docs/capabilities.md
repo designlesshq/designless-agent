@@ -158,6 +158,18 @@ Point Designless at your own running app and edit it on the canvas, with your br
 
 This runs in the Designless desktop app, where the live render and your edits stay in sync. When you are done, promote the result to your repo (below).
 
+## Collaborate with your team (via Prism)
+
+Bring your team into a page-mode session. Share the session, and teammates propose visual edits while you stay in control of what ships.
+
+**What you can do:**
+- Share a page-mode session with your team, explicitly and per session. Nothing is visible to anyone until you share it.
+- Teammates review the live render and propose edits against your brand.
+- You promote the result to your repo. The promote step stays with you.
+- Comment threads keep the discussion anchored to the exact spot on the work.
+
+This is async collaboration: your team proposes, you promote. Available on Team plans and above.
+
 ## Promote to production (via Prism)
 
 When you are ready to ship the edits you made to your own app on the canvas, promote them to your repo, as a pull request for review or merged after your required checks pass. It runs in your own checkout with your own `gh`/`git`. Designless never holds a GitHub token or touches your repo directly.
