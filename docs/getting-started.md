@@ -4,10 +4,10 @@ This guide walks you through connecting to Designless and creating your first br
 
 ## Prerequisites
 
-- Claude Code (v1.0.33+) or Cursor with agent support
-- A Designless account — create one at [designless.app](https://designless.app)
+- Claude Code (v1.0.33+), Cursor, or any other agent with skill or MCP support
+- A Designless account. Create one at [designless.app](https://designless.app)
 
-## Step 1: Install the Plugin
+## Step 1: Install the plugin
 
 **Claude Code:**
 ```bash
@@ -22,7 +22,7 @@ claude plugin install designless@designless-plugins
 
 After installing, run `/reload-plugins` to activate.
 
-## Step 2: Connect to the Expression Infrastructure
+## Step 2: Connect to the expression infrastructure
 
 How you connect depends on your setup.
 
@@ -42,40 +42,37 @@ On first use, a browser opens so you can sign in and authorize access at [design
 > /designless status
 ```
 
-If you see your account tier and capabilities listed, you're connected.
+If you see your account tier and capabilities listed, you are connected.
 
-### Get embed snippets for an existing brand
+### Wire an existing brand into a new project
 
-If you've already created a brand and just need to wire it into a new
-project, run:
-
-```
-> less_init <your-brand-slug>
-```
-
-The response includes an `integration` block with framework-specific embed
-snippets (HTML, Next.js, Vite, Astro, SvelteKit, Nuxt) and per-platform env-var
-setup instructions (Vercel, Netlify, Render, Railway, Supabase). The agent will
-copy-paste the right snippet for your stack — no external doc lookup needed.
-
-## Step 3: Create Your First Brand
+Already created a brand and just need to embed it in a new project? Ask the agent:
 
 ```
 > /designless
-> A developer tools brand — modern, technical, dark mode first.
+> Give me the embed snippet to wire my brand into this project.
+```
+
+The agent returns the right framework-specific snippet for your stack (HTML, Next.js, Vite, Astro, SvelteKit, Nuxt) plus per-platform environment setup (Vercel, Netlify, Render, Railway, Supabase). It copy-pastes the one that fits, no external doc lookup needed.
+
+## Step 3: Create your first brand
+
+```
+> /designless
+> A developer tools brand. Modern, technical, dark mode first.
 > Think terminal aesthetics but warm, not cold.
 ```
 
 The agent will:
-1. Analyze your description and extract design intent
-2. Resolve a complete expression system (colors, typography, spacing, effects, voice)
+1. Read your description and extract design intent
+2. Resolve a complete expression system (color, typography, spacing, effects, voice)
 3. Show you the key decisions with reasoning for each
-4. Compile a Brand Capsule — a versioned artifact encoding the entire brand
+4. Compile a Brand Capsule, a versioned artifact encoding the entire brand
 5. Publish the capsule so other agents can consume it
 
-This typically takes 30-60 seconds. At the end, you have a production-ready brand with 300+ tokens across 12 categories, coherence scores, and full decision provenance.
+At the end, you have a production-ready brand with 300+ resolved tokens, coherence scores, and full decision provenance.
 
-## Step 4: Build Something With It
+## Step 4: Build something with it
 
 Once your brand exists, describe what you want:
 
@@ -89,7 +86,7 @@ Once your brand exists, describe what you want:
 **Build a landing page component:**
 ```
 > /designless
-> Hero section — dark background, gradient accent, headline + subhead + CTA.
+> Hero section. Dark background, gradient accent, headline + subhead + CTA.
 > Responsive, production-ready HTML.
 ```
 
@@ -101,12 +98,12 @@ Once your brand exists, describe what you want:
 **Extend with new capabilities:**
 ```
 > /designless
-> Add animation tokens — snappy for micro-interactions, smooth for page transitions.
+> Add animation tokens. Snappy for micro-interactions, smooth for page transitions.
 ```
 
-## Walkthrough Scenarios
+## Walkthrough scenarios
 
-### Scenario 1: Agency Creating Client Brands
+### Scenario 1: Agency creating client brands
 
 You run a design agency and need to produce brand systems for clients quickly.
 
@@ -120,17 +117,17 @@ Review the output. If you want to shift direction:
 
 ```
 > /designless
-> Make it warmer — the palette feels too clinical. Keep the minimalism
+> Make it warmer. The palette feels too clinical. Keep the minimalism
 > but add more warmth to the neutrals.
 ```
 
 Compile and hand off:
 ```
 > /designless
-> Run the full quality gate — I'm sharing this with the client.
+> Run the full quality gate. I'm sharing this with the client.
 ```
 
-### Scenario 2: Developer Adding Brand to an Existing Project
+### Scenario 2: Developer adding a brand to an existing project
 
 You have a working app but it looks generic. You want to add real brand character.
 
@@ -147,30 +144,48 @@ Then immediately build with it:
 > structure but apply brand colors, typography, and spacing.
 ```
 
-### Scenario 3: Adopting a Figma Design System
+### Scenario 3: Adopting a Figma design system
 
 You have an existing design system in Figma and want to bring it into the expression infrastructure.
 
 ```
 > /designless
-> Import my Figma design system. Here's the file: [paste Figma URL or export]
+> Import my Figma design system. Here is the file: [paste Figma URL or export]
 ```
 
-The agent analyzes the external system, maps it into the expression infrastructure format, resolves any gaps or conflicts, and creates a brand you can extend and govern going forward.
+The agent reads the external system, maps it into an expression system, resolves any gaps or conflicts, and creates a brand you can extend and govern going forward.
+
+### Scenario 4: Editing your own app on the canvas
+
+You want to make visual changes to your running app with your brand enforced, then ship them.
+
+```
+> /designless
+> Show my Next app on the canvas so I can edit the pricing page against my brand.
+```
+
+The agent brings your app onto the Designless canvas (in the Designless desktop app), applies your brand as you edit, and keeps every change traceable. When you are done:
+
+```
+> /designless
+> Looks good, ship it.
+```
+
+The agent shows you exactly what will be promoted and asks whether to open a PR or merge, running in your own checkout with your own `gh`/`git`.
 
 ## Troubleshooting
 
-**"Not authenticated"** — Run `/designless connect` to trigger the OAuth flow and authenticate via your browser.
+**"Not authenticated".** Run `/designless connect` to trigger the sign-in flow and authenticate in your browser.
 
-**"No brands found"** — Run `/designless` and describe a new brand to get started. Most flows need an existing brand.
+**"No brands found".** Run `/designless` and describe a new brand, or adopt an existing one, to get started. Most flows need a brand.
 
-**"Server unreachable"** — Check your network connection and verify the endpoint at `https://mcp.designless.app/mcp`. The agent needs a live server connection for all capabilities.
+**"Server unreachable".** Check your network connection and verify the endpoint at `https://mcp.designless.app/mcp`. The agent needs a live server connection for all capabilities.
 
-**"Capsule not published"** — The brand exists but hasn't been compiled yet. Run `/designless` and ask to publish — the agent walks you through the quality gate.
+**"Capsule not published".** The brand exists but has not been compiled yet. Run `/designless` and ask to publish. The agent walks you through the quality gate.
 
-## Next Steps
+## Next steps
 
 - Read [Capabilities](capabilities.md) for a detailed breakdown of everything the agent can do
 - Visit [designless.io](https://designless.io) for the full thesis on expression infrastructure
 - Explore [designless.live](https://designless.live) for the vocabulary and philosophy behind the project
-- Try [designtoken.md](https://designtoken.md) — design token generator
+- Try [designtoken.md](https://designtoken.md), the design token generator
