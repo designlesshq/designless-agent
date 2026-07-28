@@ -252,7 +252,7 @@ The user has an existing design system (Figma variables, CSS custom properties, 
 
 The user wants a carousel, poster, slide deck, or other visual artifact that carries their brand.
 
-**Two surfaces under Express.** Most Express requests are Type-1: a brand *artifact* (carousel, poster, deck). But if the user points at their OWN running app ("show my Next app on the canvas and let me edit it", a dev server or local project), that is **Type-2 page mode**: same canvas, same ops loop, a different bootstrap and apply target. Hand to the Prism agent with `artifact_type: 'page'`; Prism runs its detect → walkplan → init → verify → compose → ops → brand-lint flow (see the prism-agent Type-2 section) and is fail-open to the agent-composed app-preview path if anything is unavailable. Page mode is owner-only and desktop-only.
+**Two surfaces under Express.** Most Express requests are Type-1: a brand *artifact* (carousel, poster, deck). But if the user points at their OWN running app ("show my Next app on the canvas and let me edit it", a dev server or local project), that is **Type-2 page mode**: same canvas, same ops loop, a different bootstrap and apply target. Hand to the Prism agent with `artifact_type: 'page'`; Prism runs its detect → walkplan → init → verify → compose → ops → brand-lint flow (see the prism-agent Type-2 section) and is fail-open to the agent-composed app-preview path if anything is unavailable. Page mode is desktop-only, and its promote/apply transport is owner-gated.
 
 **What you deliver:** Brand-aligned visual content live in the Designless desktop canvas - the user can see it render, edit it interactively, and export. Every color, font, and spacing decision traced to the brand's tokens.
 
