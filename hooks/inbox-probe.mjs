@@ -249,16 +249,11 @@ export function summarizeInbox(sessions, cwd) {
     lines.push(`${Number(s.n_page || 0)} page edit(s) target ${s.repo_remote || s.source_hint || 'another repo'}; this session is rooted elsewhere - tell the user to run /designless from that repo (do NOT claim here).`)
   }
   if (artefact.length) {
-    // Type-1 artefact apply is GA (the server-side rollout removed
-    // the TYPE1_APPLY flag entirely after a real-user e2e; nothing gates it now).
-    // This line said "artefact apply is rolling out; do not claim them yet" until
-    // 2026-07-20 — written 2026-06-16 01:59, ~2h BEFORE GA, and never revisited.
-    // The sibling copy in agents/prism-agent.md was corrected on 2026-07-12
-    // (1ff4652) but that commit touched only that one file, so the plugin shipped
-    // two contradictory instructions at the same HEAD: the agent doc said drain
-    // with apply_type1, this hook said do not claim. Production had already
-    // applied 18 artefact ops by then. Keep this line in lockstep with
-    // prism-agent.md — they are the same instruction to the same reader.
+    // Type-1 artefact apply is generally available; nothing gates it, so this
+    // line tells the agent to drain rather than to wait.
+    // Keep it in lockstep with the artefact-drain instruction in
+    // agents/prism-agent.md: they are the same instruction to the same reader,
+    // and if they disagree the plugin ships two contradictory answers at one HEAD.
     lines.push(`${sum(artefact, 'n_artefact')} artefact edit(s) waiting - drain them with less_canvas_ops action 'apply_type1' (drain + apply + ack in one call; the manifest IS the source, so it applies server-side and needs NO checkout and no branch).`)
   }
   if (annotations.length) {

@@ -13,7 +13,7 @@ name = "designless-mcp-bridge"
 path = "src/main.rs"
 
 [dependencies]
-# Async runtime — Phase 2 minimum surface
+# Async runtime; feature set kept to the minimum the bridge actually uses
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-std", "io-util", "fs", "time", "sync", "process"] }
 
 # HTTPS client to mcp.designless.app — rustls to avoid openssl dependency
