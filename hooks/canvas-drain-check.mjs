@@ -8,23 +8,19 @@
 // Type-1 artefact edits, nor on annotations (context). The stop_hook_active
 // guard prevents a stop loop; any error allows the stop.
 //
-// WHY TYPE-1 IS EXCLUDED. The original reason given here was "ledger apply
-// rolling out", which went stale when the server-side rollout removed
-// the TYPE1_APPLY flag and artefact apply went GA. That justification is corrected
-// rather than deleted, because the exclusion still holds for a DIFFERENT and
-// durable reason: stalling a turn is only warranted when the work is bound to
-// THIS agent in THIS checkout. A page op is - its source files exist only here, so
-// if the turn ends undrained nobody else can apply it. A Type-1 op is not:
+// WHY TYPE-1 IS EXCLUDED. Stalling a turn is only warranted when the work is
+// bound to THIS agent in THIS checkout. A page op is - its source files exist only
+// here, so if the turn ends undrained nobody else can apply it. A Type-1 op is not:
 // apply_type1 applies server-side against the manifest with no cwd dependency, so
 // any session can drain it at any time and ending the turn loses nothing. The
 // whole stopReason payload below is likewise branch-first Type-2 instruction that
 // does not describe an artefact drain at all.
 //
 // Artefact edits are surfaced instead by the UserPromptSubmit wake
-// (canvas-wake.mjs -> summarizeInbox) and backstopped by the server's
-// pending_ops_conflict refusal on compose/set_image. Whether this hook SHOULD also
-// stall on Type-1 is an open architectural question (tracked internally, status
-// proposed) - it is deliberately NOT decided here.
+// (canvas-wake.mjs -> summarizeInbox) and backstopped by the server, which refuses
+// a fresh compose or set_image while ops are still pending. Whether this hook
+// SHOULD also stall on Type-1 is an open architectural question - it is
+// deliberately NOT decided here.
 
 import { probeInbox, cwdGitRemote, remotesMatch, isSafeBranchName, isSafeRepoRemote } from './inbox-probe.mjs'
 

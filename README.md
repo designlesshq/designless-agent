@@ -61,12 +61,12 @@ That's it. There's no `/designless:create`, `/designless:audit`, or any other su
 > I want a fintech brand — trustworthy, modern, clean.
 ```
 
-The agent creates a complete brand expression system from your description — 300+ resolved tokens across 12 categories, coherence scores, and an expression brief ready for building. Every token carries decision provenance: not just a value, but the reasoning behind it.
+The agent creates a complete brand expression system from your description: resolved tokens spanning every category your build needs, coherence scores, and an expression brief ready for building. Every token carries decision provenance, not just a value but the reasoning behind it.
 
 ## How It Works
 
 1. `/designless` detects your context (brand inventory, capsule state, assets provided)
-2. Classifies your intent into one of 12 lifecycle modes
+2. Classifies your intent and picks the lifecycle mode that fits
 3. Discovers and sequences the right capabilities at runtime
 4. Returns quality-gated results with coherence metrics
 

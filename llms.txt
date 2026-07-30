@@ -23,20 +23,20 @@ The agent discovers its capabilities from the expression infrastructure server a
 - **Blueprint**: Structural templates matched to user intent — the right content zones, emphasis hierarchy, and rhythm for each surface type.
 - **Brand Archetype**: Canonical personality anchors that shape how a brand expresses itself across every design dimension.
 - **Provenance**: Traceable decision chains from user intent to generated output — auditable, verifiable, not just aesthetic.
-- **Composition Quality**: Measured visual composition scores across token compliance, layout coherence, accessibility, and expression contract adherence.
-- **WGLL (Weighted Generative Layout Language)**: The structural vocabulary that encodes how visual elements should be arranged — weighted relationships between composition elements, not pixel coordinates.
+- **Composition Quality**: How well components compose into governed layouts. Structural quality that goes beyond visual appearance, measured and returned with the output.
+- **WGLL (What Good Looks Like)**: Runtime quality judgment. Structured assessment of what good looks like, available to your coding agent at the moment it builds. Not aesthetic opinion, not subjective review. Encoded taste as a callable runtime check.
 - **DecisionKit**: The reasoning layer that captures why a design decision was made. Every token carries provenance — a traceable chain from user intent through resolution to final value.
 - **Inner Loop**: The self-healing cycle that detects when generated output deviates from brand intent and corrects it before delivery — continuous quality enforcement, not post-hoc review.
 
 ## Template Registry
 
-20 document types across 6 categories, with platform-specific rules and expression contracts:
-- **Social Media (7):** Instagram carousels, LinkedIn documents, stories, square posts, Twitter/X cards, YouTube thumbnails
-- **Business (6):** Pitch decks, sales decks, one-pagers, quarterly reports, brochures
-- **Web (3):** Landing page heroes, blog headers, display ads — with HTML export
-- **Marketing (2):** Email templates (HTML export), posters/flyers
-- **Brand (3):** Identity sheets, brand guidelines, business cards
-- **Visual (1):** Infographics
+A wide range of document types, each carrying platform-specific rules and expression contracts:
+- **Social Media:** carousels, stories, square posts, cards, thumbnails, with platform rules like safe zones, text coverage limits, and aspect ratios
+- **Business:** pitch decks, sales decks, one-pagers, quarterly reports, brochures
+- **Web:** landing page heroes, blog headers, display ads, with HTML export
+- **Marketing:** email templates (HTML export), posters, promotional flyers
+- **Brand:** identity sheets, brand guidelines, business cards
+- **Visual:** infographics, data visualizations
 
 ## Commands
 
@@ -46,7 +46,7 @@ There are no sub-commands. The orchestrator classifies intent at runtime — whe
 
 ## What You Get
 
-When you create a brand, the agent resolves a complete expression system: 300+ design tokens across 12 categories (colors, typography, layout, spacing, radius, shadows, borders, motion, sizes, z-index, opacity, space). Every token carries decision provenance — not just a value, but the reasoning behind it. The output is compiled into a Brand Capsule — one versioned artifact encoding the entire brand, ready for any agent to consume.
+When you create a brand, the agent resolves a complete expression system: design tokens spanning every category your build needs, from color, typography, layout, and spacing through motion, effects, and the rest. Every token carries decision provenance: not just a value, but the reasoning behind it. The output is compiled into a Brand Capsule, one versioned artifact encoding the entire brand, ready for any agent to consume.
 
 ## Install
 
