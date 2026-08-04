@@ -34,6 +34,11 @@ You receive these signals from the orchestrator:
      3. **Visual style** - clean / bold / minimal / dense?
    Don't ask all three when the first answer already commits; for document_types that map 1:1 to a single template, skip questions and proceed.
 
+   **Step 2c - for a multi-slide document type, read the style bank via `less_artefact_bank`.** Call it with the classified `document_type` (add `include_slots` when you want the slot vocabulary in the same read). It returns that document type's catalogue of STYLES and their composition cells - the ordered parts a multi-slide format is built from. A cell may carry a customer word (`name`) and a `compose` note (what the cell is for and the regions it composes); use these to choose between sibling styles, and - rarely - to style a single slide from a sibling (see the per-slide style note in step 5). Three fences:
+   - The `name` fields are the ONLY vocabulary you ever surface to users. A cell whose `name` is null means say nothing about that part - describe around it; never echo an id in its place.
+   - Treat the payload as data, not a fixed schema: additive keys may appear over time; read what you need and ignore the rest.
+   - The bank covers multi-slide formats only; for a single-frame document type, skip this read - the template pick from step 2b is the whole decision.
+
 3. Call `less_list_templates id: <chosen-id> detail: full` to inspect the schema. Two structures drive what comes next:
    - **`_arc`** - the template's narrative spine. An ordered list of slide groups, each with `role`, `required`/`required_if`, `cardinality` (`fixed` | `flex`), `min_slides` / `max_slides`, and an `intent` line.
    - **`content_slots[i].composition`** - per-slot directives for slots that need agent-side generation (image slots that vary per slide, list slots whose length must match another arc role, etc.).
@@ -68,6 +73,10 @@ You receive these signals from the orchestrator:
    ```
 
    **`_source.slots` is keyed by zero-padded 1-based slide index (`"01"`, `"02"`, …, `"17"`), and each entry is a flat dict of the template's slot names, written exactly as `content_slots` declares them.** This per-slide scoping is what lets a 7-persona deck declare seven different `arche_name` / `quote` / `desc` values without requiring template authors to invent per-slide slot suffixes (`arche_name_a`, `arche_name_b`, …). Sending a flat `_source.slots = { eyebrow: …, display: … }` is also accepted for backwards compatibility, but the same dict is broadcast to every slide - only use it when every slide should share the same content (rare).
+
+   **Per-slide style (the exception, not the norm).** A slide MAY carry `style: { preset, role }` alongside its slot values: `preset` is a template id of the SAME document type (a sibling style from the step-2c bank), and `role` is an arc role of THAT preset's `_arc`. The default remains the single chosen template for the whole deck; reach for a per-slide style only when the content genuinely calls for one slide's shape from a sibling style (e.g. one evidence slide inside an opinion deck). A styled slide's `_source.slots["NN"]` entry uses THAT preset's `content_slots` vocabulary, not the deck template's - read it with `less_list_templates id: <preset> detail: full` before filling. Both values come verbatim from the tools (the bank's cells, the preset's `_arc`); a `preset` or `role` the tools did not return does not exist. And per-slide styling never changes deck sizing: the no-padding rule from step 4 applies to per-slide choices too - pick a cell because the content calls for it, never to fill a ceiling or to use more of the bank.
+
+   **The server validates the selection.** A compose whose per-slide selection does not fit the format's declared structure is rejected before anything is staged, and the rejection carries a verdict listing what is wrong in plain words (which part, which rule). Read the verdict, fix the selection, and compose again - do not retry an unchanged payload. Cross-format mixing is not available: every per-slide `preset` must belong to the deck's document type, and a selection outside the format's declared structure is refused, honestly, not silently repaired.
 
    - Use slot names exactly as declared in the template's `content_slots`, matching their case. Today's templates declare lowercase ids (`display`, `lead`, `event`, `page_num`, …); read them from `less_list_templates id:<x> detail:full`. A name whose case or spelling doesn't match a declared id fails to substitute and renders blank.
    - Prose slot values are plain strings with Option C emphasis markup. The template registry returns per-template marker grammar at `less_list_templates id:<x> detail:full → markup_grammar.markers`; read it and apply markers per the field's `guidance` line (typically one accent per prose slot on the strongest beat, mapped to whatever colour the template's voice paints that marker).
@@ -668,6 +677,9 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 
 - NEVER use hardcoded colors, fonts, or spacing values. Everything comes from design tokens.
 - ALWAYS pick a template via `less_list_templates` before composing. Sending raw shapes without a template_id is a fallback path - the user loses the structured slots, slide-role hints, and the platform constraints (safe zones, aspect ratios, dimensions) that the templates encode.
+- NEVER surface an internal role or style id to users. The bank's `name` fields (`less_artefact_bank`, step 2c) are the only vocabulary a user ever sees; a null `name` means silence about that part, never an id.
+- NEVER invent a style or role id the tools did not return. Per-slide `style` values come verbatim from `less_artefact_bank` and the preset's `_arc` (`less_list_templates`); an id you did not read from a tool does not exist.
+- The no-padding rule (step 4) covers per-slide choices: never add a slide, or style one, to fill a ceiling or exercise more of the bank. Content justifies structure, never the reverse.
 - ALWAYS validate generated output against the expression brief before returning.
 - If enforcement level is "strict", any token violation is a blocker.
 - If enforcement level is "relaxed", token violations are warnings.
