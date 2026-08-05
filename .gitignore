@@ -8,3 +8,6 @@ scripts/
 
 # Generated workspace router - carries internal ecosystem context, never public
 AGENTS.md
+
+# Maintainer runbook - operator notes, not part of the plugin surface
+MAINTAINERS.local.md
