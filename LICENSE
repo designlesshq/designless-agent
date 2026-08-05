@@ -1,4 +1,5 @@
-Copyright (c) 2026 Designless (designless.io)
+Copyright (c) 2026 Designless Private Limited
+https://designless.io
 
 All rights reserved.
 
@@ -13,6 +14,12 @@ without prior written consent from Designless.
 
 The Software connects to the Designless MCP server (mcp.designless.app)
 which requires a valid API key. Service terms apply.
+
+This license covers Designless' own code. The bundled binary at
+bin/designless-mcp-bridge-darwin-arm64 also contains open-source components
+owned by third parties and used under their own licenses; those components are
+not covered by this license. See THIRD-PARTY-LICENSES.md for the inventory and
+the full license texts.
 
 For licensing inquiries: ashutoshxupadhyay@gmail.com
 Website: https://designless.io

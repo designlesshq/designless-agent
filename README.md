@@ -1,5 +1,11 @@
 # Designless Agent
 
+[![Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fdesignlesshq%2Fdesignless-agent%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=version&color=0A0A0A)](https://github.com/designlesshq/designless-agent/releases)
+[![License](https://img.shields.io/badge/license-Proprietary-0A0A0A)](LICENSE)
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-0A0A0A)](https://docs.claude.com/en/docs/claude-code)
+[![MCP](https://img.shields.io/badge/MCP-server-0A0A0A)](https://modelcontextprotocol.io)
+[![Expression infrastructure](https://img.shields.io/badge/expression%20infrastructure-designless.io-0A0A0A)](https://designless.io)
+
 Designless agent — encode your brand's design judgment into an agent that builds with your intent.
 
 ## Install
@@ -70,7 +76,7 @@ The agent creates a complete brand expression system from your description: reso
 3. Discovers and sequences the right capabilities at runtime
 4. Returns quality-gated results with coherence metrics
 
-The agent discovers capabilities from the expression infrastructure server at runtime — it doesn't hardcode tool names. This means the agent's capabilities grow as the server evolves.
+The agent discovers capabilities from the expression infrastructure server at runtime, routing by intent rather than by a fixed catalogue. This means the agent's capabilities grow as the server evolves.
 
 ## Troubleshooting
 

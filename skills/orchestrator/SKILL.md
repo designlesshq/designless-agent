@@ -458,9 +458,9 @@ When to invoke:
 - **Express / Build with strict enforcement** - Arbiter runs inline as a gate. Block delivery on a yellow or red badge until the user approves heals or regenerates.
 - **Prove mode** does NOT invoke Arbiter. Prove uses EvidenceKit (decision provenance). Arbiter checks live values against the capsule. Different questions.
 
-### Future Agents
+### Other agents
 
-More specialized agents are in development. When they become available, they'll follow the same handoff pattern: you provide brand context and intent, they return structured results with quality metrics.
+More to come. Any agent that becomes available follows the same handoff pattern: you provide brand context and intent, it returns structured results with quality metrics.
 
 ## Availability
 
