@@ -70,7 +70,7 @@ The agent creates a complete brand expression system from your description: reso
 3. Discovers and sequences the right capabilities at runtime
 4. Returns quality-gated results with coherence metrics
 
-The agent discovers capabilities from the expression infrastructure server at runtime — it doesn't hardcode tool names. This means the agent's capabilities grow as the server evolves.
+The agent discovers capabilities from the expression infrastructure server at runtime, routing by intent rather than by a fixed catalogue. This means the agent's capabilities grow as the server evolves.
 
 ## Troubleshooting
 
