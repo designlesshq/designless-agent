@@ -212,8 +212,19 @@ pub enum IpcResponse {
     AccessDenied { reason: Option<String> },
     #[serde(rename = "token")]
     Token { value: String },
+    // `reason` is Option because desktop builds released before this field
+    // existed do not send it, and app updates are taken by each user when they
+    // choose. A bridge and a desktop of different ages is therefore the normal
+    // case, not the exception, and absent must mean "this build cannot tell us"
+    // rather than any particular session state.
+    //
+    // A FIELD rather than a new op name, deliberately. IpcResponse is a closed
+    // #[serde(tag = "op")] enum: an unknown op VALUE fails deserialization before
+    // the match runs, so every later frame on that connection fails too. An
+    // unknown FIELD is drained instead, which makes widening safe in both
+    // directions. Same shape as AccessDenied and Error two variants above.
     #[serde(rename = "no_session")]
-    NoSession,
+    NoSession { reason: Option<String> },
     #[serde(rename = "error")]
     Error { reason: Option<String> },
 }
@@ -222,6 +233,52 @@ pub enum IpcResponse {
 mod tests {
     use super::*;
     use std::io::{Error, ErrorKind};
+
+    // WIRE COMPATIBILITY WITH DESKTOP BUILDS THAT PREDATE `reason`.
+    //
+    // The assertion that matters most in this file. A bridge newer than the
+    // desktop it talks to receives a bare {"op":"no_session"}. If widening the
+    // variant broke that frame, deserialization would fail before the match ran
+    // and every later frame on the connection would fail with it.
+    #[test]
+    fn no_session_without_reason_still_deserializes() {
+        let r: IpcResponse = serde_json::from_str(r#"{"op":"no_session"}"#).unwrap();
+        assert!(matches!(r, IpcResponse::NoSession { reason: None }));
+    }
+
+    #[test]
+    fn no_session_carries_the_two_wire_reasons() {
+        for lit in ["signed_out", "unavailable"] {
+            let json = format!(r#"{{"op":"no_session","reason":"{lit}"}}"#);
+            let r: IpcResponse = serde_json::from_str(&json).unwrap();
+            match r {
+                IpcResponse::NoSession { reason } => assert_eq!(reason.as_deref(), Some(lit)),
+                other => panic!("expected NoSession, got {other:?}"),
+            }
+        }
+    }
+
+    // An unrecognised reason means this bridge is OLDER than the desktop, not
+    // that anything is wrong. It must parse and fall through to the conservative
+    // message rather than failing the frame.
+    #[test]
+    fn an_unknown_reason_parses_rather_than_failing_the_frame() {
+        let r: IpcResponse =
+            serde_json::from_str(r#"{"op":"no_session","reason":"something-newer"}"#).unwrap();
+        assert!(matches!(r, IpcResponse::NoSession { reason: Some(_) }));
+    }
+
+    // Unknown FIELDS must be drained, not rejected — this is what makes widening
+    // the frame safe in the first place, and it is worth pinning rather than
+    // assuming from serde's defaults.
+    #[test]
+    fn unknown_fields_are_ignored() {
+        let r: IpcResponse = serde_json::from_str(
+            r#"{"op":"no_session","reason":"unavailable","detail":"x","n":1}"#,
+        )
+        .unwrap();
+        assert!(matches!(r, IpcResponse::NoSession { reason: Some(_) }));
+    }
 
     #[test]
     fn missing_socket_maps_to_app_not_open() {

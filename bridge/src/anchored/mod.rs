@@ -94,8 +94,33 @@ impl AuthProvider for AnchoredAuth {
         let mut client = ipc::connect().await?;
         match client.get_token().await? {
             ipc::IpcResponse::Token { value } => Ok(value),
-            ipc::IpcResponse::NoSession => Err(BridgeError::NoBearer(
-                "Designless app has no signed-in user. Open the app, sign in, and retry.".into(),
+            // One sentence cannot describe both outcomes. A genuine sign-out
+            // should send someone to the login screen; a token the app cannot
+            // currently serve should not, because the session may be perfectly
+            // fine and signing in again would change nothing.
+            //
+            // The wire set is closed at two literals. Anything else is treated as
+            // "cannot tell" and falls back to the conservative message: an
+            // unrecognised value means this bridge is older than the app, not
+            // that the session has ended.
+            ipc::IpcResponse::NoSession { reason } => Err(BridgeError::NoBearer(
+                match reason.as_deref() {
+                    Some("signed_out") => {
+                        "Designless app has no signed-in user. Open the app, sign in, and retry."
+                            .into()
+                    }
+                    Some("unavailable") => {
+                        "Designless app could not provide a token. It may still be signed in, so \
+                         check the app rather than signing in again — if it is asking you to \
+                         update, that is why."
+                            .to_string()
+                    }
+                    // Absent (old desktop) or unrecognised: keep the original
+                    // sentence. Guessing here is the one move that makes things
+                    // worse for users who have not updated yet.
+                    _ => "Designless app has no signed-in user. Open the app, sign in, and retry."
+                        .into(),
+                },
             )),
             ipc::IpcResponse::Error { reason } => Err(BridgeError::NoBearer(format!(
                 "Designless IPC reported error: {}",
