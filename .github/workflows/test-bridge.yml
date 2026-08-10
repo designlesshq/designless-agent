@@ -1,0 +1,47 @@
+# The bridge's tests have never run in CI.
+#
+# build-bridge.yml compiles on push to main and on a manual release dispatch, and
+# it never invokes `cargo test`. So the seven tests that pin the IPC frame
+# contract — including the ones asserting an unknown `reason` parses rather than
+# failing the frame, which is what keeps one bad auth moment from turning into
+# -32000 on every subsequent MCP call — have been decoration since they were
+# written. Nothing on a pull request ran at all.
+#
+# This runs them where it matters: before merge, not after.
+name: Test bridge
+
+on:
+  pull_request:
+    paths:
+      - 'bridge/**'
+      - '.github/workflows/test-bridge.yml'
+  merge_group:
+  push:
+    branches: [main]
+    paths:
+      - 'bridge/**'
+
+jobs:
+  test:
+    # ubuntu, deliberately. The release path is macOS-arm64-only because that is
+    # where the binary ships, but nothing under test here is platform-specific —
+    # frame parsing and error mapping — and a cheap runner that always has
+    # capacity is what keeps a pre-merge gate from being the slow step people
+    # learn to skip.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bridge
+
+      - name: Tests
+        run: cargo test --manifest-path bridge/Cargo.toml --all-features
+
+      # Warnings are errors here. The bridge is small and its warnings have been
+      # zero; letting the first one land is how a wall of them starts.
+      - name: Lints
+        run: cargo clippy --manifest-path bridge/Cargo.toml --all-targets -- -D warnings

@@ -5,17 +5,21 @@
 //! that reads the Electron-managed keychain just-in-time and returns the
 //! current Supabase JWT.
 //!
-//! Three outcomes from the initial consent handshake:
+//! Outcomes from the initial consent handshake. The bridge stays alive in every
+//! one of them and never opens a browser; what differs is the error each MCP
+//! frame then returns, which IS the user's diagnosis for the whole session.
 //!
-//! - `Ready(AnchoredAuth)`         — user clicked Allow (or already granted)
-//! - `UserDenied(DeniedAuth)`      — user clicked Deny; bridge stays alive
-//!                                   but every MCP frame returns an error
-//!                                   with a hint pointing at the tray menu
-//! - `None`                        — desktop app reports no signed-in user /
-//!                                   invalid session, or the IPC layer itself
-//!                                   failed (connect, malformed reply). main.rs
-//!                                   maps this to a recovery hint and stays
-//!                                   alive; it never opens a browser.
+//! - `Ready(AnchoredAuth)` — user clicked Allow, or had already granted.
+//! - `UserDenied(DeniedAuth)` — user clicked Deny. The hint points at the tray
+//!   menu, because clearing the grant is the only way forward.
+//! - `Unavailable(DeniedAuth)` — we know why and it is not a denial: the app is
+//!   closed, nobody is signed in, or the session is unusable. Each reports
+//!   itself. This variant exists because all three used to collapse into the
+//!   arm below and be described as "unreachable", which is false whenever the
+//!   app answered.
+//! - `None` — we genuinely cannot tell (IPC failed, malformed reply, a denial
+//!   carrying no reason). main.rs supplies the conservative hint. Reaching for
+//!   this when the reason IS known is the bug this module was fixed for.
 
 pub mod ipc;
 
