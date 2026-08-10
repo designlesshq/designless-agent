@@ -30,6 +30,11 @@ pub enum AnchoredInit {
     /// User explicitly denied. Surface a clear error so they know to click
     /// Disconnect Claude Code if they change their mind.
     UserDenied(DeniedAuth),
+    /// Anchored mode is not available and we know WHY. Previously every one of
+    /// these returned `Ok(None)`, and the caller replaced the reason with one
+    /// fixed sentence about the app being unreachable — which is wrong whenever
+    /// the app answered.
+    Unavailable(DeniedAuth),
 }
 
 /// Try to initialise anchored mode. Returns `Ok(None)` for soft-failure cases
@@ -39,6 +44,13 @@ pub enum AnchoredInit {
 pub async fn try_init() -> BridgeResult<Option<AnchoredInit>> {
     let mut client = match ipc::connect().await {
         Ok(c) => c,
+        // A closed app is not a denial. `AppNotOpen` already exists, already
+        // carries the right code and the right hint, and was unreachable from
+        // here because this arm threw the error away.
+        Err(BridgeError::AppNotOpen) => {
+            tracing::info!("Designless desktop app is not open");
+            return Ok(Some(AnchoredInit::Unavailable(DeniedAuth::app_not_open())));
+        }
         Err(e) => {
             tracing::warn!(error = %e, "anchored IPC connect failed; will surface a recovery hint");
             return Ok(None);
@@ -63,11 +75,20 @@ pub async fn try_init() -> BridgeResult<Option<AnchoredInit>> {
             Some("user_denied") => {
                 tracing::info!("user denied Claude Code access via Designless app");
                 Ok(Some(AnchoredInit::UserDenied(DeniedAuth {
+                    fault: Fault::Denied,
                     hint: "Designless denied Claude Code access. Click 'Disconnect Claude Code' in the menu bar to clear the grant and try again.".into(),
                 })))
             }
-            other => {
-                tracing::info!(reason = ?other, "anchored unavailable; will surface a recovery hint");
+            // The desktop's contract names exactly three: user_denied,
+            // no_session, invalid_session — and its own header says "Read
+            // `reason`, not the op name". Both of the remaining two mean the app
+            // ANSWERED, so telling the user it is unreachable is false.
+            Some(reason) => {
+                tracing::info!(%reason, "anchored unavailable; surfacing the reason");
+                Ok(Some(AnchoredInit::Unavailable(DeniedAuth::not_signed_in(reason))))
+            }
+            None => {
+                tracing::info!("access_denied carried no reason; falling back to the generic hint");
                 Ok(None)
             }
         },
@@ -135,7 +156,30 @@ impl AuthProvider for AnchoredAuth {
 
 /// Hard-failure provider for the "user clicked Deny" path. Every call returns
 /// the same error so Claude Code's /mcp panel shows the recovery hint.
+/// Which failure this provider reports.
+///
+/// The bridge stays alive and answers EVERY MCP frame with the same error, so
+/// this choice is the user-facing diagnosis for the whole session. It used to be
+/// a single value: every soft failure — app closed, nobody signed in, session
+/// unusable — became `AccessDenied`, whose hint reads "Open the Designless app
+/// and approve the access request". There is nothing to approve when the app is
+/// not running, and signing in is not the fix when the app cannot be reached.
+///
+/// The accurate error variants and hints already existed in proxy.rs and were
+/// simply unreachable from this path.
+enum Fault {
+    /// The desktop app is not running. -32006, "open the app".
+    AppNotOpen,
+    /// The app answered; nobody is signed in, or the session is not usable.
+    /// -32003, and the message says which.
+    NotSignedIn(String),
+    /// The user actively refused the grant. -32002, "approve the request" —
+    /// the only case where that sentence is true.
+    Denied,
+}
+
 pub struct DeniedAuth {
+    fault: Fault,
     hint: String,
 }
 
@@ -145,13 +189,112 @@ impl DeniedAuth {
     /// alive and every MCP frame returns this hint via the /mcp panel instead
     /// of silently minting a separate identity.
     pub fn with_hint(hint: impl Into<String>) -> Self {
-        Self { hint: hint.into() }
+        Self { fault: Fault::Denied, hint: hint.into() }
+    }
+
+    /// The app is not running. Distinct from "denied" and from "signed out",
+    /// and the one the user can act on fastest.
+    fn app_not_open() -> Self {
+        Self { fault: Fault::AppNotOpen, hint: String::new() }
+    }
+
+    /// The app answered and cannot give us a session. `reason` is the desktop's
+    /// own wire literal, carried through rather than replaced with a guess.
+    fn not_signed_in(reason: &str) -> Self {
+        let msg = match reason {
+            "no_session" => "Designless app has no signed-in user. Open the app, sign in, then \
+                             reconnect this MCP server."
+                .to_string(),
+            "invalid_session" => "Designless app has a session it cannot use. Open the app and \
+                                  sign in again, then reconnect this MCP server."
+                .to_string(),
+            // An unrecognised literal means this bridge is older than the app,
+            // NOT that we know what happened. Say the true thing.
+            other => format!(
+                "Designless app declined the connection ({other}). Open the app and check it is \
+                 signed in; if it is asking you to update, that is why."
+            ),
+        };
+        Self { fault: Fault::NotSignedIn(msg), hint: String::new() }
     }
 }
 
 #[async_trait::async_trait]
 impl AuthProvider for DeniedAuth {
     async fn bearer_or_refresh(&self) -> BridgeResult<String> {
-        Err(BridgeError::AccessDenied(self.hint.clone()))
+        // Three different problems with three different fixes. Collapsing them
+        // made all three unactionable.
+        Err(match &self.fault {
+            Fault::AppNotOpen => BridgeError::AppNotOpen,
+            Fault::NotSignedIn(msg) => BridgeError::NoBearer(msg.clone()),
+            Fault::Denied => BridgeError::AccessDenied(self.hint.clone()),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::AuthProvider;
+
+    /// The error a provider hands back for one MCP frame.
+    ///
+    /// tokio is already a dependency with the `macros` feature, so this needs no
+    /// new crate — a test helper that adds a dependency to a shipped binary is a
+    /// cost paid by every user for something only CI runs.
+    async fn err_of(p: &DeniedAuth) -> BridgeError {
+        p.bearer_or_refresh().await.unwrap_err()
+    }
+
+    #[tokio::test]
+    async fn three_problems_do_not_collapse_into_one() {
+        // The regression: every soft failure became AccessDenied, whose hint
+        // reads "Open the Designless app and approve the access request".
+        // There is nothing to approve when the app is not running, and signing
+        // in is not the fix when the app cannot be reached.
+        assert!(matches!(err_of(&DeniedAuth::app_not_open()).await, BridgeError::AppNotOpen));
+        assert!(matches!(err_of(&DeniedAuth::not_signed_in("no_session")).await, BridgeError::NoBearer(_)));
+        assert!(matches!(err_of(&DeniedAuth::with_hint("x")).await, BridgeError::AccessDenied(_)));
+    }
+
+    #[tokio::test]
+    async fn every_wire_reason_produces_a_distinct_sentence() {
+        // The desktop's access_denied contract names exactly these two besides
+        // user_denied. If two of them ever read the same, the user cannot tell
+        // which problem they have.
+        let sentences_src: Vec<DeniedAuth> = ["no_session", "invalid_session", "some_future_literal"]
+            .iter()
+            .map(|r| DeniedAuth::not_signed_in(r))
+            .collect::<Vec<_>>();
+        let mut sentences: Vec<String> = Vec::new();
+        for p in sentences_src { sentences.push(err_of(&p).await.to_string()); }
+        let unique: std::collections::HashSet<&String> = sentences.iter().collect();
+        assert_eq!(unique.len(), sentences.len(), "two reasons read identically: {sentences:?}");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_reason_admits_it_rather_than_guessing() {
+        // An unrecognised literal means this bridge is older than the app, NOT
+        // that we know the session ended. Asserting "signed out" there is the
+        // one move that makes things worse for users who have not updated.
+        let s = err_of(&DeniedAuth::not_signed_in("brand_new_literal")).await.to_string();
+        assert!(s.contains("brand_new_literal"), "the unknown reason must be surfaced: {s}");
+        assert!(!s.contains("has no signed-in user"), "must not assert a diagnosis it does not have: {s}");
+    }
+
+    #[tokio::test]
+    async fn nothing_a_user_reads_names_internal_infrastructure() {
+        // This repo is public and these strings ship to users.
+        let banned = ["supabase", "service_role", "jwt", "keychain", "sb_secret", "postgres"];
+        for p in [
+            DeniedAuth::app_not_open(),
+            DeniedAuth::not_signed_in("no_session"),
+            DeniedAuth::not_signed_in("invalid_session"),
+        ] {
+            let s = err_of(&p).await.to_string().to_lowercase();
+            for b in banned {
+                assert!(!s.contains(b), "user-facing string names internal infrastructure ({b}): {s}");
+            }
+        }
     }
 }

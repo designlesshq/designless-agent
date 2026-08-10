@@ -53,6 +53,12 @@ async fn main() -> Result<()> {
             tracing::warn!("anchored access denied; returning hint until the grant is cleared");
             Box::new(d)
         }
+        // We know why, and it is not "unreachable". The provider carries the
+        // diagnosis so every frame reports the problem the user actually has.
+        Some(anchored::AnchoredInit::Unavailable(d)) => {
+            tracing::warn!("anchored unavailable; surfacing the specific reason");
+            Box::new(d)
+        }
         None => {
             tracing::warn!(
                 "desktop app unreachable or no signed-in user; surfacing recovery hint"
