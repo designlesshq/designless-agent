@@ -167,9 +167,14 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
             -32001,
             "Open the Designless desktop app and sign in, then reconnect this MCP server from the /mcp panel.",
         ),
+        // NAMES THE ACTION THAT ALWAYS WORKS. This error has two producers: a
+        // per-frame connect, where retrying after reopening the app succeeds, and
+        // a provider built once at startup, where it cannot — that one holds the
+        // same answer for the whole session, so only reconnecting clears it.
+        // Reconnecting works for both, so it is what the hint names.
         BridgeError::AppNotOpen => (
             -32006,
-            "The Designless desktop app is not open. Canvas tools run through the live app, so open Designless (and sign in), then retry.",
+            "The Designless desktop app is not open. Open Designless and sign in, then retry. If tools still fail, reconnect this MCP server from the /mcp panel.",
         ),
         BridgeError::AccessDenied(_) => (
             -32002,
