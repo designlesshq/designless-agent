@@ -175,10 +175,15 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
             -32002,
             "Open the Designless app and approve the access request.",
         ),
-        BridgeError::NoBearer(_) => (
-            -32003,
-            "Sign in to the Designless desktop app, then reconnect this MCP server from the /mcp panel.",
-        ),
+        // THE HINT USED TO CONTRADICT THE MESSAGE IT SHIPPED WITH. NoBearer's
+        // inner string is already reason-specific — for the desktop's
+        // `unavailable` literal it says "It may still be signed in, so check the
+        // app rather than signing in again" — while this hint said "Sign in to
+        // the Designless desktop app". A client reading `data.hint` got the
+        // opposite advice from a client reading `message`, on the same frame.
+        //
+        // The inner string IS the actionable sentence, so it is the hint.
+        BridgeError::NoBearer(msg) => (-32003, msg.as_str()),
         BridgeError::UpstreamStatus { status: 401, .. } => (
             -32004,
             "Session expired. Open the Designless desktop app and sign in, then retry.",
