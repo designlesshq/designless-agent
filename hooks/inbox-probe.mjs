@@ -265,5 +265,12 @@ export function summarizeInbox(sessions, cwd) {
   if (recoverable.length) {
     lines.push(`${recoverable.length} expired session(s) still hold un-applied edits; they revive in place when you drain them (no work is lost).`)
   }
+  if (lines.length) {
+    // The residual step the passive nudge used to end without: the hooks named
+    // only the one-shot check, so within-turn edits waited for the next turn
+    // boundary (33 accumulated beside one long turn on 2026-08-18). Name the
+    // wait alongside the drain — same reader, same moment.
+    lines.push('After draining, loop less_stream to stay synced for the rest of the turn - it waits server-side and returns the moment the next edit lands.')
+  }
   return lines.join(' ')
 }

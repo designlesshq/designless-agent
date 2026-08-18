@@ -1,0 +1,25 @@
+name: Markdown contracts
+
+# The plugin's behavioural instructions live in markdown and hook strings —
+# surfaces no compiler touches. Until 2026-08-18 this repo had no way to fence
+# them, which is how a ratified routing line (e5c898b8) shipped as two inert
+# bare names and stayed inert for three weeks. This gate runs the dependency-
+# free contract checks on every change.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Canvas-sync contracts (drain ends with the wait; publish asks)
+        run: node scripts/check-canvas-sync-contracts.mjs

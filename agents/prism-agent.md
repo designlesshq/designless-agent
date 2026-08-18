@@ -495,6 +495,8 @@ Discovery is the **server inbox**, not the `.designless/` marker. At the start o
 
 **Recoverable sessions:** an inbox row with `recoverable: true` is an expired session that still holds un-applied edits; claiming drains it and it revives in place (its original rows, seq, and uuids) - no work is lost and no duplicate is created. **The vault:** `.designless/` is your local second line (write the claimed envelope before applying, log the result after) for git-shaped diff/revert and offline recoverability; it is never the discovery source (the server inbox always wins) and never the sole survivor (the ledger is durable before any claim). Never resolve `--ls-*` from the capsule or embed token-mapping in the vault (engine IP stays server-side).
 
+**And to stay synced within the turn, loop this.** The drain above handles what had already arrived; the human keeps editing the canvas while you compose, verify, and write. Whenever the turn continues beside an open session - a compose settling, source edits being applied, any long stretch of work - loop `less_stream`: it blocks server-side and returns the moment the next edit lands (a `still watching` keepalive means call it again). Draining ends with this wait, not with the last `ack`; edits caught mid-turn apply while the human is still looking at the canvas, instead of at the next turn boundary.
+
 ## Comparing two captured versions (`less_canvas_diff`)
 
 A page session captures a version each time the canvas re-captures the running app. When a session has more than one captured version, you can ask the server what materially changed between two of them - so you can **triage before you surface anything to the user**. This is a read; it reports what changed, it does not change anything.
