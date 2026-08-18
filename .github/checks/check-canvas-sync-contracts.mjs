@@ -91,10 +91,17 @@ check(
 // in-turn wait can reach. Proven live before it was written down: two
 // between-turn edits drained in ~15s each with no user message.
 check(
-  "SKILL.md arms the idle watcher, bound to a canvas being in play",
-  /[Aa]rm the idle watcher/.test(SKILL) && /once per session/i.test(SKILL),
+  "SKILL.md arms the Designless Agent, bound to a canvas being in play",
+  /[Aa]rm the Designless Agent/.test(SKILL) && /once per session/i.test(SKILL),
   "The between-turns layer must be armed from the drain protocol — " +
     "and exactly once, or every wake doubles.",
+);
+check(
+  "the background task is labeled with the brand, not as an anonymous poller",
+  /Label the background task exactly "Designless Agent"/.test(SKILL),
+  "The watcher is the product's presence in the user's background-task list — " +
+    "'Designless Agent — connecting live edits on the Designless app to the session'. " +
+    "An unbranded label reads as a stray script.",
 );
 check(
   "SKILL.md degrades gracefully when the host has no background facility",
