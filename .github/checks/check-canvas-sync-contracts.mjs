@@ -86,6 +86,35 @@ check(
     "mechanism does not belong in the skill.",
 );
 
+// ── 6. The idle watcher: armed once, by the orchestrator only ────────────────
+// The layer that covers the stretch neither hooks (turn boundaries) nor the
+// in-turn wait can reach. Proven live before it was written down: two
+// between-turn edits drained in ~15s each with no user message.
+check(
+  "SKILL.md arms the idle watcher, bound to a canvas being in play",
+  /[Aa]rm the idle watcher/.test(SKILL) && /once per session/i.test(SKILL),
+  "The between-turns layer must be armed from the drain protocol — " +
+    "and exactly once, or every wake doubles.",
+);
+check(
+  "SKILL.md degrades gracefully when the host has no background facility",
+  /skip silently|no background/i.test(SKILL),
+  "A host without background tasks must not error or stall — " +
+    "the hooks remain the between-turns floor.",
+);
+check(
+  "prism-agent.md forbids sub-agents arming their own watcher",
+  /[Nn]ever arm an idle watcher of your own/.test(PRISM),
+  "The orchestrator owns the watcher; a Prism handoff arming a second one " +
+    "doubles every wake. The exclusion must be stated where the sub-agent reads.",
+);
+check(
+  "the inline wait (wait_seconds) is named alongside the stream loop",
+  /wait_seconds/.test(SKILL) && /wait_seconds/.test(PRISM),
+  "The server folded the wait into less_canvas_inbox (one shared implementation); " +
+    "the playbooks must name both doors or agents on new servers rediscover the split.",
+);
+
 if (failures.length) {
   console.error("\n" + failures.join("\n\n"));
   process.exit(1);
