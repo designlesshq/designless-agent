@@ -1,0 +1,12 @@
+{
+  "name": "designless-plugins",
+  "interface": { "displayName": "Designless" },
+  "plugins": [
+    {
+      "name": "designless",
+      "source": { "source": "local", "path": "./" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Design"
+    }
+  ]
+}

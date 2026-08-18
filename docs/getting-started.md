@@ -4,7 +4,7 @@ This guide walks you through connecting to Designless and creating your first br
 
 ## Prerequisites
 
-- Claude Code (v1.0.33+), Cursor, or any other agent with skill or MCP support
+- Claude Code (v1.0.33+), the ChatGPT app (Codex), Cursor, or any other agent with skill or MCP support
 - A Designless account. Create one at [designless.app](https://designless.app)
 
 ## Step 1: Install the plugin
@@ -15,12 +15,14 @@ claude plugin marketplace add designlesshq/designless-agent
 claude plugin install designless@designless-plugins
 ```
 
-**Cursor:**
+**ChatGPT app (Codex):** open **Plugins → Add → Add plugin marketplace** and enter `designlesshq/designless-agent`, then install **Designless**. Or from a terminal:
+```bash
+codex plugin marketplace add designlesshq/designless-agent
+codex plugin add designless@designless-plugins
 ```
-/add-plugin designless
-```
+The app asks you to review the plugin's hooks once before they run - approve them so live canvas sync works.
 
-After installing, run `/reload-plugins` to activate.
+**Cursor:** the Designless desktop app installs and updates the plugin for you. Install the [Designless app](https://designless.app) and sign in; no manual step in Cursor.
 
 ## Step 2: Connect to the expression infrastructure
 

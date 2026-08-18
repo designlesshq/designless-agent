@@ -26,6 +26,13 @@ claude /reload-plugins
 claude /designless
 ```
 
+Or in the ChatGPT app (Codex): open **Plugins → Add → Add plugin marketplace**, enter `designlesshq/designless-agent`, and install **Designless**. From a terminal:
+
+```bash
+codex plugin marketplace add designlesshq/designless-agent
+codex plugin add designless@designless-plugins
+```
+
 ### MCP server
 
 Add the expression infrastructure runtime directly to any MCP-compatible agent:
@@ -45,7 +52,7 @@ npx skills add designlesshq/designless-agent
 ```
 
 The installer will:
-1. Clone the repo and detect the `designless-orchestrator` skill
+1. Clone the repo and detect the orchestrator skill
 2. Ask which agents to install to (Cursor, Cline, Codex, etc.)
 3. Choose scope — **Project** (current directory) or **Global** (all projects)
 4. Copy the skill into each agent's `.agents/skills/` directory
