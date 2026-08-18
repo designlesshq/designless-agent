@@ -137,6 +137,8 @@ The playbooks below describe what you orchestrate through the server. Without th
 
 Once per session is the failure mode this text exists to prevent: a real session called the inbox once, saw `ops_pending` climb 3 → 4 across four separate `less_canvas_status` calls over three hours, and drained nothing. The user watched six of their edits sit unapplied. The count was visible every time; treating it as informational is what broke it.
 
+**Draining is not staying synced — the drain ends with a wait, not with the last ack.** The inbox is a snapshot of what has *already* arrived; the user keeps editing the canvas while you work. Whenever your turn continues past the drain — long generation, a subagent running, CI settling, a queue draining, any stretch of in-turn work beside an open canvas — loop `less_stream`: it blocks server-side and returns the instant the next edit lands, so you drain it as it happens instead of at your next turn's inbox check. A `still watching` keepalive just means call it again. This is the residual step a session skipped while 33 of the user's edits accumulated beside a 100+ tool-call turn: it checked the inbox at every turn start and never once waited.
+
 Before classifying intent, understand the current state by querying the server:
 - How many brands exist? Which is active?
 - What state is the capsule in - none, draft, compiled, published?
@@ -340,7 +342,9 @@ The user is ready to publish their brand as an immutable, versioned capsule.
 
 **What you deliver:** A published capsule with a version number and quality confirmation.
 
-**How you work:** Search for and run the capsule compile tool. Search for the quality-check tool and run it. If it passes, search for the publish tool and run it; confirm the version number. If it fails, present blockers clearly - never silently publish a capsule that doesn't pass the gate.
+**How you work:** Search for and run the capsule compile tool - compiling merges the brand's *staged dirty state* (pending edits from Studio or an override push) into the snapshot, and the response's `staged_changes_merged` tells you how much pending work the capsule carries; say it. Search for the quality-check tool and run it. If it passes, **ask before you ship**: publishing takes an explicit version bump, and choosing between major / minor / patch is a blast-radius judgment, not a mechanical step - put it to the user with `AskUserQuestion` (the same convention Studio's release UI uses) and never default silently. Then run the publish tool with the user's bump and confirm the version number. If quality fails, present blockers clearly - never silently publish a capsule that doesn't pass the gate.
+
+**Receipts state their own scope.** `staged` means in the dirty state and in no capsule; `compiled` means in capsule vN and not serving; `published` means serving. Never report a change as shipped on the strength of a staging or compile receipt - a session once claimed a publish whose capsule silently omitted the very override it had pushed, because "merged" (into staging) was read as "applied". If publish refuses with `stale_compile`, edits were staged after your compile: recompile (it will include them) and publish the new hash - do not retry the old one.
 
 ### Rollback - Revert to a previous version
 

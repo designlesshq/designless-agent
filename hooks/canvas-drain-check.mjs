@@ -70,7 +70,8 @@ async function main() {
       'branch. If safety_branch is null the session is un-stamped: no branch is required. On EVERY source ' +
       'claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). ' +
       'Enumerate with less_canvas_inbox, then apply with less_canvas_ops (claim -> apply on previous_value -> ack). ' +
-      'If none remain claimable from here, you are done.' +
+      'If none remain claimable from here, you are done - and if you keep working beside the open canvas, ' +
+      'loop less_stream so the next edit is drained the moment it lands.' +
       branchHint,
   }))
 }

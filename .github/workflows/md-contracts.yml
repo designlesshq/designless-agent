@@ -1,0 +1,29 @@
+name: Markdown contracts
+
+# The plugin's behavioural instructions live in markdown and hook strings —
+# surfaces no compiler touches. Until now this repo had no way to fence them,
+# which is how a routing instruction once shipped as two inert bare names and
+# stayed inert for weeks. This gate runs the dependency-free contract checks
+# on every change.
+#
+# The checks live in .github/checks/ (NOT scripts/ — that directory is
+# gitignored by design: internal release tooling never ships to this public
+# marketplace repo, and a check that CI cannot see is no check at all).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Canvas-sync contracts (drain ends with the wait; publish asks)
+        run: node .github/checks/check-canvas-sync-contracts.mjs
