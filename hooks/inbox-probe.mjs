@@ -254,7 +254,12 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
     // Keep it in lockstep with the artefact-drain instruction in
     // agents/prism-agent.md: they are the same instruction to the same reader,
     // and if they disagree the plugin ships two contradictory answers at one HEAD.
-    lines.push(`${sum(artefact, 'n_artefact')} artefact edit(s) waiting - drain them with less_canvas_ops action 'apply_type1' (drain + apply + ack in one call; the manifest IS the source, so it applies server-side and needs NO checkout and no branch).`)
+    // The DOCUMENT leads the sentence: when the agent narrates this to the
+    // user, "an edit is pending on the Designless app for <document>" is the
+    // shape — never tool vocabulary like "the canvas inbox", which identifies
+    // nothing the user owns.
+    const docs = [...new Set(artefact.map((s) => s.title || s.brand_slug || (s.repo_remote ? String(s.repo_remote).split('/').pop() : null) || 'Untitled'))]
+    lines.push(`${sum(artefact, 'n_artefact')} edit(s) pending on the Designless app for ${docs.map((d) => `"${d}"`).join(', ')} - drain them with less_canvas_ops action 'apply_type1' (drain + apply + ack in one call; the manifest IS the source, so it applies server-side and needs NO checkout and no branch). When you mention it to the user, name the document, not the machinery.`)
   }
   if (annotations.length) {
     lines.push(`${sum(annotations, 'n_annotation')} annotation(s) waiting - read as context with less_canvas_ops action=peek, form your judgment, then ack them applied. They are not mechanical edits.`)
