@@ -128,7 +128,7 @@ pub fn tree_hash(root: &Path) -> std::io::Result<String> {
         hasher.update(rel.as_bytes());
         hasher.update([0u8]);
         hasher.update(hash.as_bytes());
-        hasher.update([b'\n']);
+        hasher.update(*b"\n");
     }
     Ok(hex(&hasher.finalize()))
 }
