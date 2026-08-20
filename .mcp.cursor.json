@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "less-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./bin/launch.mjs"],
+      "cwd": "."
+    }
+  }
+}
