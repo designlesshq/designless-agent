@@ -13,6 +13,9 @@ name: Markdown contracts
 on:
   push:
     branches: [main]
+    # Version tags run the same gate: a tag that disagrees with the tree it
+    # points at is a release that never happened.
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -27,3 +30,5 @@ jobs:
           node-version: "22"
       - name: Canvas-sync contracts (drain ends with the wait; publish asks)
         run: node .github/checks/check-canvas-sync-contracts.mjs
+      - name: One version, every door (all manifests agree; tags match the tree)
+        run: node .github/checks/check-one-version.mjs
