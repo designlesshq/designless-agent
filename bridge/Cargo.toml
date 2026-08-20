@@ -1,6 +1,6 @@
 [package]
 name = "designless-mcp-bridge"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 rust-version = "1.85"
 # Proprietary. Governed by the repository LICENSE at the root of this repo,
@@ -52,5 +52,9 @@ async-trait = "0.1"
 opt-level = "z"      # Optimize for size (security-sensitive single-purpose binary)
 lto = true           # Link-time optimization
 codegen-units = 1
-panic = "abort"      # Smaller binary; bridge has no panic-recovery story
+panic = "unwind"     # abort filed a macOS crash report on EVERY host teardown
+                     # (5 reports in one day of Cursor restarts, 2026-08-20).
+                     # Unwind + the stderr panic hook in main.rs turns any
+                     # future panic into a logged, clean-ish exit instead of
+                     # a SIGABRT the user finds in Console.
 strip = "symbols"
