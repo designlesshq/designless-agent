@@ -1,8 +1,10 @@
 {
   "name": "designless",
-  "version": "1.10.0",
-  "description": "Designless agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
-  "author": { "name": "Designless" },
+  "version": "1.10.1",
+  "description": "Designless agent \u2014 encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
+  "author": {
+    "name": "Designless"
+  },
   "homepage": "https://designless.io",
   "repository": "https://github.com/designlesshq/designless-agent",
   "license": "SEE LICENSE IN LICENSE",
