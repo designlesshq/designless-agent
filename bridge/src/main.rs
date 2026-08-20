@@ -35,6 +35,13 @@ mod proxy;
 #[tokio::main]
 async fn main() -> Result<()> {
     init_tracing();
+    // Any panic logs to stderr (the host editor's MCP log captures it) and the
+    // process exits plainly. With the previous panic=abort profile every host
+    // teardown that tripped a panic filed a macOS crash report the user could
+    // find in Console — one per Cursor restart, observed 2026-08-20.
+    std::panic::set_hook(Box::new(|info| {
+        tracing::error!(panic = %info, "bridge panic — exiting");
+    }));
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         "designless-mcp-bridge starting (anchored)"
@@ -65,7 +72,7 @@ async fn main() -> Result<()> {
             );
             Box::new(anchored::DeniedAuth::with_hint(
                 "The Designless desktop app isn't reachable. Open Designless, sign in, \
-                 then reconnect this MCP server from the /mcp panel.",
+                 then reconnect the Designless server from your editor's MCP settings.",
             ))
         }
     };

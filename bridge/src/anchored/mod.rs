@@ -169,7 +169,7 @@ enum Fault {
 }
 
 /// Hard-failure provider. Every call returns the same error so Claude Code's
-/// /mcp panel shows a recovery hint the user can act on.
+/// editor's MCP status surface shows a recovery hint the user can act on.
 pub struct DeniedAuth {
     fault: Fault,
     hint: String,
@@ -178,7 +178,7 @@ pub struct DeniedAuth {
 impl DeniedAuth {
     /// Build a hard-fail provider with a custom recovery hint. Used when the
     /// desktop app is unreachable or has no signed-in user: the bridge stays
-    /// alive and every MCP frame returns this hint via the /mcp panel instead
+    /// alive and every MCP frame returns this hint via the editor's MCP surface instead
     /// of silently minting a separate identity.
     pub fn with_hint(hint: impl Into<String>) -> Self {
         Self { fault: Fault::Denied, hint: hint.into() }

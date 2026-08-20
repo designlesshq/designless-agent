@@ -165,7 +165,7 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
     let (code, hint) = match err {
         BridgeError::IpcUnreachable => (
             -32001,
-            "Open the Designless desktop app and sign in, then reconnect this MCP server from the /mcp panel.",
+            "Open the Designless desktop app and sign in, then reconnect the Designless server from your editor's MCP settings.",
         ),
         // NAMES THE ACTION THAT ALWAYS WORKS. This error has two producers: a
         // per-frame connect, where retrying after reopening the app succeeds, and
@@ -174,7 +174,7 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
         // Reconnecting works for both, so it is what the hint names.
         BridgeError::AppNotOpen => (
             -32006,
-            "The Designless desktop app is not open. Open Designless and sign in, then retry. If tools still fail, reconnect this MCP server from the /mcp panel.",
+            "The Designless desktop app is not open. Open Designless and sign in, then retry. If tools still fail, reconnect the Designless server from your editor's MCP settings.",
         ),
         BridgeError::AccessDenied(_) => (
             -32002,
