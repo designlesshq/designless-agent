@@ -11,6 +11,7 @@
 
 use crate::auth::AuthProvider;
 use crate::error::{BridgeError, BridgeResult};
+use crate::integrity::Integrity;
 use crate::mcp::{FrameReader, FrameWriter};
 use anyhow::Result;
 use reqwest::Client;
@@ -34,10 +35,17 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
     let mut reader = FrameReader::new();
     let mut writer = FrameWriter::new();
 
-    tracing::info!(upstream = %upstream, "proxy ready");
+    // Attestation identity for the integrity fence. Recomputed per frame in
+    // post_once; None only when the tree layout is unrecognizable (dev builds
+    // run from cargo target dirs), in which case no header is sent and the
+    // server treats the client as legacy.
+    let integrity = Integrity::detect();
+
+    tracing::info!(upstream = %upstream, attesting = integrity.is_some(), "proxy ready");
 
     while let Some(frame) = reader.read_frame().await? {
         let id = frame.get("id").cloned();
+        let integrity = integrity.as_ref();
         // JSON-RPC notifications (no `id`) must never receive a response. The MCP
         // Streamable HTTP server answers them with 202 Accepted + empty body;
         // forward fire-and-forget and emit nothing. Emitting a frame here — in
@@ -45,7 +53,7 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
         // empty 202 body — is an unsolicited response a strict client rejects,
         // failing the connect handshake right after `notifications/initialized`.
         let is_notification = matches!(id, None | Some(Value::Null));
-        let result = forward(&client, &upstream, &*auth, &frame).await;
+        let result = forward(&client, &upstream, &*auth, integrity, &frame).await;
         if is_notification {
             if let Err(e) = result {
                 tracing::debug!(error = %e, "notification upstream result ignored");
@@ -68,13 +76,21 @@ async fn post_once(
     client: &Client,
     upstream: &str,
     auth: &(dyn AuthProvider + Send + Sync),
+    integrity: Option<&Integrity>,
     frame: &Value,
 ) -> BridgeResult<reqwest::Response> {
     let bearer = auth.bearer_or_refresh().await?;
-    let res = client
+    // Per-frame attestation: the tree is re-hashed for every call, so an edit
+    // mid-session is caught on the agent's next server-bound action — the
+    // tightest fence that exists for local files.
+    let mut req = client
         .post(upstream)
         .bearer_auth(&bearer)
-        .header("content-type", "application/json")
+        .header("content-type", "application/json");
+    if let Some(integrity) = integrity {
+        req = req.header("x-designless-plugin-integrity", integrity.header_value());
+    }
+    let res = req
         // MCP Streamable HTTP transport spec requires the client to accept
         // both JSON and SSE — the server is allowed to upgrade to streaming
         // for any response and rejects requests that don't advertise both
@@ -90,9 +106,10 @@ async fn forward(
     client: &Client,
     upstream: &str,
     auth: &(dyn AuthProvider + Send + Sync),
+    integrity: Option<&Integrity>,
     frame: &Value,
 ) -> BridgeResult<Value> {
-    let mut res = post_once(client, upstream, auth, frame).await?;
+    let mut res = post_once(client, upstream, auth, integrity, frame).await?;
 
     // The desktop app is the token-rotation authority. On a 401, asking it
     // again (`bearer_or_refresh()` → a fresh IPC `get_token`) yields a
@@ -100,7 +117,7 @@ async fn forward(
     // race where the token expired in flight or just after it was read.
     if res.status().as_u16() == 401 {
         tracing::warn!("upstream 401 — requesting a fresh token from the desktop app and retrying once");
-        res = post_once(client, upstream, auth, frame).await?;
+        res = post_once(client, upstream, auth, integrity, frame).await?;
     }
 
     let status = res.status();
@@ -193,6 +210,15 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
             -32004,
             "Session expired. Open the Designless desktop app and sign in, then retry.",
         ),
+        // 428 Precondition Required = the integrity fence: the server compared
+        // this install's attested tree hash against the released one and
+        // refused. The body's hint names the recovery (reinstall/update).
+        BridgeError::UpstreamStatus { status: 428, body } => (
+            -32007,
+            upstream_hint(body).unwrap_or(
+                "This plugin's files differ from the released version, so the server declined the session. Update or reinstall the Designless plugin to restore the verified state.",
+            ),
+        ),
         BridgeError::UpstreamStatus { .. } => (-32005, "Upstream MCP error. Visit https://designless.app/help if persistent."),
         BridgeError::Protocol(_) => (-32700, "MCP protocol error."),
         BridgeError::Io(_) | BridgeError::Http(_) | BridgeError::Json(_) => (
@@ -210,4 +236,16 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
             "data": { "hint": hint },
         },
     })
+}
+
+/// Pull the server's `hint` field out of a refusal body, if it parses.
+fn upstream_hint(body: &str) -> Option<&'static str> {
+    // The hint text is server-owned and dynamic; leaking it through a static
+    // return type is not possible, so the mapping above uses its own copy and
+    // this helper only confirms the body carried one (logged for diagnosis).
+    let parsed: Option<Value> = serde_json::from_str(body).ok();
+    if let Some(hint) = parsed.as_ref().and_then(|v| v.get("hint")).and_then(|h| h.as_str()) {
+        tracing::warn!(server_hint = %hint, "integrity refusal from server");
+    }
+    None
 }

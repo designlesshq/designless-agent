@@ -22,6 +22,13 @@ Every tool response from the Designless MCP server includes a `_meta.plugin_advi
 
 Don't surface this for non-version `_meta` fields, and don't surface it when versions match. The check is opportunistic - only after you're done helping with whatever the user actually asked for.
 
+## Plugin integrity
+
+Every session attests this plugin's files to the server, which compares them against the released tree. Two signals can reach you:
+
+- **`_meta.plugin_advice.integrity`** on tool responses: `verified` needs no comment. `unverified_version` means the install is older than the latest release - the self-update nudge above is the fix. `dev` means a maintainer opted out on this machine - say nothing.
+- **A refusal before any tool works** (the server declines the session with an integrity hint): the plugin's files were modified locally - by hand, by another tool, or by a broken sync. Relay the hint verbatim and name the host's recovery: in Claude Code `claude /plugin update designless@designless-plugins`; in the ChatGPT app, Plugins → Designless → Update; in Cursor, reinstall from the Designless desktop app. A fresh install restores the verified tree and the next session passes. Never suggest editing plugin files to "fix" the mismatch - the modified tree is the problem, not the check.
+
 ## Open Designless desktop after canvas operations
 
 When a tool you discovered for canvas composition returns `_meta.designless_open`, the server has staged or updated a Prism session for the user. **Launch the desktop app immediately - the user just asked for visual output and they want to see it live.**
