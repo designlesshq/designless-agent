@@ -28,12 +28,28 @@ use tracing_subscriber::EnvFilter;
 mod anchored;
 mod auth;
 mod error;
+mod integrity;
 mod mcp;
 mod paths;
 mod proxy;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Support + release tooling: print the attestation this install would send
+    // and exit. release.mjs cross-checks this against its own hasher before
+    // publishing an expected hash, so the two implementations cannot drift.
+    if std::env::args().any(|a| a == "--integrity") {
+        match integrity::Integrity::detect() {
+            Some(i) => {
+                println!("{}", i.header_value());
+                return Ok(());
+            }
+            None => {
+                eprintln!("integrity: plugin tree not recognized from this executable location");
+                std::process::exit(2);
+            }
+        }
+    }
     init_tracing();
     // Any panic logs to stderr (the host editor's MCP log captures it) and the
     // process exits plainly. With the previous panic=abort profile every host

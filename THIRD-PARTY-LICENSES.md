@@ -11,25 +11,25 @@ repository outside these third-party crates is governed by [LICENSE](LICENSE).
 
 Inventory generated from `cargo tree --target aarch64-apple-darwin --edges
 normal,build`, which is the exact dependency set compiled into the shipped
-binary (108 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
+binary (116 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 
 ## Summary
 
 | License | Crates |
 | --- | ---: |
-| MIT OR Apache-2.0 | 47 |
-| MIT | 26 |
+| MIT OR Apache-2.0 | 53 |
+| MIT | 27 |
 | Unicode-3.0 | 18 |
 | Apache-2.0 OR MIT | 5 |
 | Apache-2.0 OR ISC OR MIT | 2 |
 | ISC | 2 |
+| MIT/Apache-2.0 | 2 |
 | (MIT OR Apache-2.0) AND Unicode-3.0 | 1 |
 | Apache-2.0 | 1 |
 | Apache-2.0 AND ISC | 1 |
 | Apache-2.0 OR BSL-1.0 | 1 |
 | BSD-3-Clause | 1 |
 | CDLA-Permissive-2.0 | 1 |
-| MIT/Apache-2.0 | 1 |
 | Unlicense OR MIT | 1 |
 
 ## Crates
@@ -41,9 +41,13 @@ binary (108 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | atomic-waker | 1.1.2 | Apache-2.0 OR MIT | Copyright (c) 2016 Alex Crichton |
 | base64 | 0.22.1 | MIT OR Apache-2.0 | Copyright (c) 2015 Alice Maz |
 | bitflags | 2.11.1 | MIT OR Apache-2.0 | Copyright (c) 2014 The Rust Project Developers |
+| block-buffer | 0.10.4 | MIT OR Apache-2.0 | Copyright (c) 2018-2019 The RustCrypto Project Developers |
 | bytes | 1.11.1 | MIT | Copyright (c) 2018 Carl Lerche |
 | cc | 1.2.62 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton |
 | cfg-if | 1.0.4 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton |
+| cpufeatures | 0.2.17 | MIT OR Apache-2.0 | Copyright (c) 2020-2025 The RustCrypto Project Developers |
+| crypto-common | 0.1.7 | MIT OR Apache-2.0 | Copyright (c) 2021 RustCrypto Developers |
+| digest | 0.10.7 | MIT OR Apache-2.0 | Copyright (c) 2017 Artyom Pavlov |
 | displaydoc | 0.2.5 | MIT OR Apache-2.0 | (no holder stated upstream) |
 | errno | 0.3.14 | MIT OR Apache-2.0 | Copyright (c) 2014 Chris Wong |
 | find-msvc-tools | 0.1.9 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton |
@@ -53,6 +57,7 @@ binary (108 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | futures-sink | 0.3.32 | MIT OR Apache-2.0 | Copyright (c) 2016 Alex Crichton |
 | futures-task | 0.3.32 | MIT OR Apache-2.0 | Copyright (c) 2016 Alex Crichton |
 | futures-util | 0.3.32 | MIT OR Apache-2.0 | Copyright (c) 2016 Alex Crichton |
+| generic-array | 0.14.7 | MIT | Copyright (c) 2015 Bartłomiej Kamiński |
 | getrandom | 0.2.17 | MIT OR Apache-2.0 | Copyright (c) 2018-2024 The rust-random Project Developers |
 | http | 1.4.0 | MIT OR Apache-2.0 | Copyright 2017 http-rs authors |
 | http-body | 1.0.1 | MIT | Copyright (c) 2019-2024 Sean McArthur & Hyper Contributors |
@@ -99,6 +104,7 @@ binary (108 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | serde_derive | 1.0.228 | MIT OR Apache-2.0 | (no holder stated upstream) |
 | serde_json | 1.0.149 | MIT OR Apache-2.0 | (no holder stated upstream) |
 | serde_urlencoded | 0.7.1 | MIT/Apache-2.0 | Copyright (c) 2016 Anthony Ramine |
+| sha2 | 0.10.9 | MIT OR Apache-2.0 | Copyright (c) 2006-2009 Graydon Hoare |
 | sharded-slab | 0.1.7 | MIT | Copyright (c) 2019 Eliza Weisman |
 | shlex | 1.3.0 | MIT OR Apache-2.0 | Copyright 2015 Nicholas Allegra (comex). |
 | signal-hook-registry | 1.4.8 | MIT OR Apache-2.0 | Copyright (c) 2017 tokio-jsonrpc developers |
@@ -128,10 +134,12 @@ binary (108 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | tracing-log | 0.2.0 | MIT | Copyright (c) 2019 Tokio Contributors |
 | tracing-subscriber | 0.3.23 | MIT | Copyright (c) 2019 Tokio Contributors |
 | try-lock | 0.2.5 | MIT | Copyright (c) 2018-2023 Sean McArthur |
+| typenum | 1.20.1 | MIT OR Apache-2.0 | Copyright 2014 Paho Lurie-Gregg |
 | unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | Copyright © 1991-2023 Unicode, Inc. |
 | untrusted | 0.9.0 | ISC | // Copyright 2015-2016 Brian Smith. |
 | url | 2.5.8 | MIT OR Apache-2.0 | Copyright (c) 2013-2025 The rust-url developers |
 | utf8_iter | 1.0.4 | Apache-2.0 OR MIT | (no holder stated upstream) |
+| version_check | 0.9.5 | MIT/Apache-2.0 | Copyright (c) 2017-2018 Sergio Benitez |
 | want | 0.3.1 | MIT | Copyright (c) 2018-2019 Sean McArthur |
 | webpki-roots | 1.0.7 | CDLA-Permissive-2.0 | (no holder stated upstream) |
 | writeable | 0.6.3 | Unicode-3.0 | Copyright © 2020-2024 Unicode, Inc. |
