@@ -222,7 +222,7 @@ function pageDrainableHere(s, origin) {
  * Build the agent-facing wake text from the inbox rows, routed by surface and
  * checkout (§5.1/§5.2). Returns '' when there is nothing actionable to say.
  */
-export function summarizeInbox(sessions, cwd) {
+export function summarizeInbox(sessions, cwd, opts = {}) {
   const origin = cwdGitRemote(cwd)
   const here = [], elsewhere = [], artefact = [], annotations = [], attention = [], recoverable = []
   for (const s of sessions) {
@@ -259,8 +259,18 @@ export function summarizeInbox(sessions, cwd) {
   if (annotations.length) {
     lines.push(`${sum(annotations, 'n_annotation')} annotation(s) waiting - read as context with less_canvas_ops action=peek, form your judgment, then ack them applied. They are not mechanical edits.`)
   }
-  if (attention.length) {
-    lines.push(`${sum(attention, 'n_needs_human')} edit(s) need the user - an earlier edit could not be safely applied (the file moved since the canvas captured it); ask them to re-open the canvas and redo it.`)
+  if (attention.length && opts.includeAttention !== false) {
+    // Round-trip messaging convention: this item belongs to the USER and is
+    // actionable in the canvas, where it is surfaced at the element it
+    // concerns. The agent's copy is INFORM-ONLY: no instruction to act, no
+    // session ids relayed as if the user could use them, and (via the wake
+    // hook's state gate) spoken once per state change, not per turn.
+    const anchors = [...new Set(attention.map((s) => s.brand_slug || s.repo_remote || 'a canvas'))]
+    lines.push(
+      `${sum(attention, 'n_needs_human')} of the user's edit(s) are waiting for them in the canvas (${anchors.join(', ')}) - ` +
+      `the canvas shows this where the edit happened. Do not act on it and do not relay ids; ` +
+      `if the user is present you may mention it once in their words.`,
+    )
   }
   if (recoverable.length) {
     lines.push(`${recoverable.length} expired session(s) still hold un-applied edits; they revive in place when you drain them (no work is lost).`)
@@ -273,4 +283,18 @@ export function summarizeInbox(sessions, cwd) {
     lines.push('After draining, loop less_stream to stay synced for the rest of the turn - it waits server-side and returns the moment the next edit lands.')
   }
   return lines.join(' ')
+}
+
+/**
+ * Stable digest of the ATTENTION state (the human-audience items) for the
+ * once-per-state-change gate in canvas-wake. Drainable edits are obligations
+ * and deliberately keep firing every turn; only the inform-only line is
+ * suppressed while unchanged. Node built-ins only.
+ */
+export function attentionDigest(sessions) {
+  const rows = (Array.isArray(sessions) ? sessions : [])
+    .filter((s) => Number(s?.n_needs_human || 0) > 0)
+    .map((s) => `${s.session_id}:${s.n_needs_human}:${s.attention_reason || ''}`)
+    .sort()
+  return rows.length ? rows.join('|') : 'none'
 }

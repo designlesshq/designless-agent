@@ -12,13 +12,41 @@
 // built-ins only; the one dependency is a reachable, signed-in desktop (else the
 // canvas "waiting" pill is the floor).
 
-import { probeInbox, summarizeInbox } from './inbox-probe.mjs'
+import fs from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
+import { probeInbox, summarizeInbox, attentionDigest } from './inbox-probe.mjs'
+
+// Once-per-state-change gate for the INFORM-ONLY attention line. Keyed by the
+// Claude session id from the hook input, stored under the user's home (never
+// the repo). Drainable-edit lines are obligations and are never suppressed.
+// Fail-open: any state-file error means "include the line" - a repeated
+// mention is noise, a dropped one is a lost message.
+function attentionGate(sessionId, digest) {
+  if (!sessionId || digest === 'none') return digest !== 'none'
+  try {
+    const dir = path.join(os.homedir(), '.designless', 'nudge-state')
+    fs.mkdirSync(dir, { recursive: true })
+    const file = path.join(dir, `${String(sessionId).replace(/[^A-Za-z0-9_-]/g, '')}.json`)
+    let last = null
+    try { last = JSON.parse(fs.readFileSync(file, 'utf8')).attention } catch { /* first time */ }
+    if (last === digest) return false
+    fs.writeFileSync(file, JSON.stringify({ attention: digest, at: new Date().toISOString() }))
+    return true
+  } catch {
+    return true
+  }
+}
 
 async function main() {
   let raw = ''
   for await (const chunk of process.stdin) raw += chunk
-  let cwd
-  try { cwd = JSON.parse(raw).cwd } catch { return }
+  let cwd, hookSessionId
+  try {
+    const input = JSON.parse(raw)
+    cwd = input.cwd
+    hookSessionId = input.session_id
+  } catch { return }
   if (!cwd || typeof cwd !== 'string') return
 
   const { count, sessions, unknown } = await probeInbox()
@@ -43,7 +71,8 @@ async function main() {
   }
 
   if (!count) return
-  const text = summarizeInbox(sessions, cwd)
+  const includeAttention = attentionGate(hookSessionId, attentionDigest(sessions))
+  const text = summarizeInbox(sessions, cwd, { includeAttention })
   if (!text) return
 
   process.stdout.write(JSON.stringify({
