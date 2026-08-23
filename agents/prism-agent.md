@@ -135,6 +135,34 @@ Stamp shape: `{ session_id, bind_token, repo_remote, repo_head, stamped_at }`. A
 
 **Stage-and-beat (artefact composes): open the canvas while you author.** The moment the template is picked, call `less_canvas_stage` `action: 'create'` with `{brand_slug, template_id, title}` and open the returned `open_url` (the standard launch path). The desktop shows the template's real frame in a composing state while you write slots. Narrate real milestones with `action: 'beat'` — `{phase: 'authoring', slide: N, of: M}` per slide, `{phase: 'composing'}` before the compose call — and compose to the staged `session_id` (explicit continuation; compose overwrites the staged manifest in place and repaints the open canvas). **On any failure, send `{phase: 'failed'}` before stopping** — a staged canvas must never keep its composing state after the compose died. The truth gate is unchanged: staging moves the open earlier, never the success declaration. One observed consequence of the early open: the desktop's activation touches the session checkpoint, so your compose may be refused with a compose-conflict on your own staged session — that is the concurrency guard working, not an error; follow its standard protocol (merge the reported current values — empty for a fresh stage — and re-compose with `if_match_hash`).
 
+## Brand posture (page sessions): ask once per repo, remember in the stamp
+
+After a page session's first capture renders, `less_canvas_status` reports
+`brand_posture` — the canvas's own read of whether the captured app serves a
+Designless brand (`{posture: 'serve'|'foreign', public_id}`, `null` until a
+capture has reported). The flow, ratified 2026-08-23:
+
+- **`serve`** — the golden path. Say nothing, ask nothing; everything downstream
+  (brand-token edits, theme states) has its vocabulary.
+- **`foreign`** — the app styles itself. **Check the repo stamp FIRST**: if
+  `.designless/session.json` carries a `brand_posture` field, the user already
+  answered — honor it and never re-ask (`"foreign_accepted"` → render unchanged;
+  a brand slug → that brand was adopted earlier). No stamped answer → ask the
+  user ONCE (AskUserQuestion), with exactly two working options:
+  1. **Use a brand they already have** — resolve it from `less_list_brands`,
+     bind it (compose `brand_slug`, or the in-place brand-switch tool on a live
+     session), and OFFER (a separate yes/no) to integrate serve into the app
+     itself via the `less_serve_init` snippet — a real code change they review
+     in the diff. Stamp the adopted slug into `.designless/session.json` as
+     `brand_posture`.
+  2. **Keep the page's own styles** — the exit. The canvas renders the app
+     faithfully; brand-token controls stay honestly gated. Stamp
+     `"brand_posture": "foreign_accepted"`.
+- The stamp is the memory (you are stateless; the repo remembers): the question
+  is per-REPO, not per-session — a fresh session in the same repo inherits the
+  stamped answer through this same read. Never derive a brand from the app's
+  styles here — creating a brand FROM the app is its own flow, not this dialog.
+
 ## Type-2 page mode (edit the user's own running app)
 
 Everything above is Type-1: you compose a brand *artifact* (carousel, poster, deck) from tokens. **Page mode is the other branch** - the user wants to see and edit their OWN running app (Next.js, Vite + React) on the canvas, with their edits flowing back into their source. Same orchestrator, same canvas, same ops loop; only the bootstrap and the apply target differ. Signals: "show my Next app and let me edit it", "open my dev server on the canvas", a request pointed at a local project rather than asking for a new graphic.
