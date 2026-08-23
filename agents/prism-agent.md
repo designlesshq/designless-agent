@@ -151,10 +151,11 @@ capture has reported). The flow, ratified 2026-08-23:
   user ONCE (AskUserQuestion), with exactly two working options:
   1. **Use a brand they already have** — resolve it from `less_list_brands`,
      bind it (compose `brand_slug`, or the in-place brand-switch tool on a live
-     session), and OFFER (a separate yes/no) to integrate serve into the app
-     itself via the `less_serve_init` snippet — a real code change they review
-     in the diff. Stamp the adopted slug into `.designless/session.json` as
-     `brand_posture`.
+     session), and OFFER (a separate yes/no) to wire the app itself to serve the
+     brand: discover that intent ("wire this app to serve a brand's stylesheet")
+     and apply exactly the snippet the tool returns — a real code change they
+     review in the diff. Stamp the adopted slug into `.designless/session.json`
+     as `brand_posture`.
   2. **Create a brand FROM this app's styles** — the extraction flow (below).
      Ends with a STAGED brand the user reviews in LESS Studio; nothing serves
      until they confirm compile + publish.
@@ -167,50 +168,54 @@ capture has reported). The flow, ratified 2026-08-23:
 
 ### Creating a brand from the app's styles (option 2 — extraction proposes, the user disposes)
 
-The end-to-end pipeline (founder-ratified 2026-08-23). Four stages; your only
-judgments are keyword choice and the rewrite edits, and both are fenced:
+**Every tool in this flow lives OUTSIDE the `canvas-*` family and is
+entitlement-gated, so route through discovery** (`less_search_tools` → describe
+the schema → execute) exactly as the brand-lint bridge does. Describe the
+intents below; do not hardcode names or argument shapes — the catalog and the
+schemas are the server's to publish, and a user without an entitlement should
+degrade gracefully, not hit a wall. Four stages; your own judgment is confined
+to the keywords you choose and the edits you write:
 
 1. **EXTRACT (mechanical, local).** Run `npm create designless@latest -- extract`
    in the repo. It lifts the complete style surface into
-   `.designless/style-surface.json` — six lanes: css, custom-prop (the palette's
-   real home), tailwind-arbitrary, tailwind-class, tailwind-config, jsx-inline —
-   each entry with file:line provenance. If `truncated: true`, say so: a partial
-   surface never supports a zero-hardcoded claim. Then run `less_lint_files`
-   with `taskType: "extraction"` over the style sources (or the captured
-   stylesheets) — the analyzer-backed pass returns categorized escapes (color,
-   typography, spacing, border/radius, shadow, motion) WITH component context
-   (a value under a button/card/nav selector names its component). The surface +
-   the lint report are the LOCKED SOURCE: every value you propose must trace to
-   an observed entry. Never invent a value, never add tasteful extras.
-2. **MATCH + CREATE (the two-step).** Derive 2–3 candidate keyword sets from the
-   surface (color-family words are the resolver's hue channel). For each, call
-   `less_resolve_brand` WITHOUT persisting and read `_meta.theme_preview` — the
-   full resolved token tree. Score each preview against the observed values
-   (palette distance, type scale, spacing) and CREATE only the best match
-   (`less_create_brand` with the winning keywords). Then push the exact deltas
-   with `less_push_overrides`: `overrides` as dot-paths across every family;
-   `componentOverrides` as a NESTED tree keyed by component (flat dotted keys do
-   not apply) — the lint's component contexts tell you which values belong
-   there. Cluster before you push: a SMALL vocabulary of named roles (type
-   ladders by the MODE of each register, never an average; near-duplicate hexes
-   merge). **WGLL auto-heals contrast failures — that is the ratified posture.
-   Report what healed, honestly**: "your #767676-on-white body text was lifted
-   to #5c5c5c for contrast" — the user hears it, the gate is never silent.
-   Compile and publish are the user's acts: `less_capsule_compile` then
-   `less_capsule_publish`, each confirmed — staging is not shipping.
+   `.designless/style-surface.json` — six lanes: css, custom-prop (usually where
+   a palette really lives), tailwind-arbitrary, tailwind-class, tailwind-config,
+   jsx-inline — each entry with file:line provenance. If `truncated: true`, say
+   so: a partial surface never supports a zero-hardcoded claim. Then discover the
+   brand-lint intent ("find hardcoded style values that should be brand tokens")
+   and run it over the style sources in its exhaustive mode for adopting an
+   existing codebase — ask the tool's schema which mode that is. It returns the
+   escapes grouped by family, with the component each one sits under where it can
+   tell. The surface plus that report are the LOCKED SOURCE: every value you
+   propose must trace to an observed entry. Never invent a value, never add
+   tasteful extras.
+2. **MATCH + CREATE (the two-step).** Describe the app's character and its
+   dominant colors as keywords, and discover the brand-resolution intent
+   ("resolve a brand from keywords without creating it"). Read the token values
+   it returns, score them against the values the surface observed, try two or
+   three keyword sets, and only then create the best match. Push the remaining
+   deltas through the token-staging intent ("stage token overrides into a
+   brand's pending changes"), following its schema for how token and component
+   values are shaped. Cluster before you push: a SMALL vocabulary of named roles
+   (type ladders by the MODE of each register, never an average; near-duplicate
+   colors merge). If the server heals a value for contrast, **say what it
+   healed, in plain terms**: "your #767676-on-white body text was lifted to
+   #5c5c5c so it stays readable" — the user hears it, nothing changes silently.
+   Compiling and publishing are the USER's acts: discover those intents, present
+   them, and let the user confirm — staging is not shipping.
 3. **REWRITE (your edits, their diff).** With the brand published, rewrite the
-   source per LANE from the surface file: css/custom-prop values →
+   source per LANE from the surface file: css and custom-property values →
    `var(--ls-…)` (rewriting a custom-property DECLARATION retires its whole
-   usage family — do those first); tailwind-config theme values → `var(--ls-…)`
-   references; tailwind-arbitrary → token-backed values; jsx-inline → var()
-   strings. Apply `less_serve_init`'s snippet in the same change so the
-   variables resolve. Every edit lands in the user's checkout as a reviewable
-   diff — never a server-side transform.
+   usage family — do those first); tailwind config values → the same variables;
+   arbitrary utility values → token-backed ones; inline style literals → var()
+   strings. Wire the app to serve the brand in the same change (the intent from
+   option 1) so the variables resolve. Every edit lands in the user's checkout
+   as a reviewable diff — never a server-side transform.
 4. **VERIFY (zero is a number).** Re-run the extract command: the surface must
-   come back with zero hardcodable entries (allowed literals aside), and
-   `less_lint_files` extraction mode must pass. Then the rendered check rides
-   the existing capture pipeline: compose the page session; the canvas posture
-   probe now reads `serve`. Only then stamp `.designless/session.json`
+   come back with zero hardcodable entries (allowed literals aside), and the
+   brand-lint pass must come back clean. Then the rendered check rides the
+   existing capture pipeline: compose the page session and confirm the canvas
+   now reports the `serve` posture. Only then stamp `.designless/session.json`
    `brand_posture` with the new slug and tell the user what they have: their
    app, their values, under their brand, with nothing hardcoded left.
 
