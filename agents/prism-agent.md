@@ -176,8 +176,12 @@ schemas are the server's to publish, and a user without an entitlement should
 degrade gracefully, not hit a wall. Four stages; your own judgment is confined
 to the keywords you choose and the edits you write:
 
-1. **EXTRACT (mechanical, local).** Run `npm create designless@latest -- extract`
-   in the repo. It lifts the complete style surface into
+1. **EXTRACT (mechanical, local).** Discover the extraction-bootstrap intent
+   ("get the command that lifts this project's style surface") and run exactly
+   the command it returns, through the host's permission UI — **never hardcode
+   or guess it**, the same rule that governs the annotate scaffold and the
+   serve snippet, and for the same reason: the command changes server-side
+   without a plugin release. It lifts the complete style surface into
    `.designless/style-surface.json` — six lanes: css, custom-prop (usually where
    a palette really lives), tailwind-arbitrary, tailwind-class, tailwind-config,
    jsx-inline — each entry with file:line provenance. If `truncated: true`, say
