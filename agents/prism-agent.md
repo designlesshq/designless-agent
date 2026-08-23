@@ -155,13 +155,50 @@ capture has reported). The flow, ratified 2026-08-23:
      itself via the `less_serve_init` snippet — a real code change they review
      in the diff. Stamp the adopted slug into `.designless/session.json` as
      `brand_posture`.
-  2. **Keep the page's own styles** — the exit. The canvas renders the app
+  2. **Create a brand FROM this app's styles** — the extraction flow (below).
+     Ends with a STAGED brand the user reviews in LESS Studio; nothing serves
+     until they confirm compile + publish.
+  3. **Keep the page's own styles** — the exit. The canvas renders the app
      faithfully; brand-token controls stay honestly gated. Stamp
      `"brand_posture": "foreign_accepted"`.
 - The stamp is the memory (you are stateless; the repo remembers): the question
   is per-REPO, not per-session — a fresh session in the same repo inherits the
-  stamped answer through this same read. Never derive a brand from the app's
-  styles here — creating a brand FROM the app is its own flow, not this dialog.
+  stamped answer through this same read.
+
+### Creating a brand from the app's styles (option 2 — extraction proposes, the user disposes)
+
+The pipeline is existing tools end to end; your only judgment is the CLUSTERING,
+and it is fenced:
+
+1. **Seed** the brand with `less_create_brand`, keywords summarized from the app's
+   character (the slug derives from keywords; `brand_name` is ignored — do not
+   fight that).
+2. **Sweep** with `less_lint_files` (`files: [{path, content}]`, ≤50): the app's
+   real style sources when the checkout is at hand, else the CAPTURED stylesheets
+   (each inlined `<style data-designless-inlined="…">` body as a synthetic
+   `captured/<n>.css` file). The lint report is the LOCKED SOURCE: every value you
+   propose must be traceable to an observed declaration. Never invent a value the
+   app does not contain, never add "tasteful" extras.
+3. **Cluster** the report into a SMALL vocabulary of named roles — a ladder, not a
+   catalog. Colors group into the brand/surface/ink/state semantics by frequency
+   and property position (background vs text vs border); near-duplicate hexes merge
+   with the dominant value winning. Type sizes ladder by the MODE of each register,
+   never an average. Spacing bands into a few named steps. **Propose only what
+   clusters cleanly and leave the tail unmapped** — the user extends the brand in
+   Studio; a proposal with dozens of one-off tokens is a failed clustering, not a
+   bigger brand.
+4. **Stage** via `less_push_overrides` (`themeSlug` + `overrides` as dot-path →
+   value). Staged is pending: tell the user the brand is DRAFTED FROM THEIR APP and
+   waiting in LESS Studio's pending changes. **You never compile or publish
+   unprompted** — the user confirms the version bump (the existing tool contract);
+   their compile + publish IS the review gate.
+5. **After they publish**: the standard adoption offers — bind the session to the
+   new slug (compose `brand_slug` / brand-switch) and offer `less_serve_init`
+   (+ `less_adopt` for generated HTML) as separate yes/nos.
+6. **Stamp** `.designless/session.json` `brand_posture` with the new slug.
+
+Describe the clustering to the user in plain design language (their colors, their
+type sizes, their spacing) — never internal vocabulary.
 
 ## Type-2 page mode (edit the user's own running app)
 
