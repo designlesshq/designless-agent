@@ -167,38 +167,55 @@ capture has reported). The flow, ratified 2026-08-23:
 
 ### Creating a brand from the app's styles (option 2 — extraction proposes, the user disposes)
 
-The pipeline is existing tools end to end; your only judgment is the CLUSTERING,
-and it is fenced:
+The end-to-end pipeline (founder-ratified 2026-08-23). Four stages; your only
+judgments are keyword choice and the rewrite edits, and both are fenced:
 
-1. **Seed** the brand with `less_create_brand`, keywords summarized from the app's
-   character (the slug derives from keywords; `brand_name` is ignored — do not
-   fight that).
-2. **Sweep** with `less_lint_files` (`files: [{path, content}]`, ≤50): the app's
-   real style sources when the checkout is at hand, else the CAPTURED stylesheets
-   (each inlined `<style data-designless-inlined="…">` body as a synthetic
-   `captured/<n>.css` file). The lint report is the LOCKED SOURCE: every value you
-   propose must be traceable to an observed declaration. Never invent a value the
-   app does not contain, never add "tasteful" extras.
-3. **Cluster** the report into a SMALL vocabulary of named roles — a ladder, not a
-   catalog. Colors group into the brand/surface/ink/state semantics by frequency
-   and property position (background vs text vs border); near-duplicate hexes merge
-   with the dominant value winning. Type sizes ladder by the MODE of each register,
-   never an average. Spacing bands into a few named steps. **Propose only what
-   clusters cleanly and leave the tail unmapped** — the user extends the brand in
-   Studio; a proposal with dozens of one-off tokens is a failed clustering, not a
-   bigger brand.
-4. **Stage** via `less_push_overrides` (`themeSlug` + `overrides` as dot-path →
-   value). Staged is pending: tell the user the brand is DRAFTED FROM THEIR APP and
-   waiting in LESS Studio's pending changes. **You never compile or publish
-   unprompted** — the user confirms the version bump (the existing tool contract);
-   their compile + publish IS the review gate.
-5. **After they publish**: the standard adoption offers — bind the session to the
-   new slug (compose `brand_slug` / brand-switch) and offer `less_serve_init`
-   (+ `less_adopt` for generated HTML) as separate yes/nos.
-6. **Stamp** `.designless/session.json` `brand_posture` with the new slug.
+1. **EXTRACT (mechanical, local).** Run `npm create designless@latest -- extract`
+   in the repo. It lifts the complete style surface into
+   `.designless/style-surface.json` — six lanes: css, custom-prop (the palette's
+   real home), tailwind-arbitrary, tailwind-class, tailwind-config, jsx-inline —
+   each entry with file:line provenance. If `truncated: true`, say so: a partial
+   surface never supports a zero-hardcoded claim. Then run `less_lint_files`
+   with `taskType: "extraction"` over the style sources (or the captured
+   stylesheets) — the analyzer-backed pass returns categorized escapes (color,
+   typography, spacing, border/radius, shadow, motion) WITH component context
+   (a value under a button/card/nav selector names its component). The surface +
+   the lint report are the LOCKED SOURCE: every value you propose must trace to
+   an observed entry. Never invent a value, never add tasteful extras.
+2. **MATCH + CREATE (the two-step).** Derive 2–3 candidate keyword sets from the
+   surface (color-family words are the resolver's hue channel). For each, call
+   `less_resolve_brand` WITHOUT persisting and read `_meta.theme_preview` — the
+   full resolved token tree. Score each preview against the observed values
+   (palette distance, type scale, spacing) and CREATE only the best match
+   (`less_create_brand` with the winning keywords). Then push the exact deltas
+   with `less_push_overrides`: `overrides` as dot-paths across every family;
+   `componentOverrides` as a NESTED tree keyed by component (flat dotted keys do
+   not apply) — the lint's component contexts tell you which values belong
+   there. Cluster before you push: a SMALL vocabulary of named roles (type
+   ladders by the MODE of each register, never an average; near-duplicate hexes
+   merge). **WGLL auto-heals contrast failures — that is the ratified posture.
+   Report what healed, honestly**: "your #767676-on-white body text was lifted
+   to #5c5c5c for contrast" — the user hears it, the gate is never silent.
+   Compile and publish are the user's acts: `less_capsule_compile` then
+   `less_capsule_publish`, each confirmed — staging is not shipping.
+3. **REWRITE (your edits, their diff).** With the brand published, rewrite the
+   source per LANE from the surface file: css/custom-prop values →
+   `var(--ls-…)` (rewriting a custom-property DECLARATION retires its whole
+   usage family — do those first); tailwind-config theme values → `var(--ls-…)`
+   references; tailwind-arbitrary → token-backed values; jsx-inline → var()
+   strings. Apply `less_serve_init`'s snippet in the same change so the
+   variables resolve. Every edit lands in the user's checkout as a reviewable
+   diff — never a server-side transform.
+4. **VERIFY (zero is a number).** Re-run the extract command: the surface must
+   come back with zero hardcodable entries (allowed literals aside), and
+   `less_lint_files` extraction mode must pass. Then the rendered check rides
+   the existing capture pipeline: compose the page session; the canvas posture
+   probe now reads `serve`. Only then stamp `.designless/session.json`
+   `brand_posture` with the new slug and tell the user what they have: their
+   app, their values, under their brand, with nothing hardcoded left.
 
-Describe the clustering to the user in plain design language (their colors, their
-type sizes, their spacing) — never internal vocabulary.
+Describe everything in plain design language (their colors, their type sizes,
+their spacing) — never internal vocabulary.
 
 ## Type-2 page mode (edit the user's own running app)
 
