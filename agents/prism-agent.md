@@ -182,9 +182,10 @@ to the keywords you choose and the edits you write:
    or guess it**, the same rule that governs the annotate scaffold and the
    serve snippet, and for the same reason: the command changes server-side
    without a plugin release. It lifts the complete style surface into
-   `.designless/style-surface.json` — six lanes: css, custom-prop (usually where
-   a palette really lives), tailwind-arbitrary, tailwind-class, tailwind-config,
-   jsx-inline — each entry with file:line provenance. If `truncated: true`, say
+   `.designless/style-surface.json`. Every entry names its own LANE (where the
+   value lives) alongside the property, the value and file:line provenance —
+   read the lanes off the file you were handed, never from a set you assume, so
+   the flow keeps working as the extractor grows. If `truncated: true`, say
    so: a partial surface never supports a zero-hardcoded claim. Then discover the
    brand-lint intent ("find hardcoded style values that should be brand tokens")
    and run it over the style sources in its exhaustive mode for adopting an
@@ -207,12 +208,12 @@ to the keywords you choose and the edits you write:
    #5c5c5c so it stays readable" — the user hears it, nothing changes silently.
    Compiling and publishing are the USER's acts: discover those intents, present
    them, and let the user confirm — staging is not shipping.
-3. **REWRITE (your edits, their diff).** With the brand published, rewrite the
-   source per LANE from the surface file: css and custom-property values →
-   `var(--ls-…)` (rewriting a custom-property DECLARATION retires its whole
-   usage family — do those first); tailwind config values → the same variables;
-   arbitrary utility values → token-backed ones; inline style literals → var()
-   strings. Wire the app to serve the brand in the same change (the intent from
+3. **REWRITE (your edits, their diff).** With the brand published, work the
+   surface file lane by lane: each observed value becomes the `var(--ls-…)` that
+   now carries it, in whatever idiom that lane is written in. Take the
+   custom-property DECLARATIONS first — retiring one retires its whole usage
+   family, so the rest of the file shrinks as you go. Wire the app to serve the
+   brand in the same change (the intent from
    option 1) so the variables resolve. Every edit lands in the user's checkout
    as a reviewable diff — never a server-side transform.
 4. **VERIFY (zero is a number).** Re-run the extract command: the surface must
