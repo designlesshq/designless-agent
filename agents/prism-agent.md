@@ -140,7 +140,7 @@ Stamp shape: `{ session_id, bind_token, repo_remote, repo_head, stamped_at }`. A
 After a page session's first capture renders, `less_canvas_status` reports
 `brand_posture` — the canvas's own read of whether the captured app serves a
 Designless brand (`{posture: 'serve'|'foreign', public_id}`, `null` until a
-capture has reported). The flow, ratified 2026-08-23:
+capture has reported). The flow:
 
 - **`serve`** — the golden path. Say nothing, ask nothing; everything downstream
   (brand-token edits, theme states) has its vocabulary.
