@@ -1,14 +1,18 @@
 name: Markdown contracts
 
-# The plugin's behavioural instructions live in markdown and hook strings —
-# surfaces no compiler touches. Until now this repo had no way to fence them,
-# which is how a routing instruction once shipped as two inert bare names and
-# stayed inert for weeks. This gate runs the dependency-free contract checks
-# on every change.
+# One gate runs here: version parity across every door.
 #
-# The checks live in .github/checks/ (NOT scripts/ — that directory is
-# gitignored by design: internal release tooling never ships to this public
-# marketplace repo, and a check that CI cannot see is no check at all).
+# It is the only check that belongs in this repo's CI, because it is the only
+# one whose subject is already public. Designless installs into more than one
+# editor, each manifest carries its own version, and "they all agree" is a fact
+# a customer could read off the tarball anyway.
+#
+# Everything else lives in scripts/, which is gitignored. That is not a
+# preference — this repo's install tarball is the WHOLE committed tree, so a
+# check committed here also lands on every customer's disk, and a contract
+# check tends to record why it was written, which is exactly the material that
+# must not ship. release.mjs runs those instead: later than a pull request,
+# still before any customer.
 
 on:
   push:
@@ -28,7 +32,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Canvas-sync contracts (drain ends with the wait; publish asks)
-        run: node .github/checks/check-canvas-sync-contracts.mjs
       - name: One version, every door (all manifests agree; tags match the tree)
         run: node .github/checks/check-one-version.mjs
