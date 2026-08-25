@@ -30,23 +30,17 @@ use std::path::{Path, PathBuf};
 /// Additions inside these directories change the hash — a planted skill or
 /// hook is a violation, not noise.
 ///
-/// These are the directories WE own. The host-owned namespaces (`.agents`,
-/// `.claude-plugin`, `.codex-plugin`, `.cursor-plugin`) were here once and
-/// are deliberately gone: a host writes its own files into its own namespace
-/// at install time, and attesting a directory we do not own turns the host's
-/// routine work into what looks like tampering.
-///
-/// Codex does exactly that. It migrates our `commands/agent.md` into
-/// `.codex-plugin/migrated-command-skills/source-command-agent/SKILL.md`,
-/// wrapping our content in ITS template — so the bytes depend on the Codex
-/// version, not ours, and can never be pinned by a release of this repo.
-/// Every Codex install therefore hashed to a value no release could have
-/// registered, and every Codex session was refused before auth.
+/// These are the directories WE own. A host's own namespace (`.agents`,
+/// `.claude-plugin`, `.codex-plugin`, `.cursor-plugin`) is deliberately not
+/// among them: hosts write their own files into their own namespaces at
+/// install time — a generated skill, a migrated command — and those bytes are
+/// the host's to decide, not ours to predict. Attesting a directory we do not
+/// own would read that ordinary work as a modified tree.
 ///
 /// The files we actually ship inside those namespaces are attested by exact
-/// name in INCLUDE_FILES, so the manifests stay covered while the host's
-/// additions are ignored. Rule of thumb: attest what we ship, not the
-/// directory the host owns.
+/// name in INCLUDE_FILES, so the manifests stay covered while a host's own
+/// additions are ignored. Attest what we ship, not the directory the host
+/// owns.
 const INCLUDE_DIRS: &[&str] = &[
     "agents",
     "bin",
@@ -61,11 +55,10 @@ const INCLUDE_DIRS: &[&str] = &[
 /// files plus every manifest we ship inside a host-owned namespace.
 ///
 /// An allow-list, so anything not named here and not inside an INCLUDE_DIR is
-/// ignored. That is the counterintuitive half and it is deliberate: a file the
+/// ignored. That is the counterintuitive half and it is deliberate: a file a
 /// HOST adds is noise, while an edit to a manifest we ship is still caught.
-/// `.github/checks/check-integrity-lists.mjs` fails the build if a file
-/// appears in one of these namespaces without being listed here, so the
-/// allow-list cannot silently stop covering something.
+/// Adding a manifest to one of those namespaces means adding it here too —
+/// the release tooling refuses to publish while the two disagree.
 const INCLUDE_FILES: &[&str] = &[
     ".agents/plugins/marketplace.json",
     ".claude-plugin/marketplace.json",
@@ -277,11 +270,10 @@ mod tests {
 
     #[test]
     fn a_file_the_host_writes_into_its_own_namespace_is_ignored() {
-        // The Codex case, reduced. Codex generates a skill under
-        // `.codex-plugin/migrated-command-skills/` at install time, formatted by
-        // its own template — content we neither ship nor control. While that
-        // namespace was attested wholesale, every Codex install hashed to a
-        // value no release could register and every session was refused.
+        // A host generating a skill under its own namespace at install time,
+        // formatted by its own template — content we neither ship nor control.
+        // While such a namespace was attested wholesale, an ordinary install
+        // could not produce the tree the release published.
         let dir = scratch();
         let before = tree_hash(&dir).unwrap();
         fs::create_dir_all(dir.join(".codex-plugin/migrated-command-skills/source-command-agent")).unwrap();

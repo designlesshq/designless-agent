@@ -14,14 +14,12 @@ import { readdirSync, readFileSync, readlinkSync, lstatSync, existsSync } from '
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Directories WE own, attested wholesale. The host-owned namespaces
-// (.agents, .claude-plugin, .codex-plugin, .cursor-plugin) are deliberately
-// absent: a host writes its own files there at install time — Codex generates
-// a migrated skill under .codex-plugin/ — and attesting a directory we do not
-// own turns that routine work into what looks like tampering. The files we
-// ship inside those namespaces are attested by name below.
-// Mirrors bridge/src/integrity.rs; .github/checks/check-integrity-lists.mjs
-// fails the build if the two disagree.
+// Directories WE own, attested wholesale. A host's own namespace (.agents,
+// .claude-plugin, .codex-plugin, .cursor-plugin) is deliberately absent: hosts
+// write their own files there at install time, and attesting a directory we do
+// not own would read that ordinary work as a modified tree. The files we ship
+// inside those namespaces are attested by name below.
+// Mirrors bridge/src/integrity.rs — the two must stay identical.
 const INCLUDE_DIRS = [
   'agents', 'bin', 'capsules', 'commands', 'docs', 'hooks', 'skills',
 ]
