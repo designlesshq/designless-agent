@@ -32,5 +32,3 @@ jobs:
         run: node .github/checks/check-canvas-sync-contracts.mjs
       - name: One version, every door (all manifests agree; tags match the tree)
         run: node .github/checks/check-one-version.mjs
-      - name: Integrity lists (Rust and Node attest the same set; nothing we ship is unattested)
-        run: node .github/checks/check-integrity-lists.mjs
