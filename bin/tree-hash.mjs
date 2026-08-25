@@ -14,11 +14,22 @@ import { readdirSync, readFileSync, readlinkSync, lstatSync, existsSync } from '
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// Directories WE own, attested wholesale. The host-owned namespaces
+// (.agents, .claude-plugin, .codex-plugin, .cursor-plugin) are deliberately
+// absent: a host writes its own files there at install time — Codex generates
+// a migrated skill under .codex-plugin/ — and attesting a directory we do not
+// own turns that routine work into what looks like tampering. The files we
+// ship inside those namespaces are attested by name below.
+// Mirrors bridge/src/integrity.rs; .github/checks/check-integrity-lists.mjs
+// fails the build if the two disagree.
 const INCLUDE_DIRS = [
-  '.agents', '.claude-plugin', '.codex-plugin', '.cursor-plugin',
   'agents', 'bin', 'capsules', 'commands', 'docs', 'hooks', 'skills',
 ]
-const INCLUDE_ROOT_FILES = [
+const INCLUDE_FILES = [
+  '.agents/plugins/marketplace.json',
+  '.claude-plugin/marketplace.json', '.claude-plugin/plugin.json',
+  '.codex-plugin/plugin.json',
+  '.cursor-plugin/marketplace.json', '.cursor-plugin/plugin.json',
   '.gitignore', '.mcp.json', '.mcp.codex.json', '.mcp.cursor.json',
   'LICENSE', 'README.md', 'THIRD-PARTY-LICENSES.md', 'llms.txt',
 ]
@@ -59,7 +70,7 @@ export function computeTreeHash(root) {
     const base = join(root, dir)
     if (existsSync(base) && lstatSync(base).isDirectory()) walk(root, base, entries)
   }
-  for (const file of INCLUDE_ROOT_FILES) {
+  for (const file of INCLUDE_FILES) {
     const path = join(root, file)
     if (existsSync(path) && lstatSync(path).isFile()) {
       entries.push([file, fileHash(root, path, file)])
