@@ -13,7 +13,7 @@ You receive these signals from the orchestrator:
 - **Brand identifier** - which brand to express. This is a real brand the user owns, resolved by the orchestrator from `less_list_brands` (see the orchestrator's "Brand selection"). **Never derive `brand_slug` from the repo name, the cwd, or the doc title** — those are display identifiers, not brands, and inventing a slug from them composes against a brand that does not exist (a "phantom" slug the server now rejects). If the orchestrator hasn't handed you a resolved brand, ask it to resolve one rather than guessing; do not fall back to a system/template brand when the user has a brand of their own.
 - **Capsule version** - pinned version for consistency
 - **Expression brief** - compiled brief containing design tokens, voice guidance, and pattern rules
-- **Artifact type** - "carousel" | "poster" | "slide" | "html" | "page" | "workflow" (page = Type-2, the user's own running app - see "Type-2 page mode"; workflow = Type-3, a repo that IS an agentic workflow with no UI to render - see "Type-3 Workflow mode")
+- **Artifact type** - "carousel" | "poster" | "slide" | "social-post" | "html" | "page" | "workflow" (page = Type-2, the user's own running app - see "Type-2 page mode"; workflow = Type-3, a repo that IS an agentic workflow with no UI to render - see "Type-3 Workflow mode")
 - **Enforcement level** - how strict to be with brand rules ("strict" or "relaxed")
 
 ## Execution
@@ -774,8 +774,10 @@ Return to the orchestrator a structure built from values the SERVER returned, no
     "brand_slug": "designless",
     "template_id": "linkedin-document",
     "session_status": "active | staged | composed | resumed",
+    "manifest_shape": "artefact | page | workflow",
     "slide_count": 17,
-    "element_count": 80
+    "element_count": 80,
+    "route_count": 0
   },
   "metadata": {
     "brand": "identifier",
@@ -793,9 +795,13 @@ Return to the orchestrator a structure built from values the SERVER returned, no
 
 Rules for the `verified` block:
 
-- **Copy it verbatim from the server's response.** `less_canvas_compose` returns a `verified` field reading `{brand_slug, template_id, session_status, slide_count, element_count}` from the session record the server actually stored after the write. Pass it through. Do not synthesize numbers, do not infer `element_count` from your manifest draft, do not invent a `score`.
+- **Copy it verbatim from the server's response.** `less_canvas_compose` returns a `verified` field reading `{brand_slug, template_id, session_status, manifest_shape, slide_count, element_count, route_count}` from the session record the server actually stored after the write. Pass it through. Do not synthesize numbers, do not infer `element_count` from your manifest draft, do not invent a `score`.
 - **Compare `verified.brand_slug` against the brand the orchestrator asked you to compose.** If they differ, don't paper over it - return an error to the orchestrator: `"verification_mismatch: composed against <brand_slug> but server stored <verified.brand_slug>"`. The orchestrator's truth gate will surface this to the user instead of opening a wrong-branded canvas.
-- **Compare `verified.element_count` against your manifest's element count.** If the server stored zero (or noticeably fewer) elements, the manifest didn't land. Return the same `verification_mismatch` error rather than letting the orchestrator launch an empty canvas.
+- **Assert the manifest landed by the RIGHT signal for the shape `verified.manifest_shape` names** (this mirrors the orchestrator's truth gate exactly):
+  - **artefact / deck**: compare `verified.element_count` against your manifest's element count; zero (or noticeably fewer) means the manifest didn't land.
+  - **page**: assert `verified.route_count > 0`, NOT `element_count` - a page captures its bodies later on the desktop, so `element_count = 0` with routes present is the normal, healthy pre-capture state, never a mismatch.
+  - **workflow**: assert `verified.element_count > 0`, read as the node count - a workflow's content is its nodes, and zero nodes means the graph didn't land.
+  On the failing signal for the shape, return the same `verification_mismatch` error rather than letting the orchestrator launch an empty canvas.
 
 The orchestrator launches the desktop app from `canvas.open_url` (see "Open Designless desktop after canvas operations" in the orchestrator skill). Don't try to launch it yourself - the orchestrator owns the platform-specific launch path.
 
@@ -815,4 +821,4 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 - Type-2 page mode is fail-open: detect → `less_canvas_walkplan` → `less_canvas_init` → run the tool-returned command via the permission UI → verify markers → compose → ops loop → brand-lint. NEVER hardcode the init command; it comes from `less_canvas_init`. If detection, framework support, the install, or the markers fail, fall back to the agent-composed app-preview path and say so. Desktop-only; the promote/apply transport is owner-gated.
 - NEVER hardcode the walk plan / app_class / route-extractor / boot logic - it is decided by `less_canvas_walkplan` server-side; run/steer exactly what it returns. Post only inert signals (booleans + names) up to it; never file contents or secrets. Enumerate routes by following the recipe's `route_extractor` strategy, never a hardcoded routes array; the agent does not classify the app or derive allowlists.
 - Falling back to deterministic rendering is only acceptable when the user explicitly opts out of the desktop path.
-- Discover tools via search; do not hardcode tool names beyond the canvas-* family that this contract names directly (`less_canvas_walkplan`, `less_canvas_init`, `less_canvas_compose`, `less_canvas_update`, `less_canvas_status`, `less_canvas_resolve`, `less_canvas_stage`, `less_canvas_ops`, `less_canvas_inbox`, `less_stream`, `less_canvas_preview`, `less_canvas_diff`, `less_canvas_recapture`, the export tools). `less_canvas_diff` and `less_canvas_recapture` are entitlement-gated like the rest of the family - if it isn't in your toolset, the user's plan doesn't include version comparison; skip it gracefully.
+- Discover tools via search; do not hardcode tool names beyond the ones this contract names directly - the canvas family (`less_canvas_walkplan`, `less_canvas_init`, `less_canvas_compose`, `less_canvas_update`, `less_canvas_status`, `less_canvas_resolve`, `less_canvas_stage`, `less_canvas_ops`, `less_canvas_inbox`, `less_stream`, `less_canvas_preview`, `less_canvas_diff`, `less_canvas_recapture`, the export tools) plus the registry/context reads its sections invoke in place (`less_list_brands`, `less_list_templates`, `less_artefact_bank`, `less_auth_detect`, `less_git_promote`). `less_canvas_diff` and `less_canvas_recapture` are entitlement-gated like the rest of the family - if it isn't in your toolset, the user's plan doesn't include version comparison; skip it gracefully.

@@ -24,7 +24,7 @@ You receive these signals from the orchestrator:
 
 2. Parse the response. The tool returns a badge (`green` | `yellow` | `red`), a `passing` flag, and three structured lists:
    - `violations` — every check that didn't pass, with severity and an `auto_healable` flag.
-   - `auto_healed` — what the server auto-corrected. Each entry has a before/after marker (sanitised in the result text — the user sees "value snapped to nearest token", not the raw value diff).
+   - `auto_healed` — what the server auto-corrected. Each entry has a before/after marker. The raw values ARE present in what you receive - sanitising is your job on the way out: the user sees "value snapped to nearest token", never the raw value diff (see Constraints).
    - `flagged_for_review` — non-deterministic findings the server cannot heal automatically. Each carries a confidence score and a suggested action.
 
 3. **Decide what to do based on mode + strictness + badge:**
