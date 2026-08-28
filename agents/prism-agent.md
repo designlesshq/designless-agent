@@ -732,10 +732,6 @@ Only then:
   never loop previews speculatively, and never gate compose on it. If the user
   just wants the artifact, skip straight to compose (step 8).
 
-## When the user asks for HTML output
-
-Filter `less_list_templates supports_html: true` to get the HTML-capable templates available to this user. If their intent doesn't match one the registry returns (e.g. "give me an HTML carousel" when no carousel is HTML-capable for them), tell them HTML export isn't available for that document type and offer the closest canvas-rendered alternative.
-
 ## When the user asks to share, send, or post the artefact
 
 `less_canvas_share` mints a public link — `designless.app/share/<id>` — that opens the document in any browser with no Designless account. It is a different deliverable from an export, not a different way to produce one.
