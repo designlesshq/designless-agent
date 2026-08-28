@@ -590,50 +590,6 @@ Type-1 composes a brand *artifact*; Type-2 mirrors the user's *running app*. **W
 
 **IP fence.** Nodes, edges and callouts read only the repo's own **product-level** content — repo-relative paths, frontmatter scalars, quoted sentences. Never place engine internals, scoring, pipeline stages, or any non-product term on a node, an edge, a role, or a callout.
 
-## Draining waiting canvas edits (any turn, any cwd)
-
-Discovery is the **server inbox**, not the `.designless/` marker. At the start of a turn, call `less_canvas_inbox` to enumerate EVERY session that holds waiting work (it is keyed on your identity and spans all sessions, so a second session is never masked the way the single-session self-discovery of `less_canvas_status` would mask it). The fail-open hooks already surface this; `less_canvas_inbox` is the authoritative read. There are **three op classes, three handlings**:
-
-- **Page edits (Type-2, `surface_type` 2)** -> the source-file flow above: claim with `less_canvas_ops` only when the cwd is the right checkout (writable AND the git remote matches the session's `repo_remote`), apply on `previous_value` with the three-way anchor check, ack `applied|superseded|needs_human` per uuid. Wrong checkout -> route the user, leave the op `pending`.
-- **Artefact edits (Type-1, `surface_type` 1)** -> the manifest IS the source, so these apply **server-side in one call**: drain them with `less_canvas_ops` action `apply_type1` (drain + apply + ack together — NOT `less_canvas_update`, whose grammar is unrelated). It applies both content edits (slot text/style) and **structural** edits — element add/move/resize/edit/restyle/remove, slide add/remove — that a human or a full-access teammate made in the canvas; an anchor that moved since capture is acked `needs_human` (the user redoes it in the canvas). You can also **author** a structural edit yourself with `less_canvas_ops` action `propose` (see "Proposing an edit" below) then `apply_type1` to land it — align/distribute a set of elements is a batch of `move_element`; "add a closing slide" is `add_slide`. Struct ops need NO provenance/node_id and, unlike a flow edit, need no human confirm (the artefact manifest is authoritative).
-- **Annotations (`annotate_region`)** -> never claimed as edits (they have no apply target). Read them as context with `less_canvas_ops` action `peek`, form your judgment, then `ack applied` (consumed-as-context) so they drain. Each annotation may carry a **stance** - `apply` / `iterate` / `verify` - calibrating how literally to take it: `apply` = the human's exact spec, act as said; `iterate` = a direction, refine toward it; `verify` = an unsure or vague intent ("feels crowded"), which you resolve against the brand's stored taste rather than applying a literal reading. Derive the change from the note's natural language; when it's ambiguous, ask via `AskUserQuestion` rather than guess.
-- **Workflow edits (Type-3, `set_frontmatter`)** -> a source-write to a repo `.md`, drained like a page edit: claim with `less_canvas_ops` only when the cwd is the right checkout, then rewrite the ONE named frontmatter scalar (`field` -> `value`) in the node's `source_file` in place — never the body, never the other keys — and ack per uuid. Re-read the repo and recompose the workflow map so the node shows the new value ("saved" is a fact after the write, never before). See "Type-3 Workflow mode".
-
-**Recoverable sessions:** an inbox row with `recoverable: true` is an expired session that still holds un-applied edits; claiming drains it and it revives in place (its original rows, seq, and uuids) - no work is lost and no duplicate is created. **The vault:** `.designless/` is your local second line (write the claimed envelope before applying, log the result after) for git-shaped diff/revert and offline recoverability; it is never the discovery source (the server inbox always wins) and never the sole survivor (the ledger is durable before any claim). Never resolve `--ls-*` from the capsule or embed token-mapping in the vault (engine IP stays server-side).
-
-**And to stay synced within the turn, loop this.** The drain above handles what had already arrived; the human keeps editing the canvas while you compose, verify, and write. Whenever the turn continues beside an open session - a compose settling, source edits being applied, any long stretch of work - keep waiting: pass `wait_seconds` to `less_canvas_inbox`, or loop `less_stream` (the same wait, one shared implementation): it blocks server-side and returns the moment the next edit lands (a `still watching` keepalive means call it again). Draining ends with this wait, not with the last `ack`; edits caught mid-turn apply while the human is still looking at the canvas, instead of at the next turn boundary. **Never arm an idle watcher of your own** - the between-turns watcher is the orchestrator's, armed once per session; a sub-agent arming a second one doubles every wake.
-
-## Comparing two captured versions (`less_canvas_diff`)
-
-A page session captures a version each time the canvas re-captures the running app. When a session has more than one captured version, you can ask the server what materially changed between two of them - so you can **triage before you surface anything to the user**. This is a read; it reports what changed, it does not change anything.
-
-Call `less_canvas_diff` with the session you're working in and the two versions to compare: `{ session_id, from, to }`. `from` and `to` are capture-version references for that session. Omit them to compare the latest version against the one before it (the default, "vs-last") - the common case when you just re-captured after applying edits and want to know what moved. The server picks the versions and decides what changed; you do not compute the comparison yourself.
-
-The result carries both a machine-readable change set and a plain-language summary:
-
-- `from`, `to` - the two versions actually compared (echoed back; trust these, not what you asked for).
-- `versions` - the session's capture-version list, so you can offer the user other comparisons.
-- `graph` - the structural change set: which routes/sections were **added**, **removed**, **modified**, or **rerouted** (a rename is one modification, never a remove-plus-add). This is what you reason over.
-- `frames` - the per-version readout the canvas paints, one entry per captured route, each carrying its change verdict (unchanged, modified, added, removed, or - honestly - undecidable when the content can't be compared with certainty).
-- `summary` - a short, product-language narration of the change set ("the pricing hero copy changed; a new FAQ section was added; the checkout route was renamed"). The server writes this in plain product terms; surface it as-is when you tell the user what changed. Never reconstruct it from the raw change set, and never narrate a comparison the result didn't report.
-
-**Triage the result before you involve the user.** Read `graph` first - it is the structured truth you reason over; `frames` is what the canvas already paints, `summary` is the product narration. Then decide what, if anything, to raise:
-
-- **Nothing material changed** - say so plainly, or stay silent if the user wasn't asking. Never manufacture a difference.
-- **The change set matches what you just applied** - a clean confirmation your edits landed. Tell the user in product terms ("your pricing copy edit is in"), not a list of route names.
-- **Something moved that you did not apply** - a route you didn't touch reads modified, or a section was removed - that is the case worth surfacing. The diff caught something the user should see.
-- **An `undecidable` verdict** is an honest "this looks different but I can't be sure" - say exactly that; never upgrade it to a confident "changed."
-
-Surface the `summary` as-is in plain product language; never the raw `graph`, never node ids, never DOM-level detail. Triage silently when the diff is clean or merely confirms an applied edit; bring it to the user when there is a material, unexpected, or undecidable change worth their attention or action.
-
-### Undoing a captured change - the revert intent
-
-Reverting is **never** a write to the version store and **never** a new op on the diff - the diff is the traceable *basis* for an undo, not the actuator. When the user wants to undo a change you can see in a comparison:
-
-1. **Construct a structured revert intent from the diff** - the session, the two versions compared, and, in product terms, the specific change to undo ("undo the pricing hero copy change between the last two captures"). The diff is what makes the intent precise and traceable.
-2. **Route it through the round-trip you already run for edits.** The intent reaches the local session that owns the checkout. That session picks the reversal mechanism (git revert, edit undo, branch reset) and asks the user's permission before touching their code.
-3. **Follow the pipeline; do not short-circuit it** - intent, then code change, then re-capture, exactly like an edit. There is no revert op, no restore-to-version write, and no change to the version store. The store is the system of record that gives the undo its basis and keeps the change reversible even by a human hand; it is not where the undo happens.
-
 ### Safety model — customer source is contained before it lands
 
 Customer source is **never mutated in place.** Before an edit batch touches a customer's code, contain it — the coding-agent model the user already trusts. **Branching is unconditional and comes FIRST**: on a git repo, before you write a single byte of source, `git checkout -b` (or checkout, if it exists) the containment branch. It is not a step you weigh — it is the precondition for every source edit.
