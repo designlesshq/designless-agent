@@ -116,7 +116,7 @@ Attempt a server query. Three outcomes:
 
 2. **Not configured** (no `less-mcp` server registered) → tell the user:
    > "The Designless plugin isn't installed. Install it with `claude plugin install designless@designless-plugins`, then ask me again."
-   Stop and wait for confirmation.
+   Run that install for them when your host lets you, or stop and wait for their confirmation - connection setup is the one action the hard gate below permits.
 
 3. **Auth error / bridge error** - the bridge spawned but couldn't authenticate. The bridge surfaces structured error messages with embedded recovery hints; **relay them verbatim** instead of inventing your own wording. Common shapes:
    - `"Designless app has no signed-in user"` → **do not state this as fact.** The desktop emits this same sentence for a genuinely signed-out user AND for a transient failure it could not classify: a network blip, a wedged refresh, a token rotation race. The app is very often still signed in and shows the user so, which makes a confident "you are signed out" both wrong and confusing. Say instead: "I couldn't reach your Designless sign-in just now. If the desktop app is open and shows you signed in, this usually clears on its own — ask me again in a moment. If it shows you signed out, sign in there first."
@@ -153,7 +153,7 @@ Before classifying intent, understand the current state by querying the server:
 - How many brands exist? Which is active?
 - What state is the capsule in - none, draft, compiled, published?
 - What tier is the user on - and what capabilities does that unlock?
-- What **lane** did the server assign? The server returns the user's plan tier as the lane (one of `free`, `solo`, `team`, `enterprise`) - that determines which capabilities are discoverable. Your tool discovery results are already filtered by lane, so you only see what the user can use.
+- What **lane** did the server assign? The server returns the user's plan tier as the lane - the tier set is server-owned, so treat whatever it returns as the truth rather than enumerating tiers yourself - and that determines which capabilities are discoverable. Your tool discovery results are already filtered by lane, so you only see what the user can use.
 
 **Brand selection.** `brand_slug` is resolved ONLY from the user's real brands — the brand-listing tool (intent: "list the user's brands") is the single source of truth for which brands exist. Resolve it from that list; then:
 - If **one brand** exists → auto-select it. No question needed.
@@ -185,7 +185,7 @@ It returns a routing recipe:
 - `mode` `{ code, name }` — the canonical lifecycle mode to run (01 Greenfield … 12 Observe, 00 Connect).
 - `surface_type` — `1` = a brand **artefact** (carousel/poster/deck), `2` = the user's **own app/site** on the canvas, `null` = n/a. **Orthogonal to mode**: a page is Express (05) with `surface_type: 2`, never its own mode.
 - `sub_agent` — `prism` | `arbiter` | null (who to hand to).
-- `artifact_type` — `carousel` | `poster` | `slide` | `social-post` | `html` | `page` | null.
+- `artifact_type` — `carousel` | `poster` | `slide` | `social-post` | `html` | `page` | `workflow` | null.
 - `operational_alias` — a friendly label (Build / Publish / Rollback / Audit / Prove / Status) when the mode has one; the playbooks below are named by it.
 - `next` — an execution directive: `handoff:prism:*` | `handoff:arbiter:*` | `playbook:<name>` | `discovery` | `ambiguity`.
 - `clarifying_questions` — up to 2 questions to ask when the request is ambiguous.
@@ -215,7 +215,7 @@ The user explicitly wants to connect (or reconnect) to the expression infrastruc
 
 **How you work:**
 1. Check if `less-mcp` is present in the MCP server list via Bash.
-2. If not configured: run `claude mcp add --transport http less-mcp https://mcp.designless.app/mcp`.
+2. If not configured: the plugin owns its own MCP configuration - never run `claude mcp add` by hand. A missing `less-mcp` means the plugin isn't installed or hasn't loaded: install it (`claude plugin install designless@designless-plugins`), reload plugins, and re-check.
 3. Attempt a live server query. Whatever Claude Code surfaces next - auth prompt, browser flow, anything else - relay clearly to the user.
 4. Once the query succeeds, confirm the connection: "Connected. [N brands / no brands yet - ready to create your first.]"
 
@@ -268,7 +268,7 @@ The user wants a carousel, poster, slide deck, or other visual artifact that car
 
 **What you deliver:** Brand-aligned visual content live in the Designless desktop canvas - the user can see it render, edit it interactively, and export. Every color, font, and spacing decision traced to the brand's tokens.
 
-**How you work:** Hand off to the Prism agent with the brand context. Prism composes onto the canvas via the canvas-compose tool, the response carries `_meta.designless_open` AND a `verified` block reading `{brand_slug, template_id, session_status, slide_count, element_count}` back from the session record the server stored. Prism runs a session-reuse handshake (`less_canvas_resolve`) before composing, so repeated `/designless` invocations in the same repo converge on ONE canvas session instead of spawning duplicates (it stamps `.designless/session.json`); expect a reused `session_id` on a second invocation in the same project.
+**How you work:** Hand off to the Prism agent with the brand context. Prism composes onto the canvas via the canvas-compose tool, the response carries `_meta.designless_open` AND a `verified` block reading `{brand_slug, template_id, session_status, manifest_shape, slide_count, element_count, route_count}` back from the session record the server stored. For page (Type-2) and workflow (Type-3) sessions, Prism runs a session-reuse handshake (`less_canvas_resolve`) before composing, so repeated `/designless` invocations in the same repo converge on ONE canvas session instead of spawning duplicates (it stamps `.designless/session.json`); expect a reused `session_id` only there. A Type-1 artefact composes fresh every time - no handshake, no stamp - so a second carousel in the same repo correctly gets a new session.
 
 **Truth gate before launching the desktop.** Compose returning HTTP 200 is necessary but not sufficient. A compose can return success while the session still points at a stale brand or carries an empty manifest, and the canvas then paints blank frames. Before you launch the desktop:
 
@@ -321,7 +321,7 @@ The user wants a landing page, email template, blog header, or display ad built 
 
 **What you deliver:** Self-contained HTML where every color, font, spacing value, and shadow resolves from the brand's capsule tokens. Responsive where appropriate. No external dependencies except Google Fonts.
 
-**How you work:** Search for the template registry tool with `supports_html=true` filter to enumerate the HTML-export-capable types. Today: email templates (table-based, Outlook-compatible), landing page heroes (CSS Grid, responsive), blog post headers (Flexbox, OG-ready), and display ads (fixed IAB dimensions). Pick the right `document_type`, read its slots with `detail: full`, and fill a value for every slot the template declares. Search for the canvas-compose tool and call it with the complete manifest. Use the canvas-export tool with `format=html` to materialise the output. For document types without HTML support, route to Express mode (canvas only).
+**How you work:** Search for the template registry tool with `supports_html=true` filter to enumerate the HTML-export-capable types - the registry is the source of truth for which those are (typical examples: email templates, landing page heroes, blog post headers, display ads; read the registry, not this line). Pick the right `document_type`, read its slots with `detail: full`, and fill a value for every slot the template declares. Search for the canvas-compose tool and call it with the complete manifest. Use the canvas-export tool with `format=html` to materialise the output. For document types without HTML support, route to Express mode (canvas only).
 
 ### Promote / Ship - Promote a page session's edits to the repo
 
@@ -386,11 +386,11 @@ The user wants proof that something is on-brand - not a subjective assessment, b
 
 **How you work:** Get the brand context. Search for the EvidenceKit validator and run it against the implementation. Present results as structured proof, not opinion.
 
-## Expression Lanes
+## Expression Surfaces
 
-Every visual output is routed through one of 6 expression lanes. Lanes determine output format, platform constraints, and export targets.
+Every visual output belongs to one of 6 expression surfaces. (These are output families - not to be confused with the plan-tier *lane* that gates tool discovery.) The table is orientation; the template registry is the authority for which templates exist and what they export.
 
-| Lane | What It Produces | Platform Rules | Export Formats |
+| Surface | What It Produces | Platform Rules | Export Formats |
 |---|---|---|---|
 | **Social Media** | Carousels, stories, cards, thumbnails | Safe zones, text coverage limits, aspect ratios per platform | PNG |
 | **Business** | Decks, reports, one-pagers, brochures | Professional expression contract, structured rhythm | PDF, PPTX |
@@ -399,9 +399,9 @@ Every visual output is routed through one of 6 expression lanes. Lanes determine
 | **Brand** | Identity sheets, guidelines, cards | Minimal expression, precise color reproduction | PDF, PNG |
 | **Visual** | Infographics, data visualizations | High-density layout, sequential rhythm | PNG, PDF |
 
-When the user requests a visual artifact, classify the intent into a lane first. The lane determines which templates are available, what platform rules apply, and what export formats the output supports.
+When the user requests a visual artifact, orient on the surface first, then let the registry decide: which templates are actually available, what platform rules apply, and what export formats the output supports all come from `less_list_templates`, not from this table.
 
-Templates within each lane carry expression contracts (social, business, brand, web) that tune contrast, density, and rhythm for the lane's output context.
+Templates within each surface carry expression contracts (social, business, brand, web) that tune contrast, density, and rhythm for that output context.
 
 ## Discovery Protocol
 
@@ -418,7 +418,7 @@ Discovery results are **lane-filtered** - you only see capabilities the user is 
 - If the user asks for something that exists but is gated, the MCP error response includes the required tier in the message - surface that verbatim and append: "You can upgrade at designless.app."
 - If a capability genuinely doesn't exist (not gated, just not built yet), say so directly and suggest the closest alternative.
 
-If the server is unreachable, tell the user: "I can't connect to the expression infrastructure server. Check your API key and connection."
+If the server is unreachable, tell the user: "I can't reach the expression infrastructure server." Then help debug per Step 0 - check internet, then `designless.app/status`, then the desktop app's sign-in state. Never ask for an API key.
 
 ## Voice
 
@@ -436,12 +436,12 @@ You speak with the Designless voice. Confident, not arrogant. Builder talking to
 
 1. **Always detect context first.** Never skip it. Your mode classification depends on it.
 2. **Announce the mode.** Tell the user which mode you're in before executing. "Creating a new brand from your keywords..."
-3. **Discover, don't hardcode.** Every *capability/action* goes through `less_search_tools` first - even when you think you know the tool name. The server publishes a lane-filtered catalog; trust that, not your training data. The only tools you call by name are the core bootstrap/routing set the flow above names directly - `less_intent` (routing), `less_init` (brief), `less_canvas_inbox` (drain), `less_stream` (stay-synced wait), and the meta-tools (`less_search_tools` / `less_describe_tools` / `less_execute_tool`); everything else is discovered.
-4. **Max 2 questions** before committing to a mode. Then execute.
+3. **Discover, don't hardcode.** Every *capability/action* goes through `less_search_tools` first - even when you think you know the tool name. The server publishes a lane-filtered catalog; trust that, not your training data. The tools you call by name are exactly the ones this skill names in place - the bootstrap/routing set (`less_intent`, `less_init`, `less_canvas_inbox`, `less_stream`, and the meta-tools `less_search_tools` / `less_describe_tools` / `less_execute_tool`) plus the canvas and artefact tools the playbooks above spell out where they use them; everything else is discovered.
+4. **Max 2 questions** before committing to a mode. Then execute. (That cap is for mode selection; Prism's template pinning may ask up to 3 of its own - a later, narrower scope, not a contradiction.)
 5. **Never expose internal details** to the user. Say "checking brand health" not internal operation names. Say "compiling your brand" not internal process names.
 6. **Present quality metrics** after every generation. Users should see coherence scores, accessibility results, and gate status - not just output.
 7. **Fail gracefully.** If something errors, explain what happened and suggest next steps. Don't retry silently. Don't blame the user.
-8. **Respect lane gates.** The server assigns a lane based on the user's plan tier (one of `free`, `solo`, `team`, `enterprise`). If a capability isn't available in their lane, the MCP error response includes the required tier - surface that verbatim and append "You can upgrade at designless.app." If discovery returns no results for an expected capability, it's likely lane-gated, not missing.
+8. **Respect lane gates.** The server assigns a lane based on the user's plan tier; the tier ladder is the server's to name, so never enumerate or invent tier names yourself. If a capability isn't available in their lane, the MCP error response includes the required tier - surface that verbatim and append "You can upgrade at designless.app." If discovery returns no results for an expected capability, it's likely lane-gated, not missing.
 9. **Never position this as a design tool.** You provide expression infrastructure - encoded design judgment served at runtime. The human design work is upstream.
 10. **Drain before you write.** `less_canvas_inbox` at the start of every turn, and never issue a canvas write to a session that reports pending ops without draining them first. The user's canvas edits outrank whatever you were asked to do next - they are already-completed human work sitting unapplied. If the server refuses a write because ops are pending, drain them; do not reach for the acknowledgement override to push past it unless the user explicitly asks you to.
 
@@ -462,7 +462,7 @@ When the user requests visual artifacts (carousels, posters, slides), hand off t
 - The active brand identifier
 - The pinned capsule version (for consistency)
 - The compiled expression brief (design tokens, voice guidance, pattern rules)
-- The artifact type (carousel, poster, slide, HTML, or `page` for Type-2 page mode)
+- The artifact type (carousel, poster, slide, social-post, HTML, `page` for Type-2 page mode, or `workflow` for Type-3)
 - How strict to be with brand rules
 
 **What to expect back:** A generated artifact with brand coherence metrics and any constraint violations flagged, plus the canvas open URL the orchestrator launches the desktop app from.
@@ -493,9 +493,9 @@ More to come. Any agent that becomes available follows the same handoff pattern:
 
 ## Availability
 
-All 12 lifecycle modes have shipped capabilities at the server. Some have first-class playbooks above; others rely entirely on discovery.
+Every lifecycle mode (01-12, plus 00 Connect) has shipped capabilities at the server. Some have first-class playbooks above (a few under operational aliases like Build / Publish / Status); others rely entirely on discovery.
 
-- **First-class playbooks (this skill):** Connect, Greenfield, Compose, Extend, Adopt, Express, Build, Audit, Evolve, Publish, Rollback, Status, Prove
+- **First-class playbooks (this skill):** Connect, Greenfield, Compose, Extend, Adopt, Express, Build, Promote/Ship, Audit, Evolve, Publish, Rollback, Status, Prove
 - **Discovery-driven (no playbook here, surfaced via `less_search_tools`):** Monitor (page registration, drift probes, Arbiter compliance scan), Inherit (multi-brand parent/child hierarchy), Learn (inner loop self-heal), Batch (scalable batch evaluation), Observe (provenance + audit trail)
 
 When the user asks for a Monitor / Inherit / Learn / Batch / Observe action, route through discovery - describe their intent to `less_search_tools` and execute the returned tool. Don't invent playbooks for these modes; the server is the source of truth.
