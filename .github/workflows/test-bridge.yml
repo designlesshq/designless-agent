@@ -43,3 +43,15 @@ jobs:
       # zero; letting the first one land is how a wall of them starts.
       - name: Lints
         run: cargo clippy --manifest-path bridge/Cargo.toml --all-targets -- -D warnings
+
+  # Supply-chain gate: RUSTSEC advisories and a license allowlist over the exact
+  # dependency tree the binary ships. The allowlist mirrors the families in
+  # THIRD-PARTY-LICENSES.md, so copyleft creep or a known vulnerability fails a
+  # pull request instead of surfacing in someone's procurement review.
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: bridge/Cargo.toml

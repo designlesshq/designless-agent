@@ -9,6 +9,13 @@ This file satisfies the attribution requirements of those licenses. It does
 **not** alter the license of Designless' own code: everything in this
 repository outside these third-party crates is governed by [LICENSE](LICENSE).
 
+Where a crate is offered under a choice of licenses (an `OR` expression),
+Designless elects MIT when offered, otherwise Apache-2.0. Two ids here
+trip automated scanners and deserve a plain reading: `BSL-1.0` is the Boost
+Software License (permissive), not the Business Source License; and the one
+`Unlicense` in this inventory is a dual grant whose MIT arm is the elected
+license. No copyleft license appears anywhere in this inventory.
+
 Inventory generated from `cargo tree --target aarch64-apple-darwin --edges
 normal,build`, which is the exact dependency set compiled into the shipped
 binary (116 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
@@ -36,7 +43,7 @@ binary (116 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 
 | Crate | Version | License | Copyright |
 | --- | --- | --- | --- |
-| anyhow | 1.0.102 | MIT OR Apache-2.0 | (no holder stated upstream) |
+| anyhow | 1.0.104 | MIT OR Apache-2.0 | (no holder stated upstream) |
 | async-trait | 0.1.89 | MIT OR Apache-2.0 | (no holder stated upstream) |
 | atomic-waker | 1.1.2 | Apache-2.0 OR MIT | Copyright (c) 2016 Alex Crichton |
 | base64 | 0.22.1 | MIT OR Apache-2.0 | Copyright (c) 2015 Alice Maz |
