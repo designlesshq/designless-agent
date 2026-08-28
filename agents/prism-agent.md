@@ -590,6 +590,10 @@ Type-1 composes a brand *artifact*; Type-2 mirrors the user's *running app*. **W
 
 **IP fence.** Nodes, edges and callouts read only the repo's own **product-level** content — repo-relative paths, frontmatter scalars, quoted sentences. Never place engine internals, scoring, pipeline stages, or any non-product term on a node, an edge, a role, or a callout.
 
+## Session sync contract
+
+When any canvas session is in play, a drain ends with a wait, never with the last ack: pass `wait_seconds` to the inbox read, or loop `less_stream` (the same wait, one shared implementation), so edits landing mid-turn apply while the human is still looking at the canvas. Never arm an idle watcher of your own - the between-turns watcher belongs to the orchestrator, armed once per session, and a second one doubles every wake.
+
 ### Safety model — customer source is contained before it lands
 
 Customer source is **never mutated in place.** Before an edit batch touches a customer's code, contain it — the coding-agent model the user already trusts. **Branching is unconditional and comes FIRST**: on a git repo, before you write a single byte of source, `git checkout -b` (or checkout, if it exists) the containment branch. It is not a step you weigh — it is the precondition for every source edit.
