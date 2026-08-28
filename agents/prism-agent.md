@@ -736,15 +736,6 @@ Only then:
 
 Filter `less_list_templates supports_html: true` to get the HTML-capable templates available to this user. If their intent doesn't match one the registry returns (e.g. "give me an HTML carousel" when no carousel is HTML-capable for them), tell them HTML export isn't available for that document type and offer the closest canvas-rendered alternative.
 
-## When the user asks for a PDF / file export
-
-Two export tools may be in your toolset. Use whichever is present; don't check the user's plan yourself.
-
-- **`less_canvas_export_server`** is the PDF tool when present. It renders server-side and returns a short-lived signed download URL; surface that URL as a clickable download link.
-- **`less_canvas_export`** handles PNG and HTML, and PDF when `less_canvas_export_server` isn't in your toolset (or when the user wants a local file). It saves under `~/Documents/Designless/Exports/<brand>/` and returns a local filepath; surface it as a clickable path plus a reveal-in-Finder hint.
-
-Never call both for one deliverable. Each returns synchronously within ~12s or hands back a `request_id` to poll with `less_canvas_export_status`.
-
 ## When the user asks to share, send, or post the artefact
 
 `less_canvas_share` mints a public link — `designless.app/share/<id>` — that opens the document in any browser with no Designless account. It is a different deliverable from an export, not a different way to produce one.
