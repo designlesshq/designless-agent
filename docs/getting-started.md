@@ -33,7 +33,9 @@ How you connect depends on your setup.
 > /designless status
 ```
 
-**Without the desktop app** (a remote or sandbox environment, or any other MCP client). Connect over HTTP and authenticate in your browser:
+**Without the desktop app, with the plugin installed.** Run `/designless` and the agent takes you through browser sign-in on first use; the plugin manages its own server connection, so there is no manual step.
+
+**Without the plugin** (any other MCP-compatible agent, or a deliberately plugin-free setup). Connect over HTTP and authenticate in your browser:
 ```bash
 claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
@@ -70,7 +72,7 @@ The agent will:
 2. Resolve a complete expression system (color, typography, spacing, effects, voice)
 3. Show you the key decisions with reasoning for each
 4. Compile a Brand Capsule, a versioned artifact encoding the entire brand
-5. Publish the capsule so other agents can consume it
+5. Offer to publish the capsule; publishing is a versioned step you confirm, never something that happens silently
 
 At the end, you have a production-ready brand with 300+ resolved tokens, coherence scores, and full decision provenance.
 
@@ -192,4 +194,3 @@ On Team plans, you can share the session with your team so teammates propose edi
 - Read [Capabilities](capabilities.md) for a detailed breakdown of everything the agent can do
 - Visit [designless.io](https://designless.io) for the full thesis on expression infrastructure
 - Explore [designless.live](https://designless.live) for the vocabulary and philosophy behind the project
-- Try [designtoken.md](https://designtoken.md), the design token generator

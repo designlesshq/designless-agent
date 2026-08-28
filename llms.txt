@@ -1,32 +1,34 @@
 # Designless Agent
 
-> Designless agent — encode your brand's design judgment into an agent that builds with your intent.
+> Designless agent: encode your brand's design judgment into an agent that builds with your intent.
 
-Designless is the world's first expression infrastructure for coding agents. It gives agents like Claude runtime access to encoded human design judgment — so the software they build carries taste, not just logic.
+Designless is the world's first expression infrastructure for coding agents. It gives agents like Claude runtime access to encoded human design judgment, so the software they build carries taste, not just logic. The agent runs in Claude Code, the ChatGPT app (Codex), and Cursor, and its visual work renders live on the Designless canvas in the Designless desktop app.
+
+This repository is source-visible, not open source: the code is public to read, proprietary to use beyond its intended purpose. See LICENSE and SECURITY.md.
 
 ## What This Plugin Does
 
-The Designless agent connects to the LESS MCP server — a runtime API that serves design decisions to coding agents via the Model Context Protocol. Describe your brand once. Get a complete, production-ready design system back — available at runtime via API. No copy-paste. No context window overhead. No regeneration cycles.
+The Designless agent connects to the LESS MCP server, a runtime API that serves design decisions to coding agents via the Model Context Protocol. Describe your brand once. Get a complete, production-ready design system back, available at runtime via API. No copy-paste. No context window overhead. No regeneration cycles.
 
-The agent discovers its capabilities from the expression infrastructure server at runtime. As the infrastructure evolves, the agent's capabilities grow — no plugin updates required.
+The agent discovers its capabilities from the expression infrastructure server at runtime. As the infrastructure evolves, the agent's capabilities grow. No plugin updates required.
 
 ## Core Concepts
 
-- **Expression Infrastructure**: The runtime layer that gives coding agents access to encoded design judgment. Not a design tool. Infrastructure — like an API, but for taste.
+- **Expression Infrastructure**: The runtime layer that gives coding agents access to encoded design judgment. Not a design tool. Infrastructure, like an API, but for taste.
 - **Brand Capsule**: A self-contained compilation of everything defining how a brand should look, feel, and speak. One artifact. Versioned. Deterministic. Any agent can consume it.
-- **Expression Contracts**: Beyond design tokens — encode intent, context, relationships, and reasoning. Tokens are a dictionary. Contracts are the grammar.
+- **Expression Contracts**: Beyond design tokens; they encode intent, context, relationships, and reasoning. Tokens are a dictionary. Contracts are the grammar.
 - **LESS MCP**: Expression infrastructure served as a runtime MCP server. Agents query for design decisions the same way they query any other tool server.
-- **LoomX**: The expression engine under the hood — silent design judgment at runtime. Powers the Designless agent's ability to resolve design decisions and validate output.
+- **LoomX**: The expression engine under the hood: silent design judgment at runtime. Powers the Designless agent's ability to resolve design decisions and validate output.
 - **DLM (Design Language Model)**: Resolves brand descriptions into complete expression systems. The model that makes taste computable.
-- **EvidenceKit**: Quality proof layer — structured, traceable verification that output is on-brand.
-- **ContentKit**: Content intelligence — voice-modulated content compiled to match brand tone across surfaces.
-- **Blueprint**: Structural templates matched to user intent — the right content zones, emphasis hierarchy, and rhythm for each surface type.
+- **EvidenceKit**: Quality proof layer. Structured, traceable verification that output is on-brand.
+- **ContentKit**: Content intelligence. Voice-modulated content compiled to match brand tone across surfaces.
+- **Blueprint**: A structural template matched to your intent: the starting composition an agent builds from, carrying layout, content zones, emphasis hierarchy, and pattern slots.
 - **Brand Archetype**: Canonical personality anchors that shape how a brand expresses itself across every design dimension.
-- **Provenance**: Traceable decision chains from user intent to generated output — auditable, verifiable, not just aesthetic.
+- **Provenance**: Traceable decision chains from user intent to generated output. Auditable, verifiable, not just aesthetic.
 - **Composition Quality**: How well components compose into governed layouts. Structural quality that goes beyond visual appearance, measured and returned with the output.
 - **WGLL (What Good Looks Like)**: Runtime quality judgment. Structured assessment of what good looks like, available to your coding agent at the moment it builds. Not aesthetic opinion, not subjective review. Encoded taste as a callable runtime check.
-- **DecisionKit**: The reasoning layer that captures why a design decision was made. Every token carries provenance — a traceable chain from user intent through resolution to final value.
-- **Inner Loop**: The self-healing cycle that detects when generated output deviates from brand intent and corrects it before delivery — continuous quality enforcement, not post-hoc review.
+- **DecisionKit**: Pattern resolution. Matches what you want to build with structural patterns that carry the brand's judgment, and every match carries a decision trace. Intent in, governed pattern out.
+- **Inner Loop**: The self-healing cycle that detects when generated output deviates from brand intent and corrects it before delivery. Continuous quality enforcement, not post-hoc review.
 
 ## Template Registry
 
@@ -40,9 +42,9 @@ A wide range of document types, each carrying platform-specific rules and expres
 
 ## Commands
 
-- `/designless` — One command. Describe your intent; the agent routes to the right capability automatically.
+- `/designless`: one command. Describe your intent; the agent routes to the right capability automatically.
 
-There are no sub-commands. The orchestrator classifies intent at runtime — whether you want to create a brand, extend tokens, audit quality, generate a carousel, build production HTML, or surface ecosystem state, you say it in plain language and it routes accordingly.
+There are no sub-commands. The orchestrator classifies intent at runtime. Whether you want to create a brand, extend tokens, audit quality, generate a carousel, build production HTML, edit your own running app on the canvas, or surface ecosystem state, you say it in plain language and it routes accordingly.
 
 ## What You Get
 
@@ -56,7 +58,15 @@ claude plugin marketplace add designlesshq/designless-agent
 claude plugin install designless@designless-plugins
 ```
 
-Or add the MCP server directly:
+ChatGPT app (Codex): open Plugins, then Add plugin marketplace, enter `designlesshq/designless-agent`, and install Designless. Or from a terminal:
+```
+codex plugin marketplace add designlesshq/designless-agent
+codex plugin add designless@designless-plugins
+```
+
+Cursor: the Designless desktop app installs and updates the plugin for you. Install the app from https://designless.app and sign in.
+
+Or add the MCP server directly to any MCP-compatible agent:
 ```
 claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
@@ -68,7 +78,6 @@ Authentication is handled via OAuth on first use. Visit https://designless.app t
 - Product overview: https://designless.io
 - LESS Studio: https://designless.app
 - Vocabulary and thesis: https://designless.live
-- Skill designer and registry: https://skill.design
-- Design token generator: https://designtoken.md
+- Security and data-flow posture: https://github.com/designlesshq/designless-agent/blob/main/SECURITY.md
 - Getting started guide: https://github.com/designlesshq/designless-agent/blob/main/docs/getting-started.md
 - Capabilities reference: https://github.com/designlesshq/designless-agent/blob/main/docs/capabilities.md
