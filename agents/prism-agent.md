@@ -302,99 +302,11 @@ Leave `_page.port` UNSET for a boot app (the desktop starts the command, reads t
 
 **Fence.** The boot command is the **repo's own under consent** — never a command the server invents (the walkplan returns a serve class + allowlists, never a runnable line) and never one the agent synthesizes. Egress and env stay exactly as the walkplan classified them; the agent does not widen them. Credential/env **values** are never authored into the manifest and never persisted (key-names only).
 
-### Authed-walk authoring — routes that need a logged-in view
+### Authed routes — capture what a logged-in person sees
 
-Some routes only paint correctly behind auth — a dashboard, an account page, anything gated by a session. Captured as an anonymous visitor, they yield a login wall, not the page the user wanted. **Authed-walk** lets you author, per route, how the capture should present itself so the honest logged-in (or role-specific) frame is what lands.
+Some routes only paint correctly behind auth; captured as an anonymous visitor they yield a login wall, not the page the user asked for. Call `less_auth_detect` first and author from what it returns — the classification is consumed, never invented, and the markers come from the app's own conventions rather than from the tool.
 
-Use `less_auth_detect` first — it returns an **inert** auth classification for the app (the auth method, and how an authed state is reached) that informs WHICH directives to author. It does not emit marker fields: the markers come from the app's own DOM conventions (see `role_marker_contract` below). Like the walkplan, it consumes inert signals only and returns a recipe, not a decision you invent; the confidence/scoring behind the classification stays server-side (IP fence) — you consume the classification, not the reasoning.
-
-Per authed route, author on `_page.routes[i]` (and mirror the durable intent onto the matching `_walk.nodes[i]`):
-
-- **`role_marker_contract`** — the honesty check for the frame: `{ logged_in_markers, logged_out_markers, role_markers, expected_role }`. Each of the three marker groups is an **array of `{ present, sel }` objects** (NOT bare selector strings): `present: true` asserts the selector IS in the DOM, `present: false` asserts it is ABSENT. `expected_role` is a plain string (provenance, never a predicate). The markers are read from the app's own DOM conventions (the selectors the repo itself defines and documents, e.g. in its markers README); `less_auth_detect` informs the auth approach only, never the marker fields. They prove the capture reached the intended state. The capture VERIFY step **honest-fails** a frame whose markers say it's the wrong auth state — a login wall captured for a route you declared `expected_role: "user"` — rather than silently landing a logged-out page; surface that as a per-frame Re-capture reason, don't paper over it.
-- **`user_type`** — which identity this route captures as. `walk_id` is minted **once per walk**; distinct `user_type`s get **isolated captures** (an `admin` frame and an `anon` frame of the same route never share state). Author `authed_walk: { walk_id, user_type }` on the node.
-- **`inject_headers`** (optional) — `{ name: value }` headers the capture sends (e.g. an auth header) when the app's method is header-based.
-- **`steps`** (optional) — an ordered list of **declarative DRIVE steps** (a login form fill-and-submit, a navigation) the capture replays to reach the authed state when the method is interactive rather than header-based. Each step is `{ "op": <name>, ...fields }` from a closed vocabulary — `goto{url}`, `click{sel}`, `fill{sel,value}`, `hover{sel}`, `focus{sel}`, `scroll{sel|to}`, `wait_for{sel|networkidle|ms}`, `assert_visible{sel}`, `set_viewport{width,height}`, `dismissOverlay{sel?}`, `openNamed{sel,state?}`. A step with any other op is refused at capture, so never invent free-form actions; describe WHAT to do at WHICH marker with these ops, not imperative browser code. **`goto{url}` needs an ABSOLUTE loopback URL** (the capture re-gates it to loopback), and you do NOT know the served port at compose time — so do not author a `goto` to a relative path. For redirect-based auth (the common case: a middleware bounces an unauthed request to `/login`), OMIT `goto` entirely — the capture already loads the protected route, the app redirects it to the login form, and your `fill`/`click` steps run right there. Only use `goto` for a same-origin navigation the app itself would honor as an absolute URL.
-
-Shape (on a route node):
-
-```json
-"_page": {
-  "routes": [
-    {
-      "path": "/dashboard",
-      "inject_headers": { "Authorization": "Bearer <supplied-at-capture>" },
-      "steps": [
-        { "op": "fill", "sel": "input[name='email']", "value": "owner@example.com" },
-        { "op": "fill", "sel": "input[name='password']", "value": "<supplied-at-capture:password>" },
-        { "op": "click", "sel": "button[type='submit']" },
-        { "op": "wait_for", "sel": "[data-account-menu]" }
-      ],
-      "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "user" },
-      "role_marker_contract": {
-        "logged_in_markers": [{ "present": true, "sel": "[data-account-menu]" }],
-        "logged_out_markers": [{ "present": false, "sel": "form[action='/login']" }],
-        "role_markers": [{ "present": true, "sel": "[data-role='user']" }],
-        "expected_role": "user"
-      }
-    }
-  ]
-}
-```
-
-**One route, several roles.** Authoring the same route under two roles is legal and is the intended shape for a role comparison (`/dashboard` as `user` next to `/dashboard` as `admin`). To capture one route as N roles, author N distinct `_walk.nodes` entries with the SAME `route` and a DISTINCT `authed_walk.user_type` (with `coord.user_type` matching it), each with its own `slide_index` and its own positional `_page.routes` entry carrying that role's `steps` and `role_marker_contract`. The `_page.routes` projection is positional, in node order, so two entries with the same `path` are NOT a duplicate: each position is a distinct capture with its own directives and its own frame. One `walk_id` spans all the entries (minted once per walk); the distinct `user_type`s are what keep the captures isolated. Role names are supplied, never invented: use the names the user asked for or the repo's own conventions (its role markers, its seeded accounts); when neither names a role, ask rather than coin one. A minimal two-role sketch:
-
-```json
-"_walk": {
-  "nodes": [
-    { "node_id": null, "slide_index": 1, "route": "/dashboard", "coord": { "route": "/dashboard", "user_type": "user" }, "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "user" }, "reachable": true, "entry_action": { "kind": "goto" } },
-    { "node_id": null, "slide_index": 2, "route": "/dashboard", "coord": { "route": "/dashboard", "user_type": "admin" }, "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "admin" }, "reachable": true, "entry_action": { "kind": "goto" } }
-  ]
-},
-"_page": {
-  "routes": [
-    {
-      "path": "/dashboard",
-      "steps": [
-        { "op": "fill", "sel": "input[name='email']", "value": "user@example.com" },
-        { "op": "fill", "sel": "input[name='password']", "value": "<supplied-at-capture:user_password>" },
-        { "op": "click", "sel": "button[type='submit']" },
-        { "op": "wait_for", "sel": "[data-account-menu]" }
-      ],
-      "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "user" },
-      "role_marker_contract": {
-        "logged_in_markers": [{ "present": true, "sel": "[data-account-menu]" }],
-        "role_markers": [{ "present": true, "sel": "[data-role='user']" }],
-        "expected_role": "user"
-      }
-    },
-    {
-      "path": "/dashboard",
-      "steps": [
-        { "op": "fill", "sel": "input[name='email']", "value": "admin@example.com" },
-        { "op": "fill", "sel": "input[name='password']", "value": "<supplied-at-capture:admin_password>" },
-        { "op": "click", "sel": "button[type='submit']" },
-        { "op": "wait_for", "sel": "[data-account-menu]" }
-      ],
-      "authed_walk": { "walk_id": "<minted-once-per-walk>", "user_type": "admin" },
-      "role_marker_contract": {
-        "logged_in_markers": [{ "present": true, "sel": "[data-account-menu]" }],
-        "role_markers": [{ "present": true, "sel": "[data-role='admin']" }],
-        "expected_role": "admin"
-      }
-    }
-  ]
-}
-```
-
-**Capture-time placeholders.** The substring `<supplied-at-capture>` or `<supplied-at-capture:label>` inside a directive string value declares a **secret slot** — a value that arrives at capture, never in the manifest. Embedded use is valid (`"Bearer <supplied-at-capture>"` above declares a slot inside a larger header value). Labels are short (`[A-Za-z0-9_.-]`, up to 64 chars) and name the slot when the value is asked for; omit the label and the slot takes the header name or fill target. Placeholders are valid ONLY in `inject_headers` values and fill-step values — nowhere else in the manifest.
-
-**How supply works.** When the capture runs, the Designless app asks the owner for each declared slot's value. The values are used once for that capture, kept in memory on their Mac, and never saved, synced, or sent anywhere. If the owner cancels, any route still carrying an unresolved slot reports an honest capture failure (`auth_secret_required`) instead of capturing a logged-out page.
-
-**Never author a literal.** Never put a real token or password in the manifest — author the placeholder and let capture supply the value. The server warns when a directive value looks like a live secret; treat that warning as a directive authored wrong, not as noise.
-
-**Fence — credentials are never persisted.** Any credential a capture needs (a token in `inject_headers`, a password in a login `step`) is a **capture-time secret**: supplied at capture, used to reach the authed frame, and never written into the manifest, the `_walk` catalogue, the vault, or any log. This is the scrub-seam + never-durable rule — the same discipline the sanitizer applies to captured page bytes applies to the walk directives that produced them. Author the SHAPE (which header, which marker, which role) in the manifest; the VALUES stay ephemeral. And as with the walkplan, the classification's confidence/scoring stays server-side — the agent authors from the app's own markers, not from any score.
-
-**Record mode — demonstrate a walk instead of hand-authoring it.** Authoring `steps` by hand is one path; the other is to **demonstrate** them. In the Designless app's record mode, the owner clicks and fills directly on the **inert** snapshot of the route and their actions are recorded into the same closed DRIVE step vocabulary — no hand-authoring, nothing executes, no live drive. The recorded steps persist onto that route node's `steps` exactly as if you had authored them, and any credential fill is auto-placeholdered `<supplied-at-capture:label>` on the way in (the literal is never captured and never persists — the same fence as above). This is an alternative way to produce the `steps` this section and the states below consume, not a new protocol; the shape they land in is identical.
+**Never author a credential.** A password or token belongs in a capture-time placeholder, and the value reaches the capture from the person at the keyboard, never from the manifest. If they cancel, the route fails honestly; that is the correct outcome and not something to work around. `less_auth_detect` carries the directives, the closed step vocabulary, and the placeholder grammar.
 
 ### Runtime states — loading / empty / error / filter of the SAME route
 
@@ -403,7 +315,7 @@ A route often has more than one honest face: a list that is **empty** before dat
 Per route, author `states: [{ ui_state, steps }]` on `_page.routes[i]` (and mirror the durable intent onto the matching `_walk.nodes[i]`):
 
 - **`ui_state`** — a short slug naming the state (`[A-Za-z0-9_-]`, up to 64 chars): `empty`, `loading`, `error`, `filter-active`. **At most 4 states per route** (v1). Pick names that read as product states, not internal labels.
-- **`steps`** — the SAME closed DRIVE op vocabulary the authed-walk uses (`goto`/`click`/`fill`/`wait_for`/…) — a declarative sequence that **REACHES** the state from the freshly loaded route: click a filter to reach `filter-active`, clear a list to reach `empty`. A credential value in a state's fill step uses the same `<supplied-at-capture:label>` placeholder grammar (see "Capture-time placeholders" above) — never a literal.
+- **`steps`** — the SAME closed DRIVE op vocabulary an authed route uses, carried by `less_auth_detect` (`goto`/`click`/`fill`/`wait_for`/…) — a declarative sequence that **REACHES** the state from the freshly loaded route: click a filter to reach `filter-active`, clear a list to reach `empty`. A credential value in a state's fill step uses that same capture-time placeholder grammar — never a literal.
 
 **Author only states the steps can honestly reach.** If there is no honest step sequence that produces `empty` (the list is always populated), **omit it** — never fabricate a state. A state whose steps can't reach it is left unauthored, not faked.
 
@@ -439,49 +351,9 @@ Shape (on a route node, alongside any authed-walk directives):
 
 The canvas renders a **state toggle** on a frame that has captured states, plus an **"N states" dot** counting the real captured states (default is always the primary face; selecting a state swaps to that captured variant). Only states that actually captured appear — a state whose reach failed surfaces as an honest per-frame reason, never as a silent or invented face.
 
-### Responsive viewport capture — structural mobile/tablet variants of a route
+### Route shape — responsive variants and dynamic-route masters
 
-A page can render a **structurally-different** DOM at a narrower width: a mobile navigation that mounts a *different* component, a drawer or menu that a `useMediaQuery`-style hook toggles by adding/removing elements, a server- or UA-branched mobile layout. That is a genuine second face of the route — the element tree itself changes, not just its arrangement. To capture it, declare the widths to check as **`viewports`** on `_page.routes[i]` (mirror the durable intent onto the matching `_walk.nodes[i]`), exactly as you author `states`:
-
-- **`viewports`** — an array of raw pixel **widths** to structurally check this route at (e.g. `[768, 375]` for tablet + mobile). Positive integers, **at most 3** per route. Widths, never device names.
-
-```json
-"_page": { "routes": [ { "path": "/", "viewports": [768, 375] } ] }
-```
-
-The desktop renders the route at each declared width and keeps a **separate capture ONLY when the DOM structure genuinely differs** from the base capture; a width that merely **reflows** — the same elements rearranged by CSS media queries (the common case: columns restack, a hamburger that a `display` rule toggles) — is detected and **skipped**, no separate frame stored. So declaring a width is always safe: at worst it is a no-op, never a fabricated "mobile view." The renderer already reflows any width for free at view time (the width switcher), so a captured `@width` variant only ever appears for a route that truly swaps its structure.
-
-**Declare intelligently — this is your judgment, from the repo, not a default.** Add `viewports` ONLY to routes whose responsive behavior is a real structural swap you can see in the source: a conditional component render by breakpoint (`<MobileNav/>` vs `<DesktopNav/>`), a media-query **hook** driving what mounts, a distinct mobile route/layout. Do **not** blanket-declare `viewports` on every route, and do **not** declare them for a route that is responsive by **CSS alone** (media queries that only restack or hide/show via `display`) — that reflows at view time and needs no capture. When in doubt, leave it off; a genuinely-needed variant is far rarer than a plain reflow. Like states, `viewports` ride the parent route's slot keyspace — a captured width is a variant of the same route, consuming no extra route node.
-
-A dynamic route like `/skills/[slug]` renders one page per slug — dozens of concrete instances (`/skills/a`, `/skills/b`, …) off a **single** source template. Capturing every instance as its own route would flood the deck with near-identical frames. Instead, group them under a **master**: author ONE representative node for the template and list the instances against it, so the deck stays one-node-per-template while the canvas still shows the multiplicity.
-
-The dynamic route shows up as a `dynamic_patterns` entry in `less_canvas_status`'s `discovered_routes` (the literal pattern strings — `/skills/[slug]`, catch-alls — sitting alongside the concrete discovered paths the same walk found). **You consume that provided data — you do NOT decide which routes are dynamic.** Which routes are patterns is a structural fact the desktop's route walk reports from the customer's own repo; the agent never classifies or computes it (IP fence). Your job is purely to **group**: for each provided pattern, collect the concrete discovered routes that match it and author a master entry.
-
-Author `_walk.masters = [{ master_route, instance_routes[] }]`:
-
-- **`master_route`** — the provided pattern string, verbatim (`/skills/[slug]`).
-- **`instance_routes`** — the concrete discovered paths that match it (`["/skills/a", "/skills/b", …]`), grouped from the discovered set — not synthesized.
-
-Then author **ONE representative route node** for the master and **do NOT author a node or slot for any instance** — the instances consume **ZERO** slots. They are catalogued in `instance_routes`, not rendered as separate route nodes; the master's single node is what captures. **The representative node's `route` (and its `_page.routes[i].path`) must be a CONCRETE instance route — pick the FIRST entry of `instance_routes` — never the literal pattern string.** A capture navigates the node's route verbatim, and a real dev server 404s a literal `/skills/[slug]` path; the canvas associates the master with its representative through `instance_routes`, so a concrete route keeps both the capture AND the ×N badge working.
-
-Shape (in the page manifest's `_walk`, alongside `nodes`):
-
-```json
-"_walk": {
-  "walk_version": "walk/v1",
-  "masters": [
-    {
-      "master_route": "/skills/[slug]",
-      "instance_routes": ["/skills/design-critique", "/skills/ux-copy", "/skills/user-research"]
-    }
-  ],
-  "nodes": [
-    { "node_id": null, "slide_index": 1, "route": "/skills/design-critique", "coord": { "route": "/skills/design-critique", "user_type": null }, "reachable": true, "entry_action": { "kind": "goto" } }
-  ]
-}
-```
-
-The canvas surfaces masters **read-only**: the master node renders with a **×N badge** (N = the instance count) and, where instances diverge from the representative, the owner can **pin an instance** to materialize that specific one. Pinning is the canvas's affordance, not the agent's — you author the master + its instance list; the collapse-to-one and the ×N / pin-on-divergence rendering are the canvas's. Never author N instance nodes to "help" the render; that defeats the collapse and re-floods the keyspace.
+Two per-route decisions are yours to make from the repo, and both are yours to make *sparingly*: whether a route has a genuinely different face at a narrower width, and which routes are one template rendered many times. `less_canvas_walkplan` carries what to author for each and the bounds on it. Your part is the judgment it cannot make — reading the source and deciding whether a breakpoint really swaps a component or merely restacks it, and never authoring an instance the canvas is meant to collapse.
 
 6. **Right-checkout guard, then drive the ops loop.** A Type-2 edit applies to source files, so your cwd MUST be the repo the canvas renders from. Each op's `source_file` is a repo-relative path: before claiming, confirm it resolves under your current working directory (or one of your allowed roots). If it does not, the canvas is rendering a different repo than this session is rooted in. Do NOT claim or apply, and never start a lease you cannot honor: leave the op `pending` and route the user, naming the repo, e.g. "These edits target the `<repo>` repo (`<source_file>`), but this session is rooted in `<cwd>`. Run `/designless` from `<repo>` and I will apply them." When the cwd IS the right checkout: pull edits with `less_canvas_ops` (claim, passing `consumer` = host short name + session marker, e.g. `claude:<8char>` — provenance for the canvas chip, distinctness for the lease); for each op, confirm scope via the canvas chip (edit one item's *data* vs the *component* style), then reconcile against the anchor with a three-way check before writing:
 
