@@ -308,48 +308,11 @@ Some routes only paint correctly behind auth; captured as an anonymous visitor t
 
 **Never author a credential.** A password or token belongs in a capture-time placeholder, and the value reaches the capture from the person at the keyboard, never from the manifest. If they cancel, the route fails honestly; that is the correct outcome and not something to work around. `less_auth_detect` carries the directives, the closed step vocabulary, and the placeholder grammar.
 
-### Runtime states — loading / empty / error / filter of the SAME route
+### Runtime states — the faces a route can honestly show
 
-A route often has more than one honest face: a list that is **empty** before data arrives, a **loading** shimmer, an **error** panel, a **filtered** view after a facet is picked. These are not different routes — they are runtime *states* of the same page. Author them as `states` on a route node so the canvas can show each real one without ever inventing a face the app can't produce.
+A route often has more than one honest face: empty before data arrives, loading, an error panel, a filtered view. Author them as states of that route and `less_canvas_walkplan` carries the shape, the bound, and the step vocabulary.
 
-Per route, author `states: [{ ui_state, steps }]` on `_page.routes[i]` (and mirror the durable intent onto the matching `_walk.nodes[i]`):
-
-- **`ui_state`** — a short slug naming the state (`[A-Za-z0-9_-]`, up to 64 chars): `empty`, `loading`, `error`, `filter-active`. **At most 4 states per route** (v1). Pick names that read as product states, not internal labels.
-- **`steps`** — the SAME closed DRIVE op vocabulary an authed route uses, carried by `less_auth_detect` (`goto`/`click`/`fill`/`wait_for`/…) — a declarative sequence that **REACHES** the state from the freshly loaded route: click a filter to reach `filter-active`, clear a list to reach `empty`. A credential value in a state's fill step uses that same capture-time placeholder grammar — never a literal.
-
-**Author only states the steps can honestly reach.** If there is no honest step sequence that produces `empty` (the list is always populated), **omit it** — never fabricate a state. A state whose steps can't reach it is left unauthored, not faked.
-
-States are captured as **snapshot variants on the SAME slot**, not as new routes or new slots — a state does not consume a route node or a slot, it rides the parent route's slot as an alternate revision. The route's default (primary) face is always the plain load; the states are additional reachable faces of it. This keeps the route/slot keyspace linear: N states add zero routes and zero slots.
-
-Shape (on a route node, alongside any authed-walk directives):
-
-```json
-"_page": {
-  "routes": [
-    {
-      "path": "/skills",
-      "states": [
-        {
-          "ui_state": "filter-active",
-          "steps": [
-            { "op": "click", "sel": "[data-facet='design']" },
-            { "op": "wait_for", "sel": "[data-results]" }
-          ]
-        },
-        {
-          "ui_state": "empty",
-          "steps": [
-            { "op": "fill", "sel": "input[type='search']", "value": "zzzznomatch" },
-            { "op": "wait_for", "sel": "[data-empty-state]" }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-The canvas renders a **state toggle** on a frame that has captured states, plus an **"N states" dot** counting the real captured states (default is always the primary face; selecting a state swaps to that captured variant). Only states that actually captured appear — a state whose reach failed surfaces as an honest per-frame reason, never as a silent or invented face.
+**Only author a state the steps can honestly reach.** This is the judgment no tool can make for you: whether a sequence exists that produces this face in THIS app. If the list is always populated, there is no honest way to reach `empty` — omit it and say so. A state you cannot reach captures the plain load and files it under another name, which shows the user a face their app never produces. Leaving it unauthored is the correct outcome, not a gap to fill.
 
 ### Route shape — responsive variants and dynamic-route masters
 
@@ -386,57 +349,15 @@ Page mode is desktop-only by construction (the capture is a canvas capability of
 
 **Forcing a fresh re-capture.** The canvas re-captures a page automatically when its source changes, which covers ordinary edits. For the cases the watcher can't see — an **out-of-band change** (a generated file, remote/CMS data, or a build artifact regenerated outside the watched tree), a snapshot that looks **stale or partial**, or a `needs_human` where you want a clean pass — force one with `less_canvas_recapture` (optionally narrowed to `routes`; omit to refresh every route). It is agent-initiated and **non-destructive** — it never wipes the deck — is killable from the canvas, and runs whether the session tab is open or closed. It is NOT how you add a page (`less_canvas_add_route` / `less_canvas_rewalk`) or rebuild from scratch (re-compose). Like `less_canvas_diff`, it is entitlement-gated — skip gracefully if it isn't in this user's toolset.
 
-## Type-3 Workflow mode (a repo that IS a workflow — no UI to render)
+## Type-3 Workflow mode (a repo that IS a workflow)
 
-Type-1 composes a brand *artifact*; Type-2 mirrors the user's *running app*. **Workflow mode is the third canvas TYPE** — for a repo that IS a machine-readable agentic workflow (skills / agents / commands / capabilities — e.g. `designless-agent` itself, or a customer's own agent or plugin repo) and so has **no UI to render**. It opens anyway: it renders **as a node/edge map** — the entry command hands to the router skill, the router delegates to its sub-agents, the agents reach for capabilities. Workflow is a **sibling of artefact and page**, NOT a Slide/Static/Live view mode (those belong to page and never appear here).
+Some repos have no UI to render because the repo IS a workflow — skills, agents, commands, capabilities. They open as a node/edge map rather than a page or an artefact. `less_canvas_compose` carries the shape: the node kinds, the bands, the edge provenance, and the frontmatter round-trip.
 
-**Signals:** "map my agent", "show this plugin as a workflow", "visualize the skills/agents", a request pointed at a repo whose content is `.claude/{skills,agents,commands}` markdown + a `plugin.json`, rather than a UI or a graphic.
+Two judgments stay yours, because they need a reading of the repo that no tool can do for you.
 
-1. **Detect it's a workflow repo.** It carries agent-workflow markdown: an `agents/` (or `.claude/agents/`) dir, a `skills/**/SKILL.md`, `commands/*.md`, and/or a `.claude-plugin/plugin.json` (or `.mcp.json`). If none is present, this isn't a workflow repo — fall back to Type-1/Type-2 and say so.
+**Is this a workflow repo at all.** You have the files locally. If the agent-workflow markdown is not there, this is not a workflow repo — fall back to a page or an artefact and say which, rather than composing an empty map.
 
-2. **Read the repo's own workflow markdown** (you have the files locally) and build the node set from what the repo declares:
-   - a **command** node per `commands/*.md` (the slash entry point; its `name` frontmatter is the label);
-   - a **skill** node per `skills/**/SKILL.md` (the routed body — the spine);
-   - an **agent** node per `agents/*.md` (a sub-agent; its `name` + `description` frontmatter);
-   - a **capability** node for each tool the agents reach for (named in the docs, or granted in `plugin.json`).
-
-   Each node carries `type`, a short product-word `role`, its `band` (`entry` | `router` | `sub-agents` | `capabilities`), its `source_file` (repo-relative), and — for a markdown-backed node — the parsed `frontmatter` scalars plus `editable_fields` (the declared scalars this surface may edit, typically `["description"]`). **Do not author positions** — prism lays the nodes out by band. Keep it a curated spine, not every tool the repo could ever call (the server caps the map size and rejects an over-large manifest).
-
-3. **Classify every edge as `declared` or `inferred`, and NEVER blur them** (this is the load-bearing rule):
-   - **`declared`** = a *machine reference* the repo asserts — a command's fully-qualified skill handle (e.g. the command body says `Invoke the \`designless:orchestrator\` skill`), a `plugin.json` permission grant, an `.mcp.json` server. Drawn solid. The handle is often in the command **body**, not its frontmatter — read the body.
-   - **`inferred`** = read from how one doc *describes* another in prose ("invoked by the /designless orchestrator", "chains you in", "discover … via less_search_tools"). Drawn dashed, and it MUST carry the exact `source_file` + `source_line` + `quote` so the reader can follow it. An inference is **never** promoted to solid.
-
-   State the honest ratio (e.g. 2 declared / 7 inferred) — the map header shows it as a fact.
-
-4. **Compose the workflow session.** Call `less_canvas_compose` with `display_mode: "workflow"`, `_template.id: "workflow-map"`, a `_workflow` block, and `title` = the repo name. Run the same session-reuse handshake + truth gate as the other types.
-
-   ```json
-   {
-     "display_mode": "workflow",
-     "_template": { "id": "workflow-map", "display_mode": "workflow" },
-     "brand_slug": "<resolved>",
-     "_workflow": {
-       "repo": "designless-agent",
-       "nodes": [
-         { "id": "cmd:designless", "type": "command", "name": "/designless", "role": "Route every request to the orchestrator.", "band": "entry", "source_file": "commands/agent.md", "frontmatter": { "name": "designless", "description": "…" }, "editable_fields": ["description"] },
-         { "id": "skill:orchestrator", "type": "skill", "name": "designless:orchestrator", "role": "Classify intent, delegate, build with taste.", "band": "router", "source_file": "skills/orchestrator/SKILL.md", "frontmatter": { "description": "…" }, "editable_fields": ["description"] },
-         { "id": "agent:prism-agent", "type": "agent", "name": "prism-agent", "role": "Compose carousels, posters and production HTML.", "band": "sub-agents", "source_file": "agents/prism-agent.md", "frontmatter": { "name": "prism-agent", "description": "…" }, "editable_fields": ["description"] },
-         { "id": "cap:open-app", "type": "capability", "name": "open Designless app", "role": "Launch the desktop on a designless:// link.", "band": "router", "granted": true }
-       ],
-       "edges": [
-         { "from": "cmd:designless", "to": "skill:orchestrator", "provenance": "declared", "source_file": "commands/agent.md", "source_line": 6 },
-         { "from": "skill:orchestrator", "to": "cap:open-app", "provenance": "declared", "source_file": ".claude-plugin/plugin.json", "note": "manifest grant · plugin.json" },
-         { "from": "skill:orchestrator", "to": "agent:prism-agent", "provenance": "inferred", "source_file": "agents/prism-agent.md", "source_line": 8, "quote": "invoked by the /designless orchestrator" }
-       ]
-     }
-   }
-   ```
-
-   A `capability` node may carry `granted: true` (a manifest grant) or `discovered: true` (reached by describing an intent, not named — reads amber). On an edge, an optional `note` overrides the composed callout text; otherwise prism composes it from `quote` + `source_file:source_line` (inferred) or the file (declared).
-
-5. **The frontmatter round-trip.** When the user edits a node's declared frontmatter on the canvas, a `set_frontmatter` op arrives (`source_file` = the node's `.md`, `field`, `value`, `previous_value`). Drain it like any source edit (`less_canvas_ops`, right-checkout guard). Apply by **rewriting that one frontmatter scalar in the `.md` in place**: never touch the body, never reformat the other keys. Then re-read the repo and recompose the map so the node shows the new value. Only `editable_fields` are editable. An inferred edge cannot be edited from this surface: declare it in the repo, and the map redraws it solid on the next read.
-
-**IP fence.** Nodes, edges and callouts read only the repo's own **product-level** content — repo-relative paths, frontmatter scalars, quoted sentences. Never place engine internals, scoring, pipeline stages, or any non-product term on a node, an edge, a role, or a callout.
+**Which connections the repo asserts, and which you inferred.** A handle in a command's body or a manifest grant is something the repo states. A sentence describing how one part relates to another is something you read. Mark the second as inferred and carry the quote that made you think so — an inference is never dressed as an assertion, and a map that reads as uniformly certain while half of it is your reading is worse than no map. If an inference is right, declare it in the repo and the map draws it solid on the next read.
 
 ## Session sync contract
 
