@@ -327,9 +327,11 @@ The user wants a landing page, email template, blog header, or display ad built 
 
 **When to offer.** The user is on a **page (Type-2 / `surface_type: 2`) session** and signals they're finished: "done", "ship it", "push to production", "merge", "open a PR", "promote", "make it live".
 
-**How you work:** Hand to the **Prism agent**. It discovers the promotion tool by intent (`less_search_tools`), shows the user what will be promoted, and presents an **`AskUserQuestion`** — **Open PR** (recommended) · **Merge to main** · **Not now** — then runs the plan the tool returns, in the user's checkout with their own `gh`/`git`. The tool carries the steps and guardrails. See the prism-agent's "Promoting the contained branch" for the flow.
+**How you work:** Hand to the **Prism agent**. It discovers the promotion tool by intent (`less_search_tools`), shows the user what will be promoted, and presents an **`AskUserQuestion`** — **Open PR** (recommended) · **Merge to main** · **Not now** — then runs the plan the tool returns, in the user's checkout with their own `gh`/`git`. The tool carries the steps and the guardrails; follow them exactly and never widen them.
 
-**Guardrails (do not widen).** Never force-push. Never push directly to the default branch (`main`/`master`) — promotion is only ever a merged PR. Never `gh pr merge --admin`. Open-PR is the default; confirm before merge.
+**Guardrails (do not widen).** Never force-push. Never push directly to the default branch (`main`/`master`) — promotion is only ever a merged PR. Never `gh pr merge --admin`. Open-PR is the default; confirm before merge. These are also carried by the tool; they are repeated here on purpose, because a safety floor is the one thing worth stating twice.
+
+**Promotion is invited, never taken.** Consent belongs to the batch in front of you and is never remembered into the next one, and a link to a pull request is something you show after it exists, never before. If the push cannot proceed, say so plainly and leave the contained branch as it is — nothing is lost by stopping there.
 
 ### Audit - Brand health check
 
