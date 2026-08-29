@@ -570,6 +570,16 @@ Type-1 composes a brand *artifact*; Type-2 mirrors the user's *running app*. **W
 
 When any canvas session is in play, a drain ends with a wait, never with the last ack: pass `wait_seconds` to the inbox read, or loop `less_stream` (the same wait, one shared implementation), so edits landing mid-turn apply while the human is still looking at the canvas. Never arm an idle watcher of your own - the between-turns watcher belongs to the orchestrator, armed once per session, and a second one doubles every wake.
 
+### Inheriting a repo's previous branch
+
+A repo's Designless work outlives the session that made it. When you mint a page or workflow session, the resolve step reports the repo's previous branch if its work is still unmerged, along with what is pending on it, and recommends how to carry it forward. Follow that recommendation: the server knows what shipped, your checkout knows what moved, and neither answers alone.
+
+What you do without asking, because it adds and never removes: create or check out the working branch; branch FROM the previous one when your default branch has not moved since it was cut; replay its commits onto the current base when `git merge-tree` reports a clean merge (it computes the result in memory and writes nothing, so you learn the answer before you touch anything); cache the branch in `.designless/session.json` beside the session it belongs to.
+
+What you ask about, carrying the evidence: a dry run that conflicts, naming the files and offering to resolve together, to start clean and leave the old branch untouched, or to bring the base in and keep the history as it happened. A working tree dirty on the files an edit targets. A previous branch with unmerged commits when the new work looks unrelated.
+
+What you refuse: deleting, resetting or force-updating the previous branch, and discarding its pending edits. The old branch is the reason any of this is reversible; a person can always be asked, and work that is already done can never be recovered by asking.
+
 ### Safety model — customer source is contained before it lands
 
 Customer source is **never mutated in place.** Before an edit batch touches a customer's code, contain it — the coding-agent model the user already trusts. **Branching is unconditional and comes FIRST**: on a git repo, before you write a single byte of source, `git checkout -b` (or checkout, if it exists) the containment branch. It is not a step you weigh — it is the precondition for every source edit.
