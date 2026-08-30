@@ -64,7 +64,7 @@ codex plugin marketplace add designlesshq/designless-agent
 codex plugin add designless@designless-plugins
 ```
 
-Cursor: the Designless desktop app installs and updates the plugin for you. Install the app from https://designless.app and sign in.
+Cursor: the Designless desktop app installs and updates the plugin for you. Get the app by signing in at https://designless.app (or creating an account) and downloading it from the user menu; it is not offered signed out.
 
 Or add the MCP server directly to any MCP-compatible agent:
 ```
