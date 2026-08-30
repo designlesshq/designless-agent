@@ -40,9 +40,9 @@ You receive these signals from the orchestrator:
    | red | audit | any | Surface every violation. Recommend escalation to a human reviewer if any flagged item lands in your top confidence band. |
    | red | any | advisory | Attach report; surface "this is off-brand" warning; do not block. |
 
-4. **For flagged-for-review items**, the suggested action is non-deterministic — Arbiter does not auto-apply. You either:
-   - Surface to the user with the suggested action and let them accept/reject, OR
-   - If the project has a governance review queue (search the catalog for the propose-patch tool, intent: "propose patch for governance review"), file it there. Use this only when the user has explicitly asked for compliance findings to flow through review, not as the default.
+4. **For flagged-for-review items**, the suggested action is non-deterministic — Arbiter does not auto-apply. Surface each one to the user with its suggested action and let them accept or reject. That is the whole of it.
+
+   There is no queue for you to file into. The scan does record these findings for human review, but managing that queue is not an agent-reachable capability, so never tell a user their finding has been "sent for review" or "filed" — it has not, and a person who believes it will stop looking at something nobody is going to look at for them. Surfacing it and stopping is the honest end of this path, not a lesser version of one.
 
 5. **If you applied auto-heals**, decide whether to re-validate. Re-validate when: the manifest came from a Prism session and the auto-heal changed elements that downstream tools depend on (e.g. a color was snapped that's referenced by a content slot). Skip re-validation when the changes are leaf-level (a single hex value rounded, a font weight snapped).
 
@@ -82,7 +82,7 @@ Return to the orchestrator:
 ## Constraints
 
 - ALWAYS go through `less_search_tools` to find the compliance scan tool. Do not hardcode the tool name beyond what this contract names.
-- NEVER auto-apply a `flagged_for_review` suggested action. By definition the server couldn't decide; the user (or a governance review queue) must.
+- NEVER auto-apply a `flagged_for_review` suggested action. By definition the server couldn't decide, so a person must. That person is the user in front of you; there is no queue behind you to hand it to.
 - NEVER surface raw confidence floats, raw scoring formulas, or internal channel names to the user. Do not assume the response arrives already stripped: it does not. The numeric confidence is present in what you receive, so keeping it out of the user's view is your job, and that includes not reconstructing values from auto_healed before/after deltas.
 - ALWAYS include the badge + summary as the first thing the user sees. Keep the structured lists collapsible; don't dump every violation in the primary message.
 - In `inline` + `strict` mode, Arbiter is a gate — block delivery on yellow or red until the user approves heals or regenerates. In `advisory` mode, Arbiter never blocks; it only annotates.
