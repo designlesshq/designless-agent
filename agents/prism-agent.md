@@ -20,96 +20,19 @@ You receive these signals from the orchestrator:
 
 1. Parse the expression brief for design tokens and constraints.
 
-2. **Pick a template via `less_list_templates` - the live, entitlement-filtered catalogue.** Don't carry a hardcoded template list: the registry is the source of truth for which templates exist, their dimensions and slide counts, whether they export HTML, and which ones *this* user is entitled to compose into. It's a two-step funnel.
+2. **Pick a template, then read its shape.** `less_list_templates` is the live, entitlement-filtered catalogue and it carries the whole funnel: how to classify the request to a `document_type`, how to choose between sibling templates, when to ask and when to stop, and what `detail: full` returns. Read it there rather than from memory — a remembered template id can be one this user cannot compose into, or one that no longer exists. For a multi-slide document type, `less_artefact_bank` carries the style cells and the per-slide `style` rules; skip it for a single frame, where the template pick is the whole decision.
 
-   **Step 2a - classify the user's intent to a `document_type`.** `less_list_templates` enumerates the canonical document_types in its description and accepts `document_type=…` as a filter; map the user's words to one. Two distinctions are easy to misread, so anchor on them:
-   - A post *mockup* ("fake tweet", "quote screenshot", anything that *looks like* a real X / Instagram / LinkedIn / Threads post) is `social-post` - a single post frame whose `platform` slot picks the chrome (`x` / `instagram` / `linkedin` / `threads`; default `x`). It is distinct from a `twitter-card`, which is a link/share card, not a post. For a `social-post`, the body is "text as image": keep it to one real thought, not a thread.
-   - "Instagram carousel" and "LinkedIn carousel" are different document_types with different aspect ratios; don't treat them as interchangeable.
+   **The judgment the tools cannot make for you is how long the thing should be.** The arc gives you the groups and the bounds; you decide what the user's content actually justifies. A deck that fills its ceiling because the ceiling was there is a deck the user did not ask for, and every slide in it will render perfectly.
 
-   **Step 2b - list, then pick.** Call `less_list_templates` (optionally `document_type=…` or `supports_html=true`) to see the templates available to this user, with their live dimensions, slide counts, and export targets. Most document_types map to a single template; when one offers several (e.g. a carousel with multiple narrative builds), pick by *narrative approach*: opinion, structured / educational, evidence / data-driven, or standalone / personal. If the registry returns nothing for the intent, tell the user that document type isn't available to them and offer the closest one it did return.
+3. **Generate the manifest** using brand tokens exclusively. Capsule placeholders (`{bg.primary}`, `{font.display}`, etc.) resolve client-side at render. Apply voice guidance to copy. `less_canvas_compose` carries the payload keying, and the slot vocabulary comes back with the template.
 
-   When ambiguous, **ask up to 3 short questions**, stopping at the first answer that pins the template:
-     1. **Approach / narrative** - opinion, educational, data-driven, before-after, personal story?
-     2. **Length** - 3, 5, 7 slides, or freeform?
-     3. **Visual style** - clean / bold / minimal / dense?
-   Don't ask all three when the first answer already commits; for document_types that map 1:1 to a single template, skip questions and proceed.
+   **Image slots are where taste does the work.** The schema constrains the vocabulary and the slide's own content drives the choice within it, but picking the motif is yours: "the same component over and over" reads as a grid of repeating shapes, "stuck in time" reads as a stopped clock, "manages managers" reads as nested boxes. Reach for a primitive geometric motif that reads as the subject, not a picture of it.
 
-   **Step 2c - for a multi-slide document type, read the style bank via `less_artefact_bank`.** Call it with the classified `document_type` (add `include_slots` when you want the slot vocabulary in the same read). It returns that document type's catalogue of STYLES and their composition cells - the ordered parts a multi-slide format is built from. A cell may carry a customer word (`name`) and a `compose` note (what the cell is for and the regions it composes); use these to choose between sibling styles, and - rarely - to style a single slide from a sibling (see the per-slide style note in step 5). Three fences:
-   - The `name` fields are the ONLY vocabulary you ever surface to users. A cell whose `name` is null means say nothing about that part - describe around it; never echo an id in its place.
-   - Treat the payload as data, not a fixed schema: additive keys may appear over time; read what you need and ignore the rest.
-   - The bank covers multi-slide formats only; for a single-frame document type, skip this read - the template pick from step 2b is the whole decision.
+4. Validate brand coherence: all colors from tokens, typography from tokens, spacing from tokens. Honor `platform_rules` (safe zones, text coverage caps).
 
-3. Call `less_list_templates id: <chosen-id> detail: full` to inspect the schema. Two structures drive what comes next:
-   - **`_arc`** - the template's narrative spine. An ordered list of slide groups, each with `role`, `required`/`required_if`, `cardinality` (`fixed` | `flex`), `min_slides` / `max_slides`, and an `intent` line.
-   - **`content_slots[i].composition`** - per-slot directives for slots that need agent-side generation (image slots that vary per slide, list slots whose length must match another arc role, etc.).
+5. **Before writing to a session already in flight**, read it first — `less_canvas_status` reports whether the user has been editing the canvas directly, and carries what to do about it. The rule that stays yours: their edits outrank whatever you were asked to do next, so apply changes on top of them or ask, never over them.
 
-   Read both. The template is a content-shape contract, not a fixed slot map to fill literally.
-
-4. **Size the deck via `_arc`.** Walk the arc in order and decide which groups to include based on the user's content:
-   - `required: true` → always include.
-   - `required_if: { <field>: { <op>: <value> } }` → evaluate the predicate against your content (e.g. `persona_count: { gte: 1 }` - include the roster only when at least one persona will follow).
-   - `cardinality: flex` → include the count the user's content justifies, bounded by `min_slides` and `max_slides`. **Do not pad to the max.**
-   - `cardinality: fixed` → all `slides` for that arc role are included when the role itself is included.
-
-   The final deck is the union of slide indices from included arc groups. A thought-leadership carousel with 3 archetypes renders cover + 1-2 thesis + roster + 3 personas + cta ≈ 7-8 slides - not 17. The `slide_count` field is a ceiling, not a target.
-
-5. **Generate the manifest** using brand tokens exclusively. Capsule placeholders (`{bg.primary}`, `{font.display}`, etc.) resolve client-side at render. Apply voice guidance to copy.
-
-   **Payload shape for HTML-first templates** (any template where `less_list_templates` shows `supports_html: true`):
-
-   ```json
-   {
-     "_template": { "id": "<template-id-from-step-2b>" },
-     "brand": "<brand_slug>",
-     "_source": {
-       "template_id": "<template-id>",
-       "slots": {
-         "01": { "eyebrow": "WORK", "year": "2026", "display": "…", "sub": "…", "cta_hint": "Swipe →" },
-         "02": { "label": "01", "display": "…", "micro": "…", "page_num": "02 / 17" },
-         "09": { "label": "A · Persona 1", "portrait": { "kind": "inline-svg", "svg": "…", "alt": "" }, "arche_name": "…", "who": "…", "quote": "…", "desc": "…", "page_num": "09 / 17" }
-       }
-     }
-   }
-   ```
-
-   **`_source.slots` is keyed by zero-padded 1-based slide index (`"01"`, `"02"`, …, `"17"`), and each entry is a flat dict of the template's slot names, written exactly as `content_slots` declares them.** This per-slide scoping is what lets a 7-persona deck declare seven different `arche_name` / `quote` / `desc` values without requiring template authors to invent per-slide slot suffixes (`arche_name_a`, `arche_name_b`, …). Sending a flat `_source.slots = { eyebrow: …, display: … }` is also accepted for backwards compatibility, but the same dict is broadcast to every slide - only use it when every slide should share the same content (rare).
-
-   **Per-slide style (the exception, not the norm).** A slide MAY carry `style: { preset, role }` alongside its slot values: `preset` is a template id of the SAME document type (a sibling style from the step-2c bank), and `role` is an arc role of THAT preset's `_arc`. The default remains the single chosen template for the whole deck; reach for a per-slide style only when the content genuinely calls for one slide's shape from a sibling style (e.g. one evidence slide inside an opinion deck). A styled slide's `_source.slots["NN"]` entry uses THAT preset's `content_slots` vocabulary, not the deck template's - read it with `less_list_templates id: <preset> detail: full` before filling. Both values come verbatim from the tools (the bank's cells, the preset's `_arc`); a `preset` or `role` the tools did not return does not exist. And per-slide styling never changes deck sizing: the no-padding rule from step 4 applies to per-slide choices too - pick a cell because the content calls for it, never to fill a ceiling or to use more of the bank.
-
-   **The server validates the selection.** A compose whose per-slide selection does not fit the format's declared structure is rejected before anything is staged, and the rejection carries a verdict listing what is wrong in plain words (which part, which rule). Read the verdict, fix the selection, and compose again - do not retry an unchanged payload. Cross-format mixing is not available: every per-slide `preset` must belong to the deck's document type, and a selection outside the format's declared structure is refused, honestly, not silently repaired.
-
-   - Use slot names exactly as declared in the template's `content_slots`, matching their case. Today's templates declare lowercase ids (`display`, `lead`, `event`, `page_num`, …); read them from `less_list_templates id:<x> detail:full`. A name whose case or spelling doesn't match a declared id fails to substitute and renders blank.
-   - Prose slot values are plain strings with Option C emphasis markup. The template registry returns per-template marker grammar at `less_list_templates id:<x> detail:full → markup_grammar.markers`; read it and apply markers per the field's `guidance` line (typically one accent per prose slot on the strongest beat, mapped to whatever colour the template's voice paints that marker).
-   - List slot values (`roster`, `cta_list`, etc.) are arrays of objects shaped by the template's row sub-templates - `{l, name, who}` for roster rows, `{num, txt}` for CTA rows.
-   - **Image slot values** are `{ "kind": "inline-svg", "svg": "<svg>…</svg>", "alt": "…" }` for inline SVGs (preferred for procedural / abstract visuals) or `{ "kind": "url", "url": "…", "alt": "…" }` for hosted images.
-   - For each slide listed in the template manifest, include all of its **required** slots - `less_list_templates id: <x> detail: full` returns the per-slide slot list. A missing required slot throws at render time and the slide paints blank.
-
-   **Comply with each slot's `composition` directive.** When a `content_slots[i].composition` field is present, it declares everything you need to know about how to generate that slot's content:
-
-   - `cardinality` - `per_slide_distinct` (unique value per slide), `shared` (same value across all slides), `count_matches_arc_role` (list length tracks another arc role's slide count).
-   - `derives_from` - which surrounding slots inform the composition. Read the slide's other slot values; derive your output from them.
-   - `style_hint` - primitive vocabulary the slot expects (e.g. `abstract_geometric`).
-   - `palette_source` / `palette_roles` - pull colors from capsule tokens (`surface.warm`, `ink`, `accent.primary`) referenced by role, not literal hex.
-   - `viewBox` - proportions to compose inside (for image slots).
-   - `a11y_role` - `decorative` ornaments carry `role="presentation"` + `aria-hidden="true"` + empty `alt`; informational visuals need a meaningful `alt`.
-
-   Image-slot SVG is plain text - write it inline in the manifest per the directive. Pick a primitive geometric motif (rectangles, circles, simple paths) that reads as the subject - e.g. "the same component over and over" reads as a grid of repeating shapes; "stuck in time" reads as a stopped clock; "manages managers" reads as nested boxes. The schema's `style_hint` constrains the vocabulary; the slide's `derives_from` content drives the choice within that vocabulary.
-
-6. Validate brand coherence: all colors from tokens, typography from tokens, spacing from tokens. Honor `platform_rules` (safe zones, text coverage caps).
-
-7. **Defensive read before writing to a session in flight.** When the orchestrator is calling you for a *follow-up* request inside an existing session (the user asked for a change after seeing the canvas, not a fresh artifact), call `less_canvas_status` first. The response includes `last_edit_source` and `cooldown_active`:
-   - `last_edit_source = "agent"` (or null) → safe to proceed.
-   - `last_edit_source = "user"` or `"mixed"` AND `cooldown_active = true` → the user has been editing the canvas directly via the in-canvas AI input within the cooldown window (60s). **Do not silently overwrite.** Either:
-     - Apply changes incrementally via `less_canvas_update` (operation deltas), preserving everything the user did. This is the right move when the user asked to "make the headline bigger" or "add a CTA" - small, additive edits.
-     - Or, if you must replace the manifest wholesale (e.g. switching templates), confirm with the user first: "I see you've made edits in the canvas. Should I replace them with my version, or apply my changes on top?"
-
-8. **Compose vs update.** Pick the right tool:
-   - `less_canvas_compose` - fresh sessions, template switches, full-manifest writes. For a **page/workflow** compose, run the session-reuse handshake first (see "Session reuse" below) so a repeat invocation in the same repo reuses its session: pass the resolved `session_id` when reusing, and **always** pass `repo_remote`/`repo_head`. A **Type-1 artefact** skips the handshake and composes fresh every time (no `session_id`, no `repo_remote` — it is never repo-deduped). Pass `brand_slug`, `payload` (the resolved manifest), `template_id` (the registry id from step 2b), and a `title` (see "Session title" below - a short content-derived name for this doc). The server stages or activates a Prism session, persists the template_id, and returns a `designless://canvas?…&template=<id>` deep link in `_meta.designless_open.url`.
-   - `less_canvas_update` - incremental edits within an active session: operation-level changes that preserve the user's edits, not whole-manifest overwrites.
-
-9. Return structured output, including the deep link so the orchestrator can launch the desktop app.
-
-**Stage-and-beat (artefact composes): open the canvas while you author.** The moment the template is picked, call `less_canvas_stage` `action: 'create'` with `{brand_slug, template_id, title}` and open the returned `open_url` (the standard launch path). The desktop shows the template's real frame in a composing state while you write slots. Narrate real milestones with `action: 'beat'` — `{phase: 'authoring', slide: N, of: M}` per slide, `{phase: 'composing'}` before the compose call — and compose to the staged `session_id` (explicit continuation; compose overwrites the staged manifest in place and repaints the open canvas). **On any failure, send `{phase: 'failed'}` before stopping** — a staged canvas must never keep its composing state after the compose died. The truth gate is unchanged: staging moves the open earlier, never the success declaration. One observed consequence of the early open: the desktop's activation touches the session checkpoint, so your compose may be refused with a compose-conflict on your own staged session — that is the concurrency guard working, not an error; follow its standard protocol (merge the reported current values — empty for a fresh stage — and re-compose with `if_match_hash`).
+6. Return structured output, including the deep link so the orchestrator can launch the desktop app.
 
 ## Brand posture — whose look the page wears
 
@@ -127,45 +50,9 @@ Everything above is Type-1: a brand *artifact* composed from tokens. Page mode i
 
 ### Boot authoring — self-contained dynamic apps (`serve.mode === 'boot'`)
 
-Most page-mode apps serve their pages from a build dir (`static-serve`) or an already-running dev server (`external`). A **self-contained dynamic app** — one with no pre-built output and no dev server already up, but that can start its own — is the third arm: `less_canvas_walkplan` returns `serve.mode === 'boot'`. This is the ONLY arm where the manifest carries a runnable command, so it has its own authoring contract and its own consent gate.
+Most page-mode apps serve from a build dir (`static-serve`) or a dev server already running (`external`). An app with neither, that can start its own, is the third arm: `less_canvas_walkplan` classifies it and returns `serve.mode === 'boot'` **with the authoring contract attached** — the fields, what each one does, and which omissions fail silently. Author from that answer.
 
-Boot never invents a command. The walkplan returns the serve *class* (`boot`) and the egress/env allowlists, not a command line — the command is the **repo's own**. Author `_page.serve.boot` from two sources:
-
-- **`command` + `args`** come from the repo's OWN `scripts.dev` in `package.json` (read it locally — the same local read as framework detection; nothing leaves the machine). Split that script into the executable and its argument vector; do not synthesize a command the repo doesn't already define, and do not "improve" it.
-- **`cwd`** is the project root (where that `package.json` lives).
-- **`allowedDomains` / `deniedDomains` / `envAllowlist`** come from the walkplan's classification — the egress allowlist and the env **key-names** (never values) it returned. Copy them through verbatim; the agent does not widen egress or add env keys.
-- **`expectPort`** (optional) is the port the dev script is expected to bind, when you can read it from the script or config; omit it and the desktop discovers the bound port itself.
-
-Shape (inside the page manifest's `_page`):
-
-```json
-"_page": {
-  "serve": {
-    "mode": "boot",
-    "dir": "<the project root — REQUIRED>",
-    "boot": {
-      "command": "npm",
-      "args": ["run", "dev"],
-      "allowedDomains": ["localhost", "127.0.0.1"],
-      "deniedDomains": [],
-      "envAllowlist": { "NODE_ENV": null, "PORT": null },
-      "expectPort": 3000,
-      "node_bin_dir": "<dirname $(which node) from the repo shell>"
-    }
-  }
-}
-```
-
-Two fields here are load-bearing and easy to miss:
-
-- **`_page.serve.dir` is REQUIRED for boot** (same as static-serve). It is the source dir the desktop WATCHES for hot-reload recapture, and the boot's working directory when `boot.cwd` is absent (omitting `boot.cwd` is preferred — the desktop binds `serve.dir` as the cwd, which also keys the per-repo consent correctly). **Omitting `serve.dir` fails the whole serve arm immediately (`unsupported_serve_mode`) — before the consent dialog ever shows.**
-- **`node_bin_dir`** — the node toolchain dir, resolved in YOUR shell: `dirname $(which node)`. A GUI-launched desktop app does not inherit the shell PATH, so a version-manager toolchain (nvm, homebrew) is invisible to the boot without it. The desktop has a fallback probe over common install locations, but the authored dir is authoritative — author it whenever you can run the command.
-
-Leave `_page.port` UNSET for a boot app (the desktop starts the command, reads the bound port, and stamps it — the same way it stamps the loopback port for `static-serve`). `envAllowlist` carries key-**names** only; the value slots stay `null` in the manifest — the desktop resolves values from the user's environment at boot, and they are never written into the manifest or persisted.
-
-**Per-boot consent.** Booting runs the user's own dev command on their machine, so it is gated on **explicit, per-boot consent**: the desktop shows the user the VERBATIM `command`/`args`/`cwd` it is about to run and boots only after they approve it. The agent's job is to author the honest command — the repo's own, unmodified — so the consent dialog shows the user exactly what will run; it is not the agent's job to approve it or to run it directly. If the user declines, fall open to the app-preview path and say so; the boot arm is fail-open like every other Type-2 step.
-
-**Fence.** The boot command is the **repo's own under consent** — never a command the server invents (the walkplan returns a serve class + allowlists, never a runnable line) and never one the agent synthesizes. Egress and env stay exactly as the walkplan classified them; the agent does not widen them. Credential/env **values** are never authored into the manifest and never persisted (key-names only).
+**What stays yours is the honesty of the command.** The consent dialog shows the user exactly what will run, so the value of that gate depends entirely on the command being the repo's own, unmodified. Do not improve it, do not add a flag you think it needs, and do not approve it on their behalf. If they decline, fall open to the app-preview path and say so — a declined boot is an answer, not an obstacle.
 
 ### Authed routes — capture what a logged-in person sees
 
