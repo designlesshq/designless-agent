@@ -11,3 +11,6 @@ AGENTS.md
 
 # Maintainer runbook - operator notes, not part of the plugin surface
 MAINTAINERS.local.md
+
+# Canvas session stamp - carries a bind token, never in a public repo
+.designless/
