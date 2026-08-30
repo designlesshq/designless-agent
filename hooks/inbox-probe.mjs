@@ -163,19 +163,68 @@ export function probeInbox() {
 
 // ── Right-checkout helpers (Stop hook gate, §5.2) ────────────────────────────
 
+// Reduce a git remote URL to `host/path`: no scheme, no credentials, no port,
+// no trailing `.git`, no trailing slash, lowercased.
+//
+// This MIRRORS the server's canon_repo_remote, rule for rule and in the same
+// order, and the pairing is deliberate rather than accidental duplication. The
+// server folds spellings so one repo keeps one canvas session; this gate decides
+// whether the checkout you are standing in is the one those edits belong to. A
+// gate that folds LESS than the server now refuses in the right checkout, which
+// is the failure this replaces: the previous version turned `git@host:o/r` into
+// an https URL but left `ssh://git@host/o/r` alone, so the two spellings of one
+// repo did not match and the drain was declined where it should have run.
+//
+// They cannot be one implementation. This runs inside a short hook budget, with
+// no network and no desktop, so it cannot ask the server what it thinks. What
+// keeps them honest instead is a shared vector table: the same URLs are asserted
+// here in inbox-probe.test.mjs and against Postgres on the server side, so a rule
+// added to one and forgotten in the other shows up as a failure rather than as a
+// quiet refusal in somebody's repo.
+//
+// Ordering carries weight in two places. The port rule must precede the scp-like
+// rule or `host:7999/x` reads its port as the first path segment. And `.git` must
+// be stripped before the trailing slash, not after, or `…/repo.git/` keeps `.git`.
 function normalizeRemote(u) {
   if (!u || typeof u !== 'string') return null
-  return u.trim()
-    .replace(/\.git$/, '')
-    .replace(/^git@([^:]+):/, 'https://$1/')   // git@host:owner/repo → https://host/owner/repo
-    .replace(/\/+$/, '')
-    .toLowerCase()
+  let v = u.trim().toLowerCase()
+  if (!v) return null
+  v = v.replace(/^[a-z][a-z0-9+.-]*:\/\//, '')      // scheme://
+  v = v.replace(/^[^/@]+@/, '')                     // user[:password]@
+  v = v.replace(/^([^/:]+):[0-9]+\//, '$1/')        // host:port/ -> host/
+  v = v.replace(/^([^/:]+):/, '$1/')                // scp-like host:path
+  v = v.replace(/\/{2,}/g, '/')                     // collapse separators
+  v = v.replace(/\.git$/, '')
+  v = v.replace(/\/+$/, '')
+  v = v.replace(/^([^/]+)\/scm\//, '$1/')           // Bitbucket Data Center http
+  v = v.replace(/^ssh\.dev\.azure\.com\//, 'dev.azure.com/')
+  v = v.replace(/^([^/]+)\/v3\//, '$1/')            // Azure DevOps ssh
+  v = v.replace(/\/_git\//, '/')                    // Azure DevOps https
+  return v || null
 }
 
 /** The origin remote of the repo at `cwd`, normalized - or null (no git / no origin). */
 export function cwdGitRemote(cwd) {
   try {
-    const cfg = fs.readFileSync(path.join(cwd, '.git', 'config'), 'utf8')
+    let gitDir = path.join(cwd, '.git')
+    // In a linked worktree `.git` is a FILE holding `gitdir: <path>`, not a
+    // directory, and the remote lives in the MAIN repository's config. Reading
+    // the file as if it were a directory used to throw, the gate saw an unknown
+    // checkout, and it fell through to allowing the drain. Safety branches put
+    // people in worktrees often enough that failing open there is not something
+    // to leave standing.
+    if (fs.statSync(gitDir).isFile()) {
+      const link = fs.readFileSync(gitDir, 'utf8').match(/^gitdir:\s*(.+)$/m)
+      if (!link) return null
+      let wt = link[1].trim()
+      if (!path.isAbsolute(wt)) wt = path.resolve(cwd, wt)
+      try {
+        // <main>/.git/worktrees/<name>/commondir points back at <main>/.git
+        const common = fs.readFileSync(path.join(wt, 'commondir'), 'utf8').trim()
+        gitDir = path.isAbsolute(common) ? common : path.resolve(wt, common)
+      } catch { gitDir = wt }
+    }
+    const cfg = fs.readFileSync(path.join(gitDir, 'config'), 'utf8')
     const m = cfg.match(/\[remote "origin"\][^[]*?url\s*=\s*([^\n]+)/)
     return m ? normalizeRemote(m[1]) : null
   } catch { return null }
