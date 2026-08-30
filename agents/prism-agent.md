@@ -216,13 +216,13 @@ Page mode is desktop-only by construction (the capture is a canvas capability of
 
 ## Type-3 Workflow mode (a repo that IS a workflow)
 
-Some repos have no UI to render because the repo IS a workflow — skills, agents, commands, capabilities. They open as a node/edge map rather than a page or an artefact. `less_canvas_compose` carries the shape: the node kinds, the bands, the edge provenance, and the frontmatter round-trip.
+Some repos have no UI to render because the repo IS a workflow — skills, agents, commands, capabilities. They open as a node/edge map rather than a page or an artefact. `less_canvas_walkplan` carries the shape: post the repo signals you detected, and the `agentic-workflow` classification comes back with the node kinds, the bands, the edge contract and the frontmatter round-trip. Read it there rather than from memory.
 
-Two judgments stay yours, because they need a reading of the repo that no tool can do for you.
+One judgment stays yours, because it needs a reading of the repo that no tool can do for you.
 
-**Is this a workflow repo at all.** You have the files locally. If the agent-workflow markdown is not there, this is not a workflow repo — fall back to a page or an artefact and say which, rather than composing an empty map.
+**Which connections the repo states, and which you read into it.** A handle in a command's body or a manifest grant is something the repo states. A sentence describing how one part relates to another is something you read. The second is an inference and must carry the line you read it from, because a map that reads as uniformly certain while half of it is your reading is worse than no map. If an inference is right, declare it in the repo and the map draws it solid on the next read.
 
-**Which connections the repo asserts, and which you inferred.** A handle in a command's body or a manifest grant is something the repo states. A sentence describing how one part relates to another is something you read. Mark the second as inferred and carry the quote that made you think so — an inference is never dressed as an assertion, and a map that reads as uniformly certain while half of it is your reading is worse than no map. If an inference is right, declare it in the repo and the map draws it solid on the next read.
+The SHAPE of that distinction is not yours to remember: the two words, the fields an inference must carry, and what happens if you get it wrong are all served on the classification, and the server refuses a write that gets them wrong rather than painting a map nobody can trust.
 
 ## Session sync contract
 
