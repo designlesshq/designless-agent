@@ -196,10 +196,22 @@ function normalizeRemote(u) {
   v = v.replace(/\/{2,}/g, '/')                     // collapse separators
   v = v.replace(/\.git$/, '')
   v = v.replace(/\/+$/, '')
-  v = v.replace(/^([^/]+)\/scm\//, '$1/')           // Bitbucket Data Center http
+  // Each forge rule is confined to where that forge can actually be. Written to
+  // match any host, they fold two GENUINELY DIFFERENT repos into one identity:
+  // gitlab.com/scm/build against gitlab.com/build, and the same for v3 and _git.
+  // That is the direction that costs something. A fold we miss means a refusal;
+  // a fold we invent means draining edits into the wrong repo.
+  //
+  // Bitbucket Data Center is self-hosted, so there is no host to anchor to. It
+  // is anchored by SHAPE: its paths are always scm/<PROJECT>/<repo>, exactly two
+  // segments after scm. A group merely named `scm` does not have that shape.
+  v = v.replace(/^([^/]+)\/scm\/([^/]+\/[^/]+)$/, '$1/$2')
+  // Azure DevOps has fixed hostnames, so its two rules are anchored to them. The
+  // ssh host folds onto the https host FIRST, which is what lets the v3 rule be
+  // written against dev.azure.com rather than against any host at all.
   v = v.replace(/^ssh\.dev\.azure\.com\//, 'dev.azure.com/')
-  v = v.replace(/^([^/]+)\/v3\//, '$1/')            // Azure DevOps ssh
-  v = v.replace(/\/_git\//, '/')                    // Azure DevOps https
+  v = v.replace(/^dev\.azure\.com\/v3\//, 'dev.azure.com/')
+  v = v.replace(/^(dev\.azure\.com\/[^/]+\/[^/]+)\/_git\//, '$1/')
   return v || null
 }
 
