@@ -68,6 +68,23 @@ for (const [label, a, b] of DIFFERENT) {
   })
 }
 
+// A rule written for one forge but matched on every host folds repos that merely
+// share a path segment. These are the cases that motivated confining each rule to
+// where its forge can actually be, and they are the ones that would silently
+// regress if a later rule went back to matching any host.
+const NOT_A_FORGE_PATH = [
+  ['a group named scm is not Bitbucket', 'https://gitlab.com/scm/build', 'https://gitlab.com/build'],
+  ['a group named v3 is not Azure', 'https://gitlab.com/v3/build', 'https://gitlab.com/build'],
+  ['a path segment _git is not Azure', 'https://gitlab.com/team/_git/build', 'https://gitlab.com/team/build'],
+  ['scm on a deeper path is not Bitbucket', 'https://host.com/scm/a/b/c', 'https://host.com/a/b/c'],
+]
+
+for (const [label, a, b] of NOT_A_FORGE_PATH) {
+  test(`a forge rule stays on its own forge: ${label}`, () => {
+    assert.equal(remotesMatch(a, b), false, `${a}  ==  ${b}`)
+  })
+}
+
 test('an unknown remote never matches anything', () => {
   assert.equal(remotesMatch(null, 'git@github.com:org/repo.git'), false)
   assert.equal(remotesMatch('', 'git@github.com:org/repo.git'), false)
