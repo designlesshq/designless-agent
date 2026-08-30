@@ -38,7 +38,7 @@ codex plugin marketplace add designlesshq/designless-agent
 codex plugin add designless@designless-plugins
 ```
 
-**Cursor:** the Designless desktop app installs and updates the plugin for you. Install the [Designless app](https://designless.app) and sign in; no manual step in Cursor.
+**Cursor:** the Designless desktop app installs and updates the plugin for you; no manual step in Cursor. See Troubleshooting for where to get the app.
 
 ### MCP server
 
@@ -99,6 +99,8 @@ The agent discovers capabilities from the expression infrastructure server at ru
 **"No brands found"**: run `/designless` and ask for a new brand to get started.
 
 **"Capsule not published"**: run `/designless` and ask to publish; the agent walks you through the quality gate.
+
+**The canvas never opens, or you installed the plugin on its own**: the canvas renders in the Designless desktop app, which is a separate install. Sign in at [designless.app](https://designless.app), or create an account, and download the app from the user menu; it is not offered on the signed-out page. Open the app and sign in there, then run `/designless` again.
 
 ## Documentation
 

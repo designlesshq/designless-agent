@@ -22,13 +22,13 @@ codex plugin add designless@designless-plugins
 ```
 The app asks you to review the plugin's hooks once before they run - approve them so live canvas sync works.
 
-**Cursor:** the Designless desktop app installs and updates the plugin for you. Install the [Designless app](https://designless.app) and sign in; no manual step in Cursor.
+**Cursor:** the Designless desktop app installs and updates the plugin for you, so there is no manual step here. Step 2 covers getting the app.
 
 ## Step 2: Connect to the expression infrastructure
 
 How you connect depends on your setup.
 
-**With the Designless desktop app (recommended).** Install the [Designless app](https://designless.app) and sign in. The plugin connects through it automatically, so there is no separate sign-in step. Verify with:
+**With the Designless desktop app (recommended).** To get the app, sign in at [designless.app](https://designless.app) (or create an account) and download it from there; the download sits in the user menu, so a signed-out visit will not show it. Open the app and sign in there. The plugin then connects through it automatically, with no separate sign-in step. Verify with:
 ```
 > /designless status
 ```

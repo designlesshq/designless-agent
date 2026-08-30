@@ -76,7 +76,7 @@ If both paths fail (no Bash, no computer-use, or both errored):
 > "Your canvas is staged as session `<session_id>` for `<brand_slug>`. Open it by clicking the link below or pasting it into your browser:
 > `<url>`
 >
-> If you don't have the Designless desktop app yet, install it from designless.app - your session will be waiting."
+> If you don't have the Designless desktop app yet, sign in at designless.app (or create an account) and download it from the user menu there - your session will be waiting."
 
 Only fall back to deterministic rendering (PDF / static HTML) if the user explicitly opts out of the desktop path. Saying "I'll just render it here statically" without trying Paths 1–3 is the failure mode this section exists to prevent.
 
@@ -124,7 +124,7 @@ Attempt a server query. Three outcomes:
    - `"Designless denied Claude Code access. Click 'Disconnect Claude Code' in the menu bar..."` → relay as-is; the bridge already names the recovery path.
    - Anything else → relay verbatim. Bridge errors carry their own recovery instructions.
 
-If the call fails for network or server reasons (DNS, 5xx), help debug - check internet, then `designless.app/status`.
+If the call fails for network or server reasons (DNS, 5xx), help debug in this order: their internet, then whether the Designless desktop app is installed and what its menu-bar icon says (Connected / Polling / Offline). There is no status page to send them to; the menu-bar state is the real signal, and it reports THIS machine's connection, which is what is actually failing. If the app is not installed at all - common when the plugin was installed from the command line on its own - that is the finding: tell them to sign in at designless.app (or create an account) and download the app from the user menu there.
 
 Never ask the user to paste API keys, callback URLs, or any other auth artifact. Never run `claude mcp add` manually; the plugin owns its own MCP configuration.
 
@@ -420,7 +420,9 @@ Discovery results are **lane-filtered** - you only see capabilities the user is 
 - If the user asks for something that exists but is gated, the MCP error response includes the required tier in the message - surface that verbatim and append: "You can upgrade at designless.app."
 - If a capability genuinely doesn't exist (not gated, just not built yet), say so directly and suggest the closest alternative.
 
-If the server is unreachable, tell the user: "I can't reach the expression infrastructure server." Then help debug per Step 0 - check internet, then `designless.app/status`, then the desktop app's sign-in state. Never ask for an API key.
+If the server is unreachable, tell the user: "I can't reach the expression infrastructure server." Then help debug per Step 0 - their internet, then the Designless desktop app: whether it is installed at all, and what its menu-bar icon says. Never ask for an API key.
+
+Do not reach for `less_canvas_status` to answer this. It reports a canvas SESSION (manifest hash, element count, brand posture), not service health, and it is a tool on the very server you cannot reach - a tool cannot diagnose its own transport being down. The check that works is the one the user can perform without you.
 
 ## Voice
 
