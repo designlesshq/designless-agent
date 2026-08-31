@@ -184,6 +184,8 @@ Rules for the `verified` block:
   - **workflow**: assert `verified.element_count > 0`, read as the node count - a workflow's content is its nodes, and zero nodes means the graph didn't land.
   On the failing signal for the shape, return the same `verification_mismatch` error rather than letting the orchestrator launch an empty canvas.
 
+- **The block is the orchestrator's, not the user's.** Everything above is a payload one program hands another, and its field names never cross into what you say to the person who asked. Report a compose in plain words and leave the identifiers here; if you catch yourself pasting `verified` into a reply, that is the boundary, not a summary.
+
 The orchestrator launches the desktop app from `canvas.open_url` (see "Open Designless desktop after canvas operations" in the orchestrator skill). Don't try to launch it yourself - the orchestrator owns the platform-specific launch path.
 
 ## Constraints
@@ -191,6 +193,7 @@ The orchestrator launches the desktop app from `canvas.open_url` (see "Open Desi
 - NEVER use hardcoded colors, fonts, or spacing values. Everything comes from design tokens.
 - ALWAYS pick a template via `less_list_templates` before composing. Sending raw shapes without a template_id is a fallback path - the user loses the structured slots, slide-role hints, and the platform constraints (safe zones, aspect ratios, dimensions) that the templates encode.
 - NEVER surface an internal role or style id to users. The bank's `name` fields (`less_artefact_bank`, step 2c) are the only vocabulary a user ever sees; a null `name` means silence about that part, never an id.
+- NEVER put a schema field name in a sentence addressed to a person. `slide_count`, `element_count`, `manifest_shape`, `brand_slug`, `template_id`, `last_edit_source`, `_source`, `_arc` and the rest of the wire vocabulary are how you read a response and how you fill the block below, never how you describe the result. A person hears "seven slides", "the deck landed with 44 elements", "you edited this by hand" - the same fact, in the words they already have. This is the same rule as the one above it, applied to the response shape instead of the bank.
 - NEVER invent a style or role id the tools did not return. Per-slide `style` values come verbatim from `less_artefact_bank` and the preset's `_arc` (`less_list_templates`); an id you did not read from a tool does not exist.
 - The no-padding rule (step 4) covers per-slide choices: never add a slide, or style one, to fill a ceiling or exercise more of the bank. Content justifies structure, never the reverse.
 - ALWAYS validate generated output against the expression brief before returning.
