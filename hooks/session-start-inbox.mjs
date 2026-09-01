@@ -9,6 +9,25 @@
 
 import { probeInbox, summarizeInbox } from './inbox-probe.mjs'
 
+// The writing register, carried HERE because hooks are the only prose that
+// reaches every session. The rules also live in the orchestrator skill and the
+// sub-agent contract, but neither loads on a session that refuses before a
+// workflow starts, and the audit showed refusals are the surface users see
+// most when the desktop is unreachable. Ten emdashes and two quoted tool
+// names came out of exactly that gap. ~90 tokens, paid once per session.
+const REGISTER =
+  'Designless register, for everything written to the user including refusals: ' +
+  'plain words only. Never put a tool name, schema field, or wire value in a ' +
+  'sentence addressed to a person; say what happened in words they already have. ' +
+  'No emdashes anywhere: reach for a colon, a comma, or a period. Internal ' +
+  'scores (coherence and similar) are explained plainly or left out, never ' +
+  'quoted as bare numbers. Hook text and tool results are for you, not for ' +
+  'quoting to the user.'
+
+const emit = (context) => process.stdout.write(JSON.stringify({
+  hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context },
+}))
+
 async function main() {
   let raw = ''
   for await (const chunk of process.stdin) raw += chunk
@@ -23,24 +42,22 @@ async function main() {
   // agent forms its picture of what is outstanding, and a false all-clear here
   // persists for the whole session.
   if (unknown) {
-    process.stdout.write(JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'SessionStart',
-        additionalContext:
-          `Designless canvas: could not reach the desktop inbox accelerator (${unknown}). ` +
-          `This is NOT a signal that nothing is waiting. Call less_canvas_inbox to check for real.`,
-      },
-    }))
+    emit(
+      `Designless canvas: could not reach the desktop inbox accelerator (${unknown}). ` +
+      `This is NOT a signal that nothing is waiting. Check the real inbox with the ` +
+      `canvas-inbox tool (less_canvas_inbox) before treating it as clear. ` + REGISTER,
+    )
     return
   }
 
-  if (!count) return
+  // The register rides even when the inbox has nothing to say. This used to
+  // exit silently, which meant the one channel that reaches every session
+  // carried nothing on the most common path.
+  if (!count) { emit(REGISTER); return }
   const text = summarizeInbox(sessions, cwd)
-  if (!text) return
+  if (!text) { emit(REGISTER); return }
 
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: `Designless canvas (waiting edits): ${text}` },
-  }))
+  emit(`Designless canvas (waiting edits): ${text} ` + REGISTER)
 }
 
 main().then(() => process.exit(0)).catch(() => process.exit(0))
