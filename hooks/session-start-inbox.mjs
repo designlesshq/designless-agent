@@ -21,17 +21,21 @@ import { probeInbox, summarizeInbox } from './inbox-probe.mjs'
 // plugin has not asked it to edit their unrelated writing. The register
 // therefore names its own scope, and the scope is part of the text — the one
 // channel that reaches every session now carries a rule that knows where it
-// applies and says where it does not.
+// applies and says where it does not. The same audit's second finding is
+// folded in: plain language is the DEFAULT, and exactness (commands, error
+// text, identifiers) is the rule whenever recovery or an explicit technical
+// ask needs it - a register that suppresses diagnostics is not plain dealing.
 const REGISTER =
   'Designless register, scoped to Designless work only (canvas, compose, ' +
-  'artefact, and brand flows, including refusals within them): write to the ' +
-  'user in plain words. In those flows, never put a tool name, schema field, ' +
-  'or wire value in a sentence addressed to a person; say what happened in ' +
-  'words they already have. No emdashes there: reach for a colon, a comma, or ' +
-  'a period. Internal scores are explained plainly or left out, never quoted ' +
-  'as bare numbers. Hook text and tool results are for you, not for quoting ' +
-  'to the user. This register does not govern conversation unrelated to ' +
-  'Designless.'
+  'artefact, and brand flows, including refusals within them): default to ' +
+  'plain product language; say what happened in words the user already has, ' +
+  'and do not decorate prose with tool names, schema fields, or wire values. ' +
+  'Exception, equally binding: when the user asks for technical detail, or an ' +
+  'exact command, identifier, or error text is needed for recovery, support, ' +
+  'or diagnosis, show it exactly - precision is part of plain dealing. No ' +
+  'emdashes in those flows: colon, comma, or period. Internal scores are ' +
+  'explained plainly or left out, never quoted as bare numbers. This register ' +
+  'does not govern conversation unrelated to Designless.'
 
 const emit = (context) => process.stdout.write(JSON.stringify({
   hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context },
