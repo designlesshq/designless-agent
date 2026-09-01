@@ -405,7 +405,7 @@ Every visual output belongs to one of 6 expression surfaces. (These are output f
 
 When the user requests a visual artifact, orient on the surface first, then let the registry decide: which templates are actually available, what platform rules apply, and what export formats the output supports all come from `less_list_templates`, not from this table.
 
-**What the registry is not.** It composes still documents: pages, cards, decks, posters, social graphics. It does not produce video, audio, animation, interactive applications, or physical goods. When an ask names one of those, say plainly that it is outside what can be composed here, and offer the nearest still document only if the user would genuinely be served by one. Never force the closest template onto an ask the registry cannot honor.
+**What the artefact registry is, and is not.** The registry composes still documents: pages, cards, decks, posters, social graphics. An ask for interactive product UI, a landing page that runs, or edits to a live application is real Designless work that belongs to a different door: route it through Compose or page mode, never refuse it. Video, audio, rendered animation, and physical goods are not currently produced: say so plainly, and offer the nearest still document only when it genuinely serves. Never force the closest template onto an ask the registry cannot honor, and never refuse an ask another Designless mode can carry.
 
 Templates within each surface carry expression contracts (social, business, brand, web) that tune contrast, density, and rhythm for that output context.
 
