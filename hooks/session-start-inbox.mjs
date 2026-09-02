@@ -8,6 +8,8 @@
 // built-ins only; one dependency: a reachable, signed-in desktop.
 
 import { probeInbox, summarizeInbox } from './inbox-probe.mjs'
+import fs from 'node:fs'
+import path from 'node:path'
 
 // The writing register, carried HERE because hooks are the only prose that
 // reaches every session. The rules also live in the orchestrator skill and the
@@ -37,6 +39,27 @@ const REGISTER =
   'explained plainly or left out, never quoted as bare numbers. This register ' +
   'does not govern conversation unrelated to Designless.'
 
+// The workspace's own memory of its last compose (written by the compose
+// epilogue hook, zero requests). Served as one bounded line when fresh, so
+// the next session knows which canvas already exists before it reads
+// anything. Context, not an instruction: a Type-1 artefact may still compose
+// fresh; the line only stops a session rediscovering what it already made.
+const EPILOGUE_FRESH_DAYS = 14
+export function epilogueLine(cwd) {
+  try {
+    const p = path.join(cwd, '.designless', 'compose-epilogue.json')
+    const e = JSON.parse(fs.readFileSync(p, 'utf8'))
+    const age = (Date.now() - new Date(e.composed_at).getTime()) / 86400000
+    if (!(age >= 0 && age <= EPILOGUE_FRESH_DAYS)) return null
+    if (!e.brand_slug || !e.template_id || !e.session_id) return null
+    const when = String(e.composed_at).slice(0, 10)
+    const title = e.title ? `"${String(e.title).slice(0, 60)}"` : 'an untitled piece'
+    return `Designless memory for this workspace: on ${when} it composed ${title} with the ${e.template_id} template for the ${e.brand_slug} brand; that canvas (${e.session_id}) can be updated in place rather than minted again, and ` +
+      (e.open_url ? `opens with ${e.open_url}. ` : 'is reachable through the canvas status tool. ') +
+      'Use this when the ask continues that piece; compose fresh when it is a new one.'
+  } catch { return null }
+}
+
 const emit = (context) => process.stdout.write(JSON.stringify({
   hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context },
 }))
@@ -48,6 +71,8 @@ async function main() {
   try { cwd = JSON.parse(raw).cwd } catch { cwd = process.cwd() }
   if (!cwd || typeof cwd !== 'string') cwd = process.cwd()
 
+  const memory = epilogueLine(cwd)
+  const REG = memory ? `${memory} ${REGISTER}` : REGISTER
   const { count, sessions, unknown } = await probeInbox()
 
   // An indeterminate probe must not read as "no waiting edits" — see canvas-wake
@@ -58,7 +83,7 @@ async function main() {
     emit(
       `Designless canvas: could not reach the desktop inbox accelerator (${unknown}). ` +
       `This is NOT a signal that nothing is waiting. Check the real inbox with the ` +
-      `canvas-inbox tool (less_canvas_inbox) before treating it as clear. ` + REGISTER,
+      `canvas-inbox tool (less_canvas_inbox) before treating it as clear. ` + REG,
     )
     return
   }
@@ -66,11 +91,13 @@ async function main() {
   // The register rides even when the inbox has nothing to say — but since it
   // is scoped to Designless work by its own text, riding is dormancy, not
   // governance: a session that never touches Designless is never spoken for.
-  if (!count) { emit(REGISTER); return }
+  if (!count) { emit(REG); return }
   const text = summarizeInbox(sessions, cwd)
-  if (!text) { emit(REGISTER); return }
+  if (!text) { emit(REG); return }
 
-  emit(`Designless canvas (waiting edits): ${text} ` + REGISTER)
+  emit(`Designless canvas (waiting edits): ${text} ` + REG)
 }
 
-main().then(() => process.exit(0)).catch(() => process.exit(0))
+if (process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1]))) {
+  main().then(() => process.exit(0)).catch(() => process.exit(0))
+}

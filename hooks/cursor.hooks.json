@@ -2,13 +2,25 @@
   "version": 1,
   "hooks": {
     "sessionStart": [
-      { "command": "node ./hooks/session-start-inbox.mjs" }
+      {
+        "command": "node ./hooks/session-start-inbox.mjs"
+      }
     ],
     "beforeSubmitPrompt": [
-      { "command": "node ./hooks/canvas-wake.mjs" }
+      {
+        "command": "node ./hooks/canvas-wake.mjs"
+      }
     ],
     "stop": [
-      { "command": "node ./hooks/canvas-drain-check.mjs", "loop_limit": 3 }
+      {
+        "command": "node ./hooks/canvas-drain-check.mjs",
+        "loop_limit": 3
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "node ./hooks/compose-epilogue.mjs"
+      }
     ]
   }
 }
