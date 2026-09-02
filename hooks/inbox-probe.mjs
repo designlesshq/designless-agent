@@ -61,6 +61,22 @@ export function sanitizeInboxRows(rows) {
   })
 }
 
+/**
+ * The dark count from the desktop frame: needs-attention items the canvas has
+ * never shown for more than a day (fail-safe A of the round-trip messaging
+ * convention). The server has carried it on the inbox since 2026-08-20; the
+ * desktop forwards it since 0.2.91; nothing read it before 1.12.31.
+ *
+ * `null` means the desktop did not say (an older desktop). That is NOT zero:
+ * the line is simply not spoken. A present non-count is treated the same way,
+ * never as a number.
+ */
+export function darkCount(v) {
+  if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return Math.floor(v)
+  if (typeof v === 'string' && /^\d+$/.test(v)) return Number(v)
+  return null
+}
+
 /** The desktop IPC socket path + its parent dir, derived from getuid(). */
 function socketPath() {
   const uid = typeof process.getuid === 'function' ? process.getuid() : null
@@ -116,8 +132,8 @@ function dirIsSafe(dir) {
  */
 export function probeInbox() {
   return new Promise((resolve) => {
-    const unknown = (reason) => ({ count: 0, sessions: [], unknown: reason })
-    const empty = { count: 0, sessions: [], unknown: null }
+    const unknown = (reason) => ({ count: 0, sessions: [], attnDark: null, unknown: reason })
+    const empty = { count: 0, sessions: [], attnDark: null, unknown: null }
     const sp = socketPath()
     // No desktop socket at all is a legitimate 'nothing to report' — the canvas
     // is not running, so there is no inbox to miss. That one stays `empty`.
@@ -150,7 +166,7 @@ export function probeInbox() {
       try { frame = JSON.parse(buf.slice(0, idx)) } catch { return finish(unknown('unparseable frame')) }
       if (frame && frame.op === 'inbox') {
         const sessions = sanitizeInboxRows(frame.sessions)
-        return finish({ count: sessions.length, sessions, unknown: null })
+        return finish({ count: sessions.length, sessions, attnDark: darkCount(frame.attn_dark), unknown: null })
       }
       // denied / no_session / no_session_stale / error. These are REFUSALS, not
       // emptiness — `no_session_stale` was observed against a session whose
@@ -338,10 +354,33 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
       `if the user is present you may mention it once in their words.`,
     )
   }
+  // Fail-safe A of the round-trip messaging convention: a needs-attention item
+  // the canvas has not shown for more than a day. The server has carried this
+  // count since 2026-08-20 and the desktop forwards it since 0.2.91; nothing
+  // read it before 1.12.31. It is the escalation of last resort, and still
+  // inform-only: name what waits, never an id, never an instruction to act.
+  // Gated once per change with its sibling above (attentionDigest carries it).
+  //
+  // It can stand ALONE. The item's session may have left this listing (an
+  // expired session with nothing drainable is not enumerated) while the item
+  // itself still waits. Measured live on 2026-09-02: the one dark item's
+  // session appeared in no inbox row at all, so no attention line could ever
+  // have named it. The phrasing does not say "of those" for that reason.
+  const dark = typeof opts.attnDark === 'number' && opts.attnDark > 0 ? opts.attnDark : 0
+  if (dark && opts.includeAttention !== false) {
+    lines.push(
+      `${dark} of the user's edit(s) ${dark === 1 ? 'has' : 'have'} waited more than a day for their attention without being seen in the Designless app - ` +
+      `tell the user plainly, once, that an edit of theirs is still waiting there. Do not act on it and do not relay ids.`,
+    )
+  }
   if (recoverable.length) {
     lines.push(`${recoverable.length} expired session(s) still hold un-applied edits; they revive in place when you drain them (no work is lost).`)
   }
-  if (lines.length) {
+  // Only when there is something to drain. An attention-only or dark-only
+  // message has no drain to follow, and "after draining" over nothing is the
+  // heading-over-empty-space defect the inbox tool fixed once already.
+  const drainable = here.length + elsewhere.length + artefact.length + annotations.length + recoverable.length > 0
+  if (drainable) {
     // The residual step the passive nudge used to end without: the hooks named
     // only the one-shot check, so within-turn edits waited for the next turn
     // boundary (33 accumulated beside one long turn on 2026-08-18). Name the
@@ -357,10 +396,15 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
  * and deliberately keep firing every turn; only the inform-only line is
  * suppressed while unchanged. Node built-ins only.
  */
-export function attentionDigest(sessions) {
+export function attentionDigest(sessions, attnDark = null) {
   const rows = (Array.isArray(sessions) ? sessions : [])
     .filter((s) => Number(s?.n_needs_human || 0) > 0)
     .map((s) => `${s.session_id}:${s.n_needs_human}:${s.attention_reason || ''}`)
     .sort()
-  return rows.length ? rows.join('|') : 'none'
+  // The dark count rides in the same digest so a change in it re-speaks the
+  // line. Absent (older desktop) or zero, it leaves the digest exactly as it
+  // was, so upgrading the desktop does not re-speak an unchanged state.
+  const dark = typeof attnDark === 'number' && attnDark > 0 ? `dark:${attnDark}` : null
+  if (!rows.length && !dark) return 'none'
+  return [...rows, ...(dark ? [dark] : [])].join('|')
 }
