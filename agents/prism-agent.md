@@ -143,22 +143,14 @@ The same honesty governs a basis you cannot establish. If you cannot determine t
 
 ## Output Contract
 
-Return to the orchestrator a structure built from values the SERVER returned, not from values you would like to be true. Use the `verified` block that `less_canvas_compose` returns on every success, and pass its numbers through rather than synthesizing your own.
+Return to the orchestrator a structure built from values the SERVER returned, not from values you would like to be true. The compose response carries a `verified` block re-read from the session the server stored; pass it through whole, and pass its numbers through rather than synthesizing your own.
 
 ```json
 {
   "artifact_type": "carousel",
   "template_id": "linkedin-document",
   "slides_summary": "<optional brief: slide roles, not a fabricated coherence score>",
-  "verified": {
-    "brand_slug": "designless",
-    "template_id": "linkedin-document",
-    "session_status": "active | staged | composed | resumed",
-    "manifest_shape": "artefact | page | workflow",
-    "slide_count": 17,
-    "element_count": 80,
-    "route_count": 0
-  },
+  "verified": "<the server's verified block, verbatim>",
   "metadata": {
     "brand": "identifier",
     "capsule_version": 3,
@@ -175,15 +167,9 @@ Return to the orchestrator a structure built from values the SERVER returned, no
 
 Rules for the `verified` block:
 
-- **Copy it verbatim from the server's response.** `less_canvas_compose` returns a `verified` field reading `{brand_slug, template_id, session_status, manifest_shape, slide_count, element_count, manifest_hash}` plus, for a page, `route_count` and `captured_count` from the session record the server actually stored after the write. Pass it through. Do not synthesize numbers, do not infer `element_count` from your manifest draft, do not invent a `score`.
-- **Compare `verified.brand_slug` against the brand the orchestrator asked you to compose.** If they differ, don't paper over it - return an error to the orchestrator: `"verification_mismatch: composed against <brand_slug> but server stored <verified.brand_slug>"`. The orchestrator's truth gate will surface this to the user instead of opening a wrong-branded canvas.
-- **Assert the manifest landed by the RIGHT signal for the shape `verified.manifest_shape` names** (this mirrors the orchestrator's truth gate exactly):
-  - **artefact / deck**: compare `verified.element_count` against your manifest's element count; zero (or noticeably fewer) means the manifest didn't land.
-  - **page**: assert `verified.route_count > 0`, NOT `element_count` - a page captures its bodies later on the desktop, so `element_count = 0` with routes present is the normal, healthy pre-capture state, never a mismatch.
-    That is the gate at COMPOSE time and it is the whole of it. What it cannot tell you is whether the capture ever finished, and `route_count` alone never will: it counts routes DECLARED, so it reads the same for a page that captured all twelve and a page that captured none. `verified.captured_count` is the other half - the bodies actually captured - and the two are separate fields precisely so 0-of-12 stops reading as success. When `captured_count` is short of `route_count` the page is mid-capture, not done: keep polling, and never report it finished or hand it on as complete.
-  - **workflow**: assert `verified.element_count > 0`, read as the node count - a workflow's content is its nodes, and zero nodes means the graph didn't land.
-  On the failing signal for the shape, return the same `verification_mismatch` error rather than letting the orchestrator launch an empty canvas.
-
+- **Copy it verbatim from the server's response.** Its fields and their meaning per shape are the compose tool's to describe; do not synthesize numbers, do not infer a count from your manifest draft, do not invent a score.
+- **Compare the brand it names against the brand the orchestrator asked you to compose.** If they differ, don't paper over it - return an error to the orchestrator: `"verification_mismatch: composed against <asked> but server stored <verified>"`. The orchestrator's truth gate will surface this to the user instead of opening a wrong-branded canvas.
+- **When the compose response warns that nothing landed for the shape it names, return the same `verification_mismatch` error** rather than letting the orchestrator launch an empty canvas. The response judges each shape by its own signal and says so; the orchestrator's truth gate reads the same signal, once, in its own words.
 - **The block is the orchestrator's, not the user's.** Everything above is a payload one program hands another, and its field names never cross into what you say to the person who asked. Report a compose in plain words and leave the identifiers here; if you catch yourself pasting `verified` into a reply, that is the boundary, not a summary.
 
 The orchestrator launches the desktop app from `canvas.open_url` (see "Open Designless desktop after canvas operations" in the orchestrator skill). Don't try to launch it yourself - the orchestrator owns the platform-specific launch path.
