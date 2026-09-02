@@ -54,7 +54,7 @@ export function epilogueLine(cwd) {
     if (!e.brand_slug || !e.template_id || !e.session_id) return null
     const when = String(e.composed_at).slice(0, 10)
     const title = e.title ? `"${String(e.title).slice(0, 60)}"` : 'an untitled piece'
-    return `Designless memory for this workspace: on ${when} it composed ${title} with the ${e.template_id} template for the ${e.brand_slug} brand; that canvas (${e.session_id}) can be changed in place with the canvas-update tool rather than minted again or re-composed, and ` +
+    return `Designless memory for this workspace: on ${when} it composed ${title} with the ${e.template_id} template for the ${e.brand_slug} brand; that canvas (${e.session_id}) is where a continuation goes: change it there rather than minting a new one, and ` +
       (e.open_url ? `opens with ${e.open_url}. ` : 'is reachable through the canvas status tool. ') +
       'Use this when the ask continues that piece; compose fresh when it is a new one.'
   } catch { return null }
