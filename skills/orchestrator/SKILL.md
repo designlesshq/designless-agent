@@ -31,22 +31,7 @@ Every session attests this plugin's files to the server, which compares them aga
 
 ## Open Designless desktop after canvas operations
 
-When a tool you discovered for canvas composition returns `_meta.designless_open`, the server has staged or updated a Prism session for the user. **Launch the desktop app immediately - the user just asked for visual output and they want to see it live.**
-
-The metadata shape:
-
-```json
-{
-  "_meta": {
-    "designless_open": {
-      "url": "designless://canvas?brand=<slug>&session=<uuid>",
-      "session_id": "<uuid>",
-      "brand_slug": "<slug>",
-      "status": "staged" | "composed" | "resumed" | "composing"
-    }
-  }
-}
-```
+When a canvas compose response says the desktop can open what it staged, launch the desktop app immediately: the user just asked for visual output and they want to see it live. The response carries the link and the exact open command; read both from it rather than from memory, and keep the session id it names for the status and launch checks below.
 
 Try the three launch paths in order; **stop at the first success**. Do not double-confirm with `AskUserQuestion` - the user already asked for visual output by triggering Express/Build, and the first-time consent dialogs (Bash permission prompt, computer-use approval) are the natural gates.
 
@@ -175,31 +160,15 @@ request plus the context you detected in Step 1, and execute the recipe it retur
 logic (which request maps to which mode, the surface-type detection, the ambiguity questions) lives
 server-side and is lane-filtered; your job is to describe the request well and act on the result.
 
-```
-less_intent({
-  intent:  "<the user's request, verbatim or lightly normalized>",
-  context: { brand_count, has_active_brand, capsule_state, has_local_project, provided_asset }
-})
-```
-
-It returns a routing recipe:
-
-- `mode` `{ code, name }` - the canonical lifecycle mode to run (01 Greenfield … 12 Observe, 00 Connect).
-- `surface_type` - `1` = a brand **artefact** (carousel/poster/deck), `2` = the user's **own app/site** on the canvas, `null` = n/a. **Orthogonal to mode**: a page is Express (05) with `surface_type: 2`, never its own mode.
-- `sub_agent` - `prism` | `arbiter` | null (who to hand to).
-- `artifact_type` - `carousel` | `poster` | `slide` | `social-post` | `html` | `page` | `workflow` | null.
-- `operational_alias` - a friendly label (Build / Publish / Rollback / Audit / Prove / Status) when the mode has one; the playbooks below are named by it.
-- `next` - an execution directive: `handoff:prism:*` | `handoff:arbiter:*` | `playbook:<name>` | `discovery` | `ambiguity`.
-- `clarifying_questions` - up to 2 questions to ask when the request is ambiguous.
-- `announce` - the one-line mode announcement to say to the user.
+Pass the request verbatim or lightly normalized, and the inert context you detected (brand count, whether a brand is active, capsule state, whether a local project is present, what kind of asset was provided). The tool's own description says what the recipe carries: the mode, the surface type, the sub-agent to hand to, the artifact type, an execution directive, an announcement line, an operational alias when the mode has one (the playbooks below are titled by it), and up to two clarifying questions when the request is ambiguous. Surface type is orthogonal to mode: a page is Express with its own surface type, never its own mode.
 
 **Then act on it:**
 
 1. **Ambiguous (`next: ambiguity`, or `clarifying_questions` present)** → ask those questions with `AskUserQuestion` (max 2), then call `less_intent` again with the refined intent. Never loop more than twice; after that, take the best-fit result and proceed.
 2. **Announce** the `announce` line (Behavioral Rule 2), then execute per `next` / the recipe:
    - **`surface_type: 2`** (the user's own app/site) → hand to the **Prism agent** with `artifact_type: 'page'` + the brand context. Prism runs its detect → `less_canvas_walkplan` → init → verify → compose → ops flow and is fail-open to the app-preview path. The serve arm (static / dynamic) is Prism's + walkplan's call, not yours.
-   - **`handoff:prism:*`** (a Type-1 artefact, `surface_type: 1`) → hand to the **Prism agent** with the `artifact_type`. For `artifact_type: 'html'` also run the HTML export (the Build playbook's `less_canvas_export format=html` step) after compose. **Sharing is inside that handoff, not a step of yours.** If the user wants a public link, Prism mints it with `less_canvas_share` as part of delivering the artefact - the tool needs the live canvas that Prism owns, and minting publishes to a URL anyone can open, which is not a decision to take from outside the agent holding the document.
-   - **`handoff:arbiter:*`** → hand to the **Arbiter agent**.
+   - **`handoff:prism:*`** (a Type-1 artefact, `surface_type: 1`) → hand to the **Prism agent** with the `artifact_type`. For `artifact_type: 'html'` also run the HTML export (the Build playbook's export step, format html) after compose. **Sharing is inside that handoff, not a step of yours.** If the user wants a public link, Prism mints it with the share tool as part of delivering the artefact - the tool needs the live canvas that Prism owns, and minting publishes to a URL anyone can open, which is not a decision to take from outside the agent holding the document.
+   - A recipe naming the **Arbiter** as its sub-agent (Audit, Prove) → its playbook hands to the **Arbiter agent**.
    - **`playbook:<name>`** → run the matching mode playbook below (Greenfield / Compose / Extend / Adopt / Publish / Rollback / Evolve / Audit / Prove / Status / Connect).
    - **`discovery`** (Monitor / Inherit / Learn / Batch / Observe) → route the intent through `less_search_tools` and execute the returned tool; there's no local playbook.
 
@@ -309,12 +278,12 @@ Whichever path you compose through, pass `less_canvas_compose` a `title` - a sho
 *Path B, compose-and-cache.* Use this for common document shapes that many users request, where a ready-made version is worth reusing across runs.
 
 1. Search for the template registry (`less_list_templates`) and pick a `template_id`.
-2. Call `less_artefact_resolve` with the document intent. It checks for a ready-made version of the slot content.
+2. Search for the slot-content resolver (intent: "resolve ready-made slot content for a document intent") and call it with the document intent. It checks for a ready-made version of the slot content.
    - **On a hit:** it returns the filled slides. Pass them straight to `less_canvas_compose`. You are done with this step.
    - **On a miss:** it returns the prompts for the slots it needs. Write that slot content yourself, on your own quota.
-3. After a miss, send each slot you wrote to `less_artefact_backfill`. This saves your work so later runs are faster.
-4. Call `less_artefact_resolve` again with the same intent. Now that your slots are saved, it returns them filled.
-5. Gate the deck before you broadcast: run `less_artefact_quality_check` on the rendered deck HTML and read its pass/fail verdict + specific issues. If it fails, fix the flagged slots and re-resolve (step 2) before composing; do not broadcast a failing deck. If your environment has already scored the deck locally, the tool accepts those scores via `supplied_scores` to run the gate at zero metered cost; otherwise it scores server-side.
+3. After a miss, save each slot you wrote through the backfill tool (intent: "save the slot content you wrote for reuse on later runs"). This saves your work so later runs are faster.
+4. Call the resolver again with the same intent. Now that your slots are saved, it returns them filled.
+5. Gate the deck before you broadcast: run the deck quality gate (intent: "quality-check a rendered deck before you broadcast it") on the rendered deck HTML and read its pass/fail verdict + specific issues. If it fails, fix the flagged slots and re-resolve (step 2) before composing; do not broadcast a failing deck. If your environment has already scored the deck locally, the tool accepts those scores via `supplied_scores` to run the gate at zero metered cost; otherwise it scores server-side.
 6. Pass the filled slides to `less_canvas_compose`, then follow the truth gate and desktop launch above.
 
 **Decision rule:** if the document is one-off or specific to this user, take Path A. If it is a common shape worth reusing across runs, take Path B so the first run saves the content and every later run is faster.
@@ -459,7 +428,7 @@ One exemption: text quoted verbatim from a server message - a refusal, an upgrad
 
 1. **Always detect context first.** Never skip it. Your mode classification depends on it.
 2. **Announce the mode.** Tell the user which mode you're in before executing. "Creating a new brand from your keywords..."
-3. **Discover, don't hardcode.** Every *capability/action* goes through `less_search_tools` first - even when you think you know the tool name. The server publishes a lane-filtered catalog; trust that, not your training data. The tools you call by name are exactly the ones this skill names in place - the bootstrap/routing set (`less_intent`, `less_init`, `less_canvas_inbox`, `less_stream`, and the meta-tools `less_search_tools` / `less_describe_tools` / `less_execute_tool`) plus the canvas and artefact tools the playbooks above spell out where they use them; everything else is discovered.
+3. **Discover, don't hardcode.** Every *capability/action* goes through `less_search_tools` first - even when you think you know the tool name. The server publishes a lane-filtered catalog; trust that, not your training data. The tools you call by name are a closed set: the bootstrap and routing set (`less_intent`, `less_init`, `less_canvas_inbox`, `less_stream`, `less_workflow_guide`, and the meta-tools `less_search_tools` / `less_describe_tools` / `less_execute_tool`) and the canvas family the Prism contract lists. Everything else is reached by describing what you need, including every capability a playbook in this skill describes by what it does; a name that is not in those two lists is not one to call.
 4. **Max 2 questions** before committing to a mode. Then execute. (That cap is for mode selection; Prism's template pinning may ask up to 3 of its own - a later, narrower scope, not a contradiction.)
 5. **Never expose internal details** to the user. Say "checking brand health" not internal operation names. Say "compiling your brand" not internal process names.
 6. **Present quality metrics** after every generation. Users should see coherence scores, accessibility results, and gate status - not just output.
