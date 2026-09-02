@@ -33,7 +33,7 @@ Every session attests this plugin's files to the server, which compares them aga
 
 When a canvas compose response says the desktop can open what it staged, launch the desktop app immediately: the user just asked for visual output and they want to see it live. The response carries the link and the exact open command; read both from it rather than from memory, and keep the session id it names for the status and launch checks below.
 
-Try the three launch paths in order; **stop at the first success**. Do not double-confirm with `AskUserQuestion` - the user already asked for visual output by triggering Express/Build, and the first-time consent dialogs (Bash permission prompt, computer-use approval) are the natural gates.
+Try the three launch paths in order; **stop at the first success**. Do not double-confirm through the host's question UI - the user already asked for visual output by triggering Express/Build, and the first-time consent dialogs (Bash permission prompt, computer-use approval) are the natural gates.
 
 ### Path 1 - Bash + URL handler (Claude Code on the user's machine)
 
@@ -144,7 +144,7 @@ Before classifying intent, understand the current state by querying the server:
 
 **Brand selection.** `brand_slug` is resolved ONLY from the user's real brands - the brand-listing tool (intent: "list the user's brands") is the single source of truth for which brands exist. Resolve it from that list; then:
 - If **one brand** exists → auto-select it. No question needed.
-- If **multiple brands** exist → ask the user which brand to work with (`AskUserQuestion`). Present the options clearly (brand names/slugs) so the user can pick.
+- If **multiple brands** exist → ask the user which brand to work with through the host's question UI (in Claude Code that is AskUserQuestion; in another host, ask in plain words). Present the options clearly (brand names/slugs) so the user can pick.
 - If **no brands** exist and the command requires one → redirect to Greenfield (create) or Adopt, depending on context, or offer to create one (the brand-creation tool). Only when the user genuinely has NO brand of their own may a system/template brand stand in as a last resort.
 
 **Never invent a brand.** Do NOT derive `brand_slug` from the repo name, the cwd, the doc title, or any other display identifier - that fabricates a slug for a brand the user does not own (a "phantom" the server now rejects at compose time). And do NOT silently fall back to a system/template brand (e.g. the shared `designless` template capsule) when the user already has one or more brands of their own - ask which brand, or offer to create one. A system/template brand is used ONLY when the user has zero own brands. This is what stops a page session composing against, say, the repo's name as if it were a brand, or leaking someone else's template into a user who has their own identity.
@@ -164,7 +164,7 @@ Pass the request verbatim or lightly normalized, and the inert context you detec
 
 **Then act on it:**
 
-1. **Ambiguous (`next: ambiguity`, or `clarifying_questions` present)** → ask those questions with `AskUserQuestion` (max 2), then call `less_intent` again with the refined intent. Never loop more than twice; after that, take the best-fit result and proceed.
+1. **Ambiguous (`next: ambiguity`, or `clarifying_questions` present)** → ask those questions through the host's question UI (max 2), then call `less_intent` again with the refined intent. Never loop more than twice; after that, take the best-fit result and proceed.
 2. **Announce** the `announce` line (Behavioral Rule 2), then execute per `next` / the recipe:
    - **`surface_type: 2`** (the user's own app/site) → hand to the **Prism agent** with `artifact_type: 'page'` + the brand context. Prism runs its detect → `less_canvas_walkplan` → init → verify → compose → ops flow and is fail-open to the app-preview path. The serve arm (static / dynamic) is Prism's + walkplan's call, not yours.
    - **`handoff:prism:*`** (a Type-1 artefact, `surface_type: 1`) → hand to the **Prism agent** with the `artifact_type`. For `artifact_type: 'html'` also run the HTML export (the Build playbook's export step, format html) after compose. **Sharing is inside that handoff, not a step of yours.** If the user wants a public link, Prism mints it with the share tool as part of delivering the artefact - the tool needs the live canvas that Prism owns, and minting publishes to a URL anyone can open, which is not a decision to take from outside the agent holding the document.
@@ -291,7 +291,7 @@ The user wants a landing page, email template, blog header, or display ad built 
 
 **When to offer.** The user is on a **page (Type-2 / `surface_type: 2`) session** and signals they're finished: "done", "ship it", "push to production", "merge", "open a PR", "promote", "make it live".
 
-**How you work:** Hand to the **Prism agent**. It discovers the promotion tool by intent (`less_search_tools`), shows the user what will be promoted, and presents an **`AskUserQuestion`** - **Open PR** (recommended) · **Merge to main** · **Not now** - then runs the plan the tool returns, in the user's checkout with their own `gh`/`git`. The tool carries the steps and the guardrails; follow them exactly and never widen them.
+**How you work:** Hand to the **Prism agent**. It discovers the promotion tool by intent (`less_search_tools`), shows the user what will be promoted, and puts the choice to the user through the host's question UI - **Open PR** (recommended) · **Merge to main** · **Not now** - then runs the plan the tool returns, in the user's checkout with their own `gh`/`git`. The tool carries the steps and the guardrails; follow them exactly and never widen them.
 
 **Guardrails (do not widen).** Never force-push. Never push directly to the default branch (`main`/`master`) - promotion is only ever a merged PR. Never `gh pr merge --admin`. Open-PR is the default; confirm before merge. These are also carried by the tool; they are repeated here on purpose, because a safety floor is the one thing worth stating twice.
 
