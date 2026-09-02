@@ -275,16 +275,7 @@ Staging changes WHEN the app opens, not what may be declared done: the truth gat
 
 Whichever path you compose through, pass `less_canvas_compose` a `title` - a short, content-derived name for the doc (the piece's subject or headline, e.g. "The cost of context switching"), NOT the template name. For a page (Type-2) session the title is the repo name. The `title` is a display identifier only: it labels the session on the canvas and is never rendered into the artifact's content; `brand_slug` stays the tag. See "Session title" in the Prism agent doc.
 
-*Path B, compose-and-cache.* Use this for common document shapes that many users request, where a ready-made version is worth reusing across runs.
-
-1. Search for the template registry (`less_list_templates`) and pick a `template_id`.
-2. Search for the slot-content resolver (intent: "resolve ready-made slot content for a document intent") and call it with the document intent. It checks for a ready-made version of the slot content.
-   - **On a hit:** it returns the filled slides. Pass them straight to `less_canvas_compose`. You are done with this step.
-   - **On a miss:** it returns the prompts for the slots it needs. Write that slot content yourself, on your own quota.
-3. After a miss, save each slot you wrote through the backfill tool (intent: "save the slot content you wrote for reuse on later runs"). This saves your work so later runs are faster.
-4. Call the resolver again with the same intent. Now that your slots are saved, it returns them filled.
-5. Gate the deck before you broadcast: run the deck quality gate (intent: "quality-check a rendered deck before you broadcast it") on the rendered deck HTML and read its pass/fail verdict + specific issues. If it fails, fix the flagged slots and re-resolve (step 2) before composing; do not broadcast a failing deck. If your environment has already scored the deck locally, the tool accepts those scores via `supplied_scores` to run the gate at zero metered cost; otherwise it scores server-side.
-6. Pass the filled slides to `less_canvas_compose`, then follow the truth gate and desktop launch above.
+*Path B, compose-and-cache.* Use this for common document shapes that many users request, where a ready-made version is worth reusing across runs. Pick the template from the registry as in Path A, then search for the slot-content resolver (intent: "resolve ready-made slot content for a document intent") and follow what it returns: a hit is filled slides you compose from; a miss is the prompts for the slots you write yourself and save through the backfill tool (intent: "save the slot content you wrote for reuse on later runs") before resolving again. Before you broadcast, run the deck quality gate (intent: "quality-check a rendered deck before you broadcast it") and act on its verdict; each tool describes its own inputs and what a failing verdict asks of you. Then compose, and follow the truth gate and desktop launch above.
 
 **Decision rule:** if the document is one-off or specific to this user, take Path A. If it is a common shape worth reusing across runs, take Path B so the first run saves the content and every later run is faster.
 
