@@ -21,7 +21,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { remotesMatch, cwdGitRemote } from './inbox-probe.mjs'
+import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox } from './inbox-probe.mjs'
 
 // [label, spelling A, spelling B] — the same repo, written two ways.
 const SAME = [
@@ -127,4 +127,67 @@ test('no git, no origin: unknown rather than a wrong answer', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-nogit-'))
   assert.equal(cwdGitRemote(dir), null)
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+// ── The dark count (fail-safe A) reaches the wake line ───────────────────────
+//
+// The server has carried `attn_dark` on the inbox since 2026-08-20, naming the
+// every-turn agent check as its consumer. Nothing read it for 13 days: the
+// desktop frame dropped it and this probe never asked. These pin the reader.
+
+test('darkCount: a number is a count, absence is unknown, never zero', () => {
+  assert.equal(darkCount(1), 1)
+  assert.equal(darkCount(0), 0)
+  assert.equal(darkCount('2'), 2)
+  assert.equal(darkCount(undefined), null)
+  assert.equal(darkCount(null), null)
+  assert.equal(darkCount('many'), null)
+  assert.equal(darkCount(-1), null)
+})
+
+test('attentionDigest: without a dark count the digest is byte-identical to before', () => {
+  const rows = [{ session_id: 'b', n_needs_human: 1, attention_reason: 'gate_refused' }, { session_id: 'a', n_needs_human: 2 }]
+  assert.equal(attentionDigest(rows), 'a:2:|b:1:gate_refused')
+  assert.equal(attentionDigest(rows, null), 'a:2:|b:1:gate_refused')
+  assert.equal(attentionDigest(rows, 0), 'a:2:|b:1:gate_refused')
+  assert.equal(attentionDigest([]), 'none')
+  assert.equal(attentionDigest([], null), 'none')
+})
+
+test('attentionDigest: the dark count moves the digest, alone or beside rows', () => {
+  assert.equal(attentionDigest([], 1), 'dark:1')
+  assert.notEqual(attentionDigest([], 1), attentionDigest([], 2))
+  const rows = [{ session_id: 'a', n_needs_human: 1 }]
+  assert.notEqual(attentionDigest(rows, 1), attentionDigest(rows))
+})
+
+test('summarizeInbox: a dark count speaks beside an EMPTY listing, inform-only, with no drain tail', () => {
+  const text = summarizeInbox([], os.tmpdir(), { includeAttention: true, attnDark: 1 })
+  assert.match(text, /waited more than a day/)
+  assert.match(text, /Designless app/)
+  assert.match(text, /Do not act on it/)
+  assert.doesNotMatch(text, /After draining/)
+  assert.doesNotMatch(text, /session_id|claim|apply_type1/)
+})
+
+test('summarizeInbox: the dark line obeys the once-per-change gate', () => {
+  assert.equal(summarizeInbox([], os.tmpdir(), { includeAttention: false, attnDark: 3 }), '')
+})
+
+test('summarizeInbox: an absent dark count says nothing', () => {
+  assert.equal(summarizeInbox([], os.tmpdir(), { includeAttention: true }), '')
+  assert.equal(summarizeInbox([], os.tmpdir(), { includeAttention: true, attnDark: null }), '')
+  assert.equal(summarizeInbox([], os.tmpdir(), { includeAttention: true, attnDark: 0 }), '')
+})
+
+test('summarizeInbox: the drain tail still follows drainable work, dark or not', () => {
+  const text = summarizeInbox([{ session_id: 's', n_artefact: 1, title: 'Deck' }], os.tmpdir(), { includeAttention: true, attnDark: 1 })
+  assert.match(text, /After draining/)
+  assert.match(text, /waited more than a day/)
+})
+
+test('summarizeInbox: an attention-only message no longer ends with a drain tail over nothing', () => {
+  const text = summarizeInbox([{ session_id: 's', n_needs_human: 1, brand_slug: 'acme' }], os.tmpdir(), { includeAttention: true })
+  assert.match(text, /waiting for them in the canvas/)
+  assert.doesNotMatch(text, /After draining/)
 })

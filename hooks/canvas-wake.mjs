@@ -100,7 +100,7 @@ async function main() {
   } catch { return }
   if (!cwd || typeof cwd !== 'string') return
 
-  const { count, sessions, unknown } = await probeInbox()
+  const { count, sessions, attnDark, unknown } = await probeInbox()
 
   // The probe could not determine anything (slow socket, denied, stale reply).
   // Say so — do NOT stay silent. Silence here is read as "no edits waiting", and
@@ -127,9 +127,11 @@ async function main() {
   // let a later relapse speak again.
   clearUnknown(hookSessionId)
 
-  if (!count) return
-  const includeAttention = attentionGate(hookSessionId, attentionDigest(sessions))
-  const text = summarizeInbox(sessions, cwd, { includeAttention })
+  // A dark count beside an empty listing is a real message (see summarizeInbox):
+  // the waiting item's session may not be enumerated while the item still is.
+  if (!count && !attnDark) return
+  const includeAttention = attentionGate(hookSessionId, attentionDigest(sessions, attnDark))
+  const text = summarizeInbox(sessions, cwd, { includeAttention, attnDark })
   if (!text) return
 
   process.stdout.write(JSON.stringify({
