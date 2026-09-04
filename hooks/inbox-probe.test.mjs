@@ -161,13 +161,15 @@ test('attentionDigest: the dark count moves the digest, alone or beside rows', (
   assert.notEqual(attentionDigest(rows, 1), attentionDigest(rows))
 })
 
-test('summarizeInbox: a dark count speaks beside an EMPTY listing, inform-only, with no drain tail', () => {
+test('summarizeInbox: a dark count speaks beside an EMPTY listing, inform-only, with no apply tail', () => {
   const text = summarizeInbox([], os.tmpdir(), { includeAttention: true, attnDark: 1 })
   assert.match(text, /waited more than a day/)
   assert.match(text, /Designless app/)
   assert.match(text, /Do not act on it/)
-  assert.doesNotMatch(text, /After draining/)
+  assert.doesNotMatch(text, /After applying/)
   assert.doesNotMatch(text, /session_id|claim|apply_type1/)
+  // Nothing to apply, so the apply contract must not be read into this message.
+  assert.doesNotMatch(text, /Apply them on sight/)
 })
 
 test('summarizeInbox: the dark line obeys the once-per-change gate', () => {
@@ -180,14 +182,41 @@ test('summarizeInbox: an absent dark count says nothing', () => {
   assert.equal(summarizeInbox([], os.tmpdir(), { includeAttention: true, attnDark: 0 }), '')
 })
 
-test('summarizeInbox: the drain tail still follows drainable work, dark or not', () => {
+test('summarizeInbox: the apply tail still follows waiting edits, dark or not', () => {
   const text = summarizeInbox([{ session_id: 's', n_artefact: 1, title: 'Deck' }], os.tmpdir(), { includeAttention: true, attnDark: 1 })
-  assert.match(text, /After draining/)
+  assert.match(text, /After applying/)
   assert.match(text, /waited more than a day/)
 })
 
-test('summarizeInbox: an attention-only message no longer ends with a drain tail over nothing', () => {
+// THE REPORTED FAILURE. An agent read this block, named the document correctly,
+// and then wrote "they're yours whenever you want them applied, and I can drain
+// them now if you do". It had the instruction and still offered, and it put a
+// machinery word in front of a customer. Both halves are pinned here.
+test('summarizeInbox: waiting edits are an instruction to apply, and it is read first', () => {
+  const text = summarizeInbox([{ session_id: 's', n_artefact: 2, title: 'Making the Case for Goa' }], os.tmpdir(), {})
+  assert.match(text, /^These edits are the user's own work/, 'the contract must lead, before any per-surface line')
+  assert.match(text, /not a thing to ask about/)
+  assert.match(text, /Never offer to apply them/)
+  assert.match(text, /must never appear in what you say to the user/)
+  assert.match(text, /"Making the Case for Goa"/, 'the document is named, so the agent can name it too')
+})
+
+// The do-not-act rule belongs to the attention lines alone. It sat next to the
+// waiting-edit lines with nothing scoping it, which is how "do not act" reached
+// work that was the agent's to apply.
+test('summarizeInbox: the inform-only rule says it does not reach the edits above it', () => {
+  const text = summarizeInbox(
+    [{ session_id: 's', n_artefact: 1, title: 'Deck' }, { session_id: 't', n_needs_human: 1, brand_slug: 'acme' }],
+    os.tmpdir(),
+    { includeAttention: true },
+  )
+  assert.match(text, /Do not act on it/)
+  assert.match(text, /the waiting edits above are yours to apply/)
+})
+
+test('summarizeInbox: an attention-only message no longer ends with an apply tail over nothing', () => {
   const text = summarizeInbox([{ session_id: 's', n_needs_human: 1, brand_slug: 'acme' }], os.tmpdir(), { includeAttention: true })
   assert.match(text, /waiting for them in the canvas/)
-  assert.doesNotMatch(text, /After draining/)
+  assert.doesNotMatch(text, /After applying/)
+  assert.doesNotMatch(text, /Apply them on sight/)
 })

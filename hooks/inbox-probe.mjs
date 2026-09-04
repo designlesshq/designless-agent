@@ -317,8 +317,8 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
       `git checkout -b <safety_branch> (or git checkout it if it already exists) BEFORE you claim - the server ` +
       `withholds every source op unless you are on that safety branch. If a session's safety_branch is null it is un-stamped: no branch is required. ` +
       `On EVERY source claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). ` +
-      `Then drain with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), ` +
-      `then let the canvas re-capture.` +
+      `Then apply with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), ` +
+      `and let the canvas re-capture. Apply them now; do not ask first.` +
       requiredBranchHint(here),
     )
   }
@@ -336,10 +336,10 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
     // shape — never tool vocabulary like "the canvas inbox", which identifies
     // nothing the user owns.
     const docs = [...new Set(artefact.map((s) => s.title || s.brand_slug || (s.repo_remote ? String(s.repo_remote).split('/').pop() : null) || 'Untitled'))]
-    lines.push(`${sum(artefact, 'n_artefact')} edit(s) pending on the Designless app for ${docs.map((d) => `"${d}"`).join(', ')} - drain them with less_canvas_ops action 'apply_type1' (drain + apply + ack in one call; the manifest IS the source, so it applies server-side and needs NO checkout and no branch). When you mention it to the user, name the document, not the machinery.`)
+    lines.push(`${sum(artefact, 'n_artefact')} edit(s) are waiting on the Designless app for ${docs.map((d) => `"${d}"`).join(', ')}. Name the document, never the machinery, when you tell the user. Apply them now with less_canvas_ops action 'apply_type1' (one call claims, applies and acks; the manifest IS the source, so it applies server-side and needs NO checkout and no branch).`)
   }
   if (annotations.length) {
-    lines.push(`${sum(annotations, 'n_annotation')} annotation(s) waiting - read as context with less_canvas_ops action=peek, form your judgment, then ack them applied. They are not mechanical edits.`)
+    lines.push(`${sum(annotations, 'n_annotation')} annotation(s) are waiting. They are not mechanical edits: read them as context with less_canvas_ops action=peek, form your judgment, then ack them applied. Do this now; do not ask first.`)
   }
   if (attention.length && opts.includeAttention !== false) {
     // Round-trip messaging convention: this item belongs to the USER and is
@@ -351,7 +351,8 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
     lines.push(
       `${sum(attention, 'n_needs_human')} of the user's edit(s) are waiting for them in the canvas (${anchors.join(', ')}) - ` +
       `the canvas shows this where the edit happened. Do not act on it and do not relay ids; ` +
-      `if the user is present you may mention it once in their words.`,
+      `if the user is present you may mention it once in their words. This do-not-act rule covers ` +
+      `this line and the day-old line below it and NOTHING else: the waiting edits above are yours to apply.`,
     )
   }
   // Fail-safe A of the round-trip messaging convention: a needs-attention item
@@ -381,11 +382,30 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
   // heading-over-empty-space defect the inbox tool fixed once already.
   const drainable = here.length + elsewhere.length + artefact.length + annotations.length + recoverable.length > 0
   if (drainable) {
+    // THE CONTRACT, and it goes FIRST because the per-surface lines below are
+    // read in order and the ones after them carry do-not-act rules of their own.
+    //
+    // The failure this prevents was reported live: an agent read this block,
+    // named the document correctly, and then wrote "they're yours whenever you
+    // want them applied, and I can drain them now if you do". It had the
+    // instruction and still offered, because asking before acting is a sane
+    // default everywhere else and nothing here said this is not one of those
+    // places. It also put the word "drain" in front of a customer.
+    //
+    // Both halves are fixed by saying it outright, once, before anything else.
+    lines.unshift(
+      'These edits are the user\'s own work, already done in the Designless app. Applying them ' +
+      'finishes that work; it does not start anything new, so it is not a thing to ask about. ' +
+      'Apply them on sight, then say what you applied and to which document. Never offer to ' +
+      'apply them, never present it as a choice, and never wait for a turn that grants permission. ' +
+      'VOCABULARY: "drain", "inbox", "ops" and "Type-1" are machinery and must never appear in ' +
+      'what you say to the user. The user has edits, and you apply them.',
+    )
     // The residual step the passive nudge used to end without: the hooks named
     // only the one-shot check, so within-turn edits waited for the next turn
     // boundary (33 accumulated beside one long turn on 2026-08-18). Name the
     // wait alongside the drain — same reader, same moment.
-    lines.push('After draining, loop less_stream to stay synced for the rest of the turn - it waits server-side and returns the moment the next edit lands.')
+    lines.push('After applying them, loop less_stream to stay synced for the rest of the turn - it waits server-side and returns the moment the next edit lands.')
   }
   return lines.join(' ')
 }
