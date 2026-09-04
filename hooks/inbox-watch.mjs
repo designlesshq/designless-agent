@@ -25,6 +25,20 @@ import { arm, beat, disarm, isArmed, BEAT_MS } from './watch-marker.mjs'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
+ * How many polls in a row must answer before blindness counts as news again.
+ *
+ * ONE WAS NOT ENOUGH, and the failure was mine. Clearing the latch on a single
+ * good poll is right for a relapse after a healthy stretch, and it is exactly
+ * wrong for an accelerator that FLAPS: every answer between two timeouts rearms
+ * the announcement, so an intermittent desktop produces a line every cycle. Seen
+ * live within an hour of shipping it, eight times in one session.
+ *
+ * Three at the poll interval is roughly a minute of steady answering, which a
+ * flap does not survive and a genuine recovery does.
+ */
+const HEALTHY_STREAK = 3
+
+/**
  * What is drainable right now, as a value that changes only when the work does.
  *
  * Counts, not just session ids: a second edit landing on a canvas that already
@@ -48,20 +62,24 @@ export function drainDigest(sessions) {
  * the next poll. Silence is the common case by design.
  */
 export function step(probe, prev, cwd) {
+  // A poll that answers does not by itself mean the desktop is back. Counted
+  // rather than trusted, so a flap cannot rearm the line it already said.
+  const healthy = probe.unknown ? 0 : Number(prev.healthy ?? 0) + 1
   // Cannot see. Say so ONCE per reason: an unreachable accelerator is not an
   // all-clear, and the agent's fallback is to read the inbox itself. Repeating
   // it every 15s for an hour is how a line stops being read.
   if (probe.unknown) {
-    if (prev.blind === probe.unknown) return { line: null, next: prev }
+    if (prev.blind === probe.unknown) return { line: null, next: { ...prev, healthy: 0 } }
     return {
       line: `Designless canvas: the live watcher cannot see the desktop (${probe.unknown}). ` +
         `This is NOT a signal that nothing is waiting: read less_canvas_inbox yourself while it stays unreachable.`,
-      next: { ...prev, blind: probe.unknown },
+      next: { ...prev, blind: probe.unknown, healthy: 0 },
     }
   }
   const digest = drainDigest(probe.sessions)
-  // A probe that answers clears any blindness, so a relapse is news again.
-  const next = { digest, blind: null }
+  // The latch clears only once the desktop has answered steadily. Until then the
+  // line already said stands, and a relapse inside a flap says nothing new.
+  const next = { digest, healthy, blind: healthy >= HEALTHY_STREAK ? null : (prev.blind ?? null) }
   if (!digest || digest === prev.digest) return { line: null, next }
   const text = summarizeInbox(probe.sessions, cwd, { includeAttention: false })
   if (!text) return { line: null, next }

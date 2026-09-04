@@ -155,12 +155,43 @@ test('a blind watcher says so once, and says it is not an all-clear', () => {
   assert.equal(step(blind, first.next, cwd).line, null, 'and not repeat it every poll')
 })
 
-test('sight returning makes a later relapse news again', () => {
+// THE FLAP. Clearing the latch on ONE good poll is right for a relapse after a
+// healthy stretch and exactly wrong for an accelerator that answers
+// intermittently: every answer between two timeouts rearms the line, so an
+// intermittent desktop produces one every cycle. Observed live eight times in a
+// single session, within an hour of this shipping.
+test('an accelerator that flaps is announced once, not once per cycle', () => {
   const cwd = process.cwd()
   const blind = { unknown: 'timeout after 700ms', sessions: [] }
-  let st = step(blind, { digest: '', blind: null }, cwd).next
-  st = step({ sessions: [] }, st, cwd).next
-  assert.ok(step(blind, st, cwd).line, 'a relapse after a good poll must speak')
+  const good = { sessions: [] }
+  let st = { digest: '', blind: null, healthy: 0 }
+  let spoke = 0
+  // bad, good, bad, good, bad ... the shape that produced the noise.
+  for (const probe of [blind, good, blind, good, blind, good, blind]) {
+    const r = step(probe, st, cwd)
+    if (r.line) spoke += 1
+    st = r.next
+  }
+  assert.equal(spoke, 1, 'a flap must not re-announce what it already said')
+})
+
+// A genuine recovery still resets it, so a relapse after the desktop has been
+// steadily answering is news. That is what the latch was for.
+test('sight returning STEADILY makes a later relapse news again', () => {
+  const cwd = process.cwd()
+  const blind = { unknown: 'timeout after 700ms', sessions: [] }
+  const good = { sessions: [] }
+  let st = step(blind, { digest: '', blind: null, healthy: 0 }, cwd).next
+  for (let i = 0; i < 3; i++) st = step(good, st, cwd).next
+  assert.ok(step(blind, st, cwd).line, 'a relapse after a healthy stretch must speak')
+})
+
+// And a changed reason always speaks: a timeout and a refused socket are
+// different facts with different fixes, whatever the latch holds.
+test('a different reason speaks even inside a flap', () => {
+  const cwd = process.cwd()
+  let st = step({ unknown: 'timeout after 700ms', sessions: [] }, { digest: '', blind: null, healthy: 0 }, process.cwd()).next
+  assert.ok(step({ unknown: 'desktop replied no_session_stale', sessions: [] }, st, cwd).line)
 })
 
 test('drainDigest ignores sessions with nothing drainable', () => {
