@@ -382,25 +382,6 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
   // heading-over-empty-space defect the inbox tool fixed once already.
   const drainable = here.length + elsewhere.length + artefact.length + annotations.length + recoverable.length > 0
   if (drainable) {
-    // THE CONTRACT, and it goes FIRST because the per-surface lines below are
-    // read in order and the ones after them carry do-not-act rules of their own.
-    //
-    // The failure this prevents was reported live: an agent read this block,
-    // named the document correctly, and then wrote "they're yours whenever you
-    // want them applied, and I can drain them now if you do". It had the
-    // instruction and still offered, because asking before acting is a sane
-    // default everywhere else and nothing here said this is not one of those
-    // places. It also put the word "drain" in front of a customer.
-    //
-    // Both halves are fixed by saying it outright, once, before anything else.
-    lines.unshift(
-      'These edits are the user\'s own work, already done in the Designless app. Applying them ' +
-      'finishes that work; it does not start anything new, so it is not a thing to ask about. ' +
-      'Apply them on sight, then say what you applied and to which document. Never offer to ' +
-      'apply them, never present it as a choice, and never wait for a turn that grants permission. ' +
-      'VOCABULARY: "drain", "inbox", "ops" and "Type-1" are machinery and must never appear in ' +
-      'what you say to the user. The user has edits, and you apply them.',
-    )
     // The residual step the passive nudge used to end without: the hooks named
     // only the one-shot check, so within-turn edits waited for the next turn
     // boundary (33 accumulated beside one long turn on 2026-08-18). Name the

@@ -190,15 +190,18 @@ test('summarizeInbox: the apply tail still follows waiting edits, dark or not', 
 
 // THE REPORTED FAILURE. An agent read this block, named the document correctly,
 // and then wrote "they're yours whenever you want them applied, and I can drain
-// them now if you do". It had the instruction and still offered, and it put a
-// machinery word in front of a customer. Both halves are pinned here.
-test('summarizeInbox: waiting edits are an instruction to apply, and it is read first', () => {
+// them now if you do". It had the instruction and still offered.
+//
+// The hook's job is the FACT and the imperative, nothing more: the contract that
+// says applying needs no permission is served with the inbox response, which is
+// where prose belongs and where it can change without a plugin release. What is
+// pinned here is that this line ends on the instruction, names the document, and
+// never suggests waiting.
+test('summarizeInbox: waiting edits end on the instruction, not on how to narrate them', () => {
   const text = summarizeInbox([{ session_id: 's', n_artefact: 2, title: 'Making the Case for Goa' }], os.tmpdir(), {})
-  assert.match(text, /^These edits are the user's own work/, 'the contract must lead, before any per-surface line')
-  assert.match(text, /not a thing to ask about/)
-  assert.match(text, /Never offer to apply them/)
-  assert.match(text, /must never appear in what you say to the user/)
   assert.match(text, /"Making the Case for Goa"/, 'the document is named, so the agent can name it too')
+  assert.match(text, /Apply them now/)
+  assert.doesNotMatch(text, /if you want|whenever you|would you like/i, 'the hook never offers')
 })
 
 // The do-not-act rule belongs to the attention lines alone. It sat next to the
