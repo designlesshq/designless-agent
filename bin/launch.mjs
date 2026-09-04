@@ -183,11 +183,22 @@ async function resolveMode() {
   return 'anchored'
 }
 
+// The host allows a fixed window for the whole connect handshake, and this
+// launcher and the bridge both wait inside it: this one for the app's socket,
+// the bridge for the app to be able to say who is signed in. Handing over the
+// time already spent is what stops the two waits adding up past the window and
+// turning a recoverable wait into a connect timeout, which carries no hint at
+// all.
+const startedAt = Date.now()
 const mode = await resolveMode()
 
 const child = spawn(binaryPath, [], {
   stdio: 'inherit',
-  env: { ...process.env, DESIGNLESS_BRIDGE_MODE: mode },
+  env: {
+    ...process.env,
+    DESIGNLESS_BRIDGE_MODE: mode,
+    DESIGNLESS_BRIDGE_LAUNCH_ELAPSED_MS: String(Date.now() - startedAt),
+  },
 })
 
 child.on('exit', (code, signal) => {

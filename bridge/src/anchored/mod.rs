@@ -19,6 +19,7 @@
 //!   carrying no reason). `main.rs` supplies the conservative hint.
 
 pub mod ipc;
+pub mod recovering;
 
 use crate::auth::AuthProvider;
 use crate::error::{BridgeError, BridgeResult};

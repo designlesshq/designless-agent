@@ -72,23 +72,30 @@ async fn main() -> Result<()> {
             tracing::info!("anchored auth ready");
             Box::new(a)
         }
+        // A REFUSAL IS AN ANSWER, AND THE ONLY ONE THAT STANDS. Asking again
+        // re-opens the window the user just closed, so this is the one outcome
+        // that is not wrapped in RecoveringAuth.
         Some(anchored::AnchoredInit::UserDenied(d)) => {
             tracing::warn!("anchored access denied; returning hint until the grant is cleared");
             Box::new(d)
         }
         // We know why, and it is not "unreachable". The provider carries the
-        // diagnosis so every frame reports the problem the user actually has.
+        // diagnosis so every frame reports the problem the user actually has —
+        // and re-asks, because all three reasons here describe the desktop at
+        // one instant and this process outlives that instant by hours.
         Some(anchored::AnchoredInit::Unavailable(d)) => {
-            tracing::warn!("anchored unavailable; surfacing the specific reason");
-            Box::new(d)
+            tracing::warn!("anchored unavailable; surfacing the specific reason and re-asking");
+            Box::new(anchored::recovering::RecoveringAuth::new(d))
         }
         None => {
             tracing::warn!(
                 "desktop app unreachable or no signed-in user; surfacing recovery hint"
             );
-            Box::new(anchored::DeniedAuth::with_hint(
-                "The Designless desktop app isn't reachable. Open Designless, sign in, \
-                 then reconnect the Designless server from your editor's MCP settings.",
+            Box::new(anchored::recovering::RecoveringAuth::new(
+                anchored::DeniedAuth::with_hint(
+                    "The Designless desktop app isn't reachable. Open Designless, sign in, \
+                     then reconnect the Designless server from your editor's MCP settings.",
+                ),
             ))
         }
     };
