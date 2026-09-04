@@ -54,23 +54,23 @@ function attentionGate(sessionId, digest) {
 }
 
 /**
- * The same once-per-state-change gate, for the line that says the accelerator
- * could not be reached.
+ * IS THIS THE FIRST TIME we could not reach the accelerator for this reason?
  *
- * THE DEFECT: that line `return`ed above the gate, so it printed on EVERY
- * prompt of every session while the known-state line printed once per change.
- * An idle canvas serves the probe over HTTP by design (v0.2.65's warmth poll is
- * edit-activity-gated), so "unreachable" is a NORMAL steady state, not an event
- * — and repeating a steady state every turn is how a message stops being read.
- * Two sessions reported it as noise before this was looked at.
+ * Not a mute: an unanswerable accelerator is the one state where this hook
+ * knows NOTHING, so the obligation to look stands on every prompt until it can
+ * answer again. What the gate governs is LENGTH. The full sentence, repeated on
+ * every turn of a session that is denied for hours, is how a message stops
+ * being read — two sessions reported exactly that as noise. So it is said in
+ * full once per reason, and thereafter in a clause.
  *
- * Keyed on the REASON, so a CHANGED reason still informs: a timeout and a
- * refused socket are different facts. Cleared whenever the probe succeeds, so a
- * later relapse informs again rather than staying silent because the same
- * reason was mentioned an hour ago. Fail-open, like its sibling: a state-file
- * error means print, because a repeated mention is noise and a dropped one is a
- * lost message — and this one specifically must never be swallowed, since its
- * whole job is to stop a timeout being read as "nothing waiting".
+ * That distinction is what a real session got wrong: denied for a whole
+ * afternoon, the line was spent early, and two of the user's edits sat waiting
+ * with nothing left to mention them. A steady state deserves brevity; the duty
+ * it carries does not expire with the sentence that announced it.
+ *
+ * Keyed on the REASON, so a CHANGED reason speaks in full again: a timeout and
+ * a refused socket are different facts. Cleared whenever the probe succeeds, so
+ * a later relapse is news. Fail-open: a state-file error means say it in full.
  */
 function unknownGate(sessionId, reason) {
   if (!sessionId) return true
@@ -110,14 +110,19 @@ async function main() {
   // an accelerator; less_canvas_inbox is the authority and is server-side, so the
   // honest fallback is to tell the agent to ask it.
   if (unknown) {
-    // Steady state, not an event — see unknownGate.
-    if (!unknownGate(hookSessionId, unknown)) return
+    // Said in full the first time for this reason, and in a clause after — but
+    // said EVERY turn. This branch is the one where the hook can see nothing,
+    // so silence here is indistinguishable from "nothing is waiting", and that
+    // is precisely the conflation this line exists to prevent.
+    const first = unknownGate(hookSessionId, unknown)
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',
-        additionalContext:
-          `Designless canvas: could not reach the desktop inbox accelerator (${unknown}). ` +
-          `This is NOT a signal that nothing is waiting. Call less_canvas_inbox to check for real.`,
+        additionalContext: first
+          ? `Designless canvas: could not reach the desktop inbox accelerator (${unknown}). ` +
+            `This is NOT a signal that nothing is waiting. Call less_canvas_inbox to check for real, ` +
+            `this turn and every turn while it stays unreachable.`
+          : `Designless canvas: inbox accelerator still unreachable (${unknown}) — read less_canvas_inbox yourself.`,
       },
     }))
     return
