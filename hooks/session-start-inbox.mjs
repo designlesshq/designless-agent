@@ -8,6 +8,8 @@
 // built-ins only; one dependency: a reachable, signed-in desktop.
 
 import { probeInbox, summarizeInbox } from './inbox-probe.mjs'
+import { isArmed } from './watch-marker.mjs'
+import { armLine } from './canvas-arm-watch.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -67,11 +69,20 @@ const emit = (context) => process.stdout.write(JSON.stringify({
 async function main() {
   let raw = ''
   for await (const chunk of process.stdin) raw += chunk
-  let cwd
-  try { cwd = JSON.parse(raw).cwd } catch { cwd = process.cwd() }
+  let cwd, sessionId
+  try {
+    const input = JSON.parse(raw)
+    cwd = input.cwd
+    sessionId = input.session_id
+  } catch { cwd = process.cwd() }
   if (!cwd || typeof cwd !== 'string') cwd = process.cwd()
 
   const memory = epilogueLine(cwd)
+  // A canvas is already in the picture at session start in two ways: this
+  // workspace composed one (the memory line above), or the user has edits
+  // waiting somewhere. Either is enough to want the watcher, and asking here
+  // means a session that never runs the command still gets one.
+  const wantWatch = (has) => (has && sessionId && !isArmed(sessionId) ? ' ' + armLine(sessionId) : '')
   const REG = memory ? `${memory} ${REGISTER}` : REGISTER
   const { count, sessions, unknown } = await probeInbox()
 
@@ -91,11 +102,11 @@ async function main() {
   // The register rides even when the inbox has nothing to say — but since it
   // is scoped to Designless work by its own text, riding is dormancy, not
   // governance: a session that never touches Designless is never spoken for.
-  if (!count) { emit(REG); return }
+  if (!count) { emit(REG + wantWatch(Boolean(memory))); return }
   const text = summarizeInbox(sessions, cwd)
-  if (!text) { emit(REG); return }
+  if (!text) { emit(REG + wantWatch(Boolean(memory))); return }
 
-  emit(`Designless canvas (waiting edits): ${text} ` + REG)
+  emit(`Designless canvas (waiting edits): ${text} ` + REG + wantWatch(true))
 }
 
 if (process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1]))) {
