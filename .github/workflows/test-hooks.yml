@@ -1,0 +1,36 @@
+# Runs the hook tests before merge.
+#
+# They had no gate. `test-bridge.yml` covers bridge/** only, so 51 tests
+# describing the canvas round-trip — which edits reach the agent, which reach the
+# user, which are an obligation and which are inform-only — could be broken by a
+# merge with nothing to say so. That suite already carries two production
+# defects as regression tests (a hook registered beside `hooks` instead of inside
+# it, and a probe timeout read as an all-clear), and neither would have been
+# caught again.
+#
+# Node built-ins only, no install step: the hooks have no dependencies, which is
+# the property that lets them run in any user's session, and it makes this gate
+# a checkout and one command.
+name: Test hooks
+
+on:
+  pull_request:
+    paths:
+      - 'hooks/**'
+      - '.github/workflows/test-hooks.yml'
+  merge_group:
+  push:
+    branches: [main]
+    paths:
+      - 'hooks/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Tests
+        run: node --test hooks/*.test.mjs

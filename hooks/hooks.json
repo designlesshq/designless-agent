@@ -35,6 +35,15 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "less_canvas_",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/canvas-arm-watch.mjs"
+          }
+        ]
+      },
+      {
         "matcher": "less_canvas_compose$",
         "hooks": [
           {

@@ -30,16 +30,38 @@ test('every hook script this plugin ships is reachable from an event', () => {
   const commands = JSON.stringify(config.hooks)
   const shipped = readdirSync(DIR)
     .filter((f) => f.endsWith('.mjs') && !f.endsWith('.test.mjs'))
-    // inbox-probe is a library the others import, not an entry point.
-    .filter((f) => f !== 'inbox-probe.mjs')
+    // Not every .mjs here is a hook. Each exclusion names what it IS, so the
+    // list cannot quietly become the place a genuinely unregistered hook hides.
+    //   inbox-probe   - a library the hooks import
+    //   watch-marker  - a library the hooks and the watcher import
+    //   inbox-watch   - the live watcher: a background task the AGENT starts, on
+    //                   the ask canvas-arm-watch emits. No event can run it, and
+    //                   an event that did would run it once per turn and exit.
+    .filter((f) => !['inbox-probe.mjs', 'watch-marker.mjs', 'inbox-watch.mjs'].includes(f))
   for (const script of shipped) {
     assert.ok(commands.includes(script), `${script} ships but no event runs it`)
   }
 })
 
+// Two hooks share PostToolUse now and they must NOT share a matcher. The
+// epilogue writes the workspace's compose memory and belongs to compose alone;
+// the watcher ask belongs to every canvas tool, because a canvas coming into
+// play is the moment to want a watcher whatever call brought it.
 test('the compose epilogue runs after a compose, and nothing else', () => {
   const post = config.hooks.PostToolUse
   assert.ok(Array.isArray(post), 'PostToolUse must be registered')
-  assert.equal(post[0].matcher, 'less_canvas_compose$')
-  assert.match(post[0].hooks[0].command, /compose-epilogue\.mjs/)
+  const epilogue = post.find((e) => /compose-epilogue\.mjs/.test(JSON.stringify(e.hooks)))
+  assert.ok(epilogue, 'the compose epilogue must be registered')
+  assert.equal(epilogue.matcher, 'less_canvas_compose$')
+})
+
+test('the watcher ask runs after every canvas tool, not only compose', () => {
+  const post = config.hooks.PostToolUse
+  const armer = post.find((e) => /canvas-arm-watch\.mjs/.test(JSON.stringify(e.hooks)))
+  assert.ok(armer, 'the watcher ask must be registered')
+  assert.equal(armer.matcher, 'less_canvas_')
+  // A matcher anchored to one tool is the bug this entry exists to avoid: the
+  // ask has to reach a session that composed, opened, updated or walked a
+  // canvas, not just one that called the single tool someone thought of.
+  assert.doesNotMatch(armer.matcher, /\$$/, 'the ask must not be anchored to one tool')
 })
