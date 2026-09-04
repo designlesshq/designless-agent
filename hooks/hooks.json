@@ -32,17 +32,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "less_canvas_compose$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/compose-epilogue.mjs"
+          }
+        ]
+      }
     ]
-  },
-  "PostToolUse": [
-    {
-      "matcher": "less_canvas_compose$",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/compose-epilogue.mjs"
-        }
-      ]
-    }
-  ]
+  }
 }
