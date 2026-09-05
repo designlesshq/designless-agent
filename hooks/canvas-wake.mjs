@@ -122,7 +122,7 @@ async function main() {
           ? `Designless canvas: could not reach the desktop inbox accelerator (${unknown}). ` +
             `This is NOT a signal that nothing is waiting. Call less_canvas_inbox to check for real, ` +
             `this turn and every turn while it stays unreachable.`
-          : `Designless canvas: inbox accelerator still unreachable (${unknown}) — read less_canvas_inbox yourself.`,
+          : `Designless canvas: inbox accelerator still unreachable (${unknown}): read less_canvas_inbox yourself.`,
       },
     }))
     return
