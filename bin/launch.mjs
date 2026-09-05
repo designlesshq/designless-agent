@@ -102,15 +102,23 @@ function ipcDir() {
   return `/tmp/designless-${process.getuid()}`
 }
 
+// An explicit endpoint, for a setup that runs more than one Designless app on
+// one machine: DESIGNLESS_IPC_SOCKET names the socket the bridge should reach.
+// Unset, the default below applies and nothing changes. The bridge binary
+// reads the same variable (bridge/src/paths.rs), so launcher and bridge always
+// agree on where the app is.
+const EXPLICIT_SOCKET = (process.env.DESIGNLESS_IPC_SOCKET ?? '').trim()
+
 function socketPath() {
-  return join(ipcDir(), 'ipc.sock')
+  return EXPLICIT_SOCKET || join(ipcDir(), 'ipc.sock')
 }
 
 // /tmp is world-writable; only trust the socket if its dir is our own private
 // 0700, owner-only, non-symlink directory (mirrors the app + bridge checks).
+// The same rule holds for an explicit endpoint's directory.
 function ipcDirIsSafe() {
   try {
-    const st = lstatSync(ipcDir())
+    const st = lstatSync(dirname(socketPath()))
     return st.isDirectory() && st.uid === process.getuid() && (st.mode & 0o077) === 0
   } catch {
     return false
@@ -153,6 +161,19 @@ async function resolveMode() {
   // Respect an explicit choice (CI, power users, Cowork overrides).
   const explicit = process.env.DESIGNLESS_BRIDGE_MODE
   if (explicit) return explicit
+
+  // An explicit endpoint names the app to reach. Detection and auto-launch
+  // below are about the standard app at its default address, so neither
+  // applies: opening the standard app would not put anything at this address.
+  if (EXPLICIT_SOCKET) {
+    if (!(await probeSocket(400))) {
+      process.stderr.write(
+        `Designless: no app is answering at ${EXPLICIT_SOCKET} (DESIGNLESS_IPC_SOCKET). ` +
+          'Open that app and sign in, then reconnect this MCP server from the /mcp panel.\n'
+      )
+    }
+    return 'anchored'
+  }
 
   // No desktop app: genuine standalone environment (CI, sandbox, web-only).
   if (!appInstalled()) return 'standalone'

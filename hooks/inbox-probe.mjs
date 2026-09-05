@@ -77,8 +77,15 @@ export function darkCount(v) {
   return null
 }
 
-/** The desktop IPC socket path + its parent dir, derived from getuid(). */
-function socketPath() {
+/**
+ * The desktop IPC socket path + its parent dir, derived from getuid(), or the
+ * endpoint DESIGNLESS_IPC_SOCKET names explicitly (a setup with more than one
+ * Designless app on one machine; the bridge and launcher read the same
+ * variable). Unset, the default applies and nothing changes.
+ */
+export function socketPath() {
+  const explicit = (process.env.DESIGNLESS_IPC_SOCKET ?? '').trim()
+  if (explicit) return { dir: path.dirname(explicit), sock: explicit }
   const uid = typeof process.getuid === 'function' ? process.getuid() : null
   if (process.platform === 'darwin') {
     if (uid == null) return null

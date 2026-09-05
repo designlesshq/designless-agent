@@ -9,11 +9,41 @@
 //!     104-byte `sun_path` limit.
 //!   - Linux: `${XDG_RUNTIME_DIR}/Designless/ipc.sock` with `/tmp` fallback.
 //!   - Windows: `\\.\pipe\com.designless.canvas`.
+//!
+//! - **`DESIGNLESS_IPC_SOCKET`** names the endpoint explicitly (an absolute
+//!   socket path on Unix, a pipe name on Windows) for a setup that runs more
+//!   than one Designless app on a machine. Unset, the default above applies
+//!   and nothing changes. On macOS the parent directory of an explicit path is
+//!   still held to `ipc_dir_is_safe`.
 
 use std::path::PathBuf;
 
+/// The environment variable that names the endpoint explicitly.
+pub const IPC_SOCKET_ENV: &str = "DESIGNLESS_IPC_SOCKET";
+
 /// IPC endpoint where the Designless desktop app listens (anchored mode).
 pub fn ipc_endpoint() -> IpcEndpoint {
+    ipc_endpoint_from(std::env::var(IPC_SOCKET_ENV).ok().as_deref())
+}
+
+/// The endpoint for an explicit override, or the platform default when the
+/// override is absent or blank. Pure, so the override rule is testable
+/// without touching the process environment.
+pub fn ipc_endpoint_from(explicit: Option<&str>) -> IpcEndpoint {
+    if let Some(v) = explicit.map(str::trim).filter(|v| !v.is_empty()) {
+        #[cfg(windows)]
+        {
+            return IpcEndpoint::NamedPipe(v.to_string());
+        }
+        #[cfg(not(windows))]
+        {
+            return IpcEndpoint::UnixSocket(PathBuf::from(v));
+        }
+    }
+    default_ipc_endpoint()
+}
+
+fn default_ipc_endpoint() -> IpcEndpoint {
     #[cfg(target_os = "macos")]
     {
         IpcEndpoint::UnixSocket(macos_ipc_dir().join("ipc.sock"))
@@ -64,4 +94,44 @@ pub enum IpcEndpoint {
     UnixSocket(PathBuf),
     #[allow(dead_code)] // dead on Unix builds
     NamedPipe(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(not(windows))]
+    #[test]
+    fn an_explicit_path_is_used_verbatim() {
+        match ipc_endpoint_from(Some("/tmp/designless-501/other.sock")) {
+            IpcEndpoint::UnixSocket(p) => assert_eq!(p, PathBuf::from("/tmp/designless-501/other.sock")),
+            _ => panic!("expected a unix socket"),
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn absent_or_blank_falls_back_to_the_default() {
+        let default = match default_ipc_endpoint() {
+            IpcEndpoint::UnixSocket(p) => p,
+            _ => panic!("expected a unix socket"),
+        };
+        for v in [None, Some(""), Some("   ")] {
+            match ipc_endpoint_from(v) {
+                IpcEndpoint::UnixSocket(p) => assert_eq!(p, default),
+                _ => panic!("expected a unix socket"),
+            }
+        }
+        // The default is the address every shipped desktop app listens on.
+        assert!(default.ends_with("ipc.sock"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_default_lives_in_the_per_user_dir() {
+        match default_ipc_endpoint() {
+            IpcEndpoint::UnixSocket(p) => assert_eq!(p.parent(), Some(macos_ipc_dir().as_path())),
+            _ => panic!("expected a unix socket"),
+        }
+    }
 }
