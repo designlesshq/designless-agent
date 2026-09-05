@@ -4,8 +4,13 @@
 // Hooks fire at turn boundaries. The in-turn wait (wait_seconds / less_stream)
 // covers the inside of a turn. Neither covers the agent sitting idle between
 // turns, which is exactly when someone is most likely to be editing in the app.
-// This is the script that covers it: the host runs it as a background task and
-// every line it prints wakes the agent.
+// This is the script that covers it: the host runs it as a persistent monitor
+// that streams its output, and every line it prints wakes the agent. The
+// facility is the whole point. Started as a plain background command it still
+// runs and still prints, and nothing hears it, because that facility reports
+// once, when the process exits, and this process never exits on its own. In
+// Claude Code the right facility is the Monitor tool with persistence on; the
+// ask that starts the watcher (canvas-arm-watch.mjs) says so.
 //
 // Usage: node inbox-watch.mjs <host-session-id>
 //

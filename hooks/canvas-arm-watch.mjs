@@ -49,14 +49,28 @@ export function canvasInPlay(toolName, responseText) {
   return true
 }
 
+/**
+ * The ask, and the one word in it that decides whether the watcher works.
+ *
+ * The watcher speaks by printing a line. It only helps if that line reaches
+ * the agent WHILE the process keeps running, so the facility it is started
+ * under has to stream its output. In Claude Code that is the Monitor tool with
+ * persistence on. A plain background command is the wrong facility: it reports
+ * once, when the process exits, and a watcher never exits on its own, so every
+ * line it prints goes unheard for the whole session while it looks alive. The
+ * ask therefore names the right facility and says why the other will not do,
+ * rather than leaving "background task" to be read either way.
+ */
 export function armLine(sessionId, watcher = WATCHER) {
   return 'Designless canvas: this session has a canvas in play and no live watcher running, so edits made ' +
-    'while you are idle will wait for the next thing the user types. Start one now with your host\'s ' +
-    `background-task facility, as a persistent background task labelled exactly "Designless Agent": ` +
+    'while you are idle will wait for the next thing the user types. Start one now as a persistent ' +
+    'background task whose printed lines reach you while you work: in Claude Code that is the Monitor ' +
+    'tool with persistence on, never a plain background command, which reports only when the process ' +
+    `exits and would leave every line unheard. Label it exactly "Designless Agent": ` +
     `node ${watcher} ${sessionId}. It stays silent until new edits arrive and prints one line when they ` +
     'do; apply them then, the same as at a turn boundary. It refuses to start a second one, so starting ' +
-    'it when one is already running is harmless. If this host has no background-task facility, ignore ' +
-    'this line: the turn-boundary hooks remain the floor.'
+    'it when one is already running is harmless. If this host has no such facility, ignore this line: ' +
+    'the turn-boundary hooks remain the floor.'
 }
 
 export function decide(input, armed = isArmed) {
