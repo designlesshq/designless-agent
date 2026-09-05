@@ -21,7 +21,39 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox } from './inbox-probe.mjs'
+import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox, socketPath } from './inbox-probe.mjs'
+
+// ── Where the desktop is ─────────────────────────────────────────────────────
+// One machine can run more than one Designless app. Unset, the probe looks
+// where every shipped app listens; DESIGNLESS_IPC_SOCKET names another
+// endpoint explicitly, and the bridge and launcher read the same variable, so
+// hooks and bridge can never disagree about which app a session belongs to.
+test('socketPath: the default is the per-user address every shipped app listens on', () => {
+  const prev = process.env.DESIGNLESS_IPC_SOCKET
+  delete process.env.DESIGNLESS_IPC_SOCKET
+  try {
+    const sp = socketPath()
+    assert.ok(sp, 'a unix host always has a default')
+    assert.equal(path.basename(sp.sock), 'ipc.sock')
+    assert.equal(path.dirname(sp.sock), sp.dir)
+  } finally { if (prev !== undefined) process.env.DESIGNLESS_IPC_SOCKET = prev }
+})
+
+test('socketPath: an explicit endpoint is used verbatim, with its own directory', () => {
+  const prev = process.env.DESIGNLESS_IPC_SOCKET
+  process.env.DESIGNLESS_IPC_SOCKET = '/tmp/designless-501/other.sock'
+  try {
+    assert.deepEqual(socketPath(), { dir: '/tmp/designless-501', sock: '/tmp/designless-501/other.sock' })
+  } finally { if (prev === undefined) delete process.env.DESIGNLESS_IPC_SOCKET; else process.env.DESIGNLESS_IPC_SOCKET = prev }
+})
+
+test('socketPath: a blank override is no override', () => {
+  const prev = process.env.DESIGNLESS_IPC_SOCKET
+  process.env.DESIGNLESS_IPC_SOCKET = '   '
+  try {
+    assert.equal(path.basename(socketPath().sock), 'ipc.sock')
+  } finally { if (prev === undefined) delete process.env.DESIGNLESS_IPC_SOCKET; else process.env.DESIGNLESS_IPC_SOCKET = prev }
+})
 
 // [label, spelling A, spelling B] — the same repo, written two ways.
 const SAME = [
