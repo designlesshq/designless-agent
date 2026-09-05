@@ -64,6 +64,16 @@ test('the ask carries the session it is for, and the command to run', () => {
   assert.match(line, /persistent/)
 })
 
+test('the ask names the facility whose lines are heard, and says why the other one is silent', () => {
+  // A watcher speaks by printing. Under a facility that reports only at exit it
+  // prints into silence for the whole session while looking alive, so the ask
+  // must name the streaming facility and the reason, or "background task" is
+  // read as the silent one.
+  const line = armLine('s1')
+  assert.match(line, /Monitor tool/, 'on Claude Code the watcher runs under the Monitor tool')
+  assert.match(line, /reports only when the process exits/, 'the ask says why a plain background command will not do')
+})
+
 test('a hook input with no session id asks for nothing', () => {
   assert.equal(decide({ tool_name: 'x_less_canvas_compose' }, NEVER), null)
 })
