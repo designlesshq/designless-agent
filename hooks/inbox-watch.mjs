@@ -30,6 +30,44 @@ import { arm, beat, disarm, isArmed, BEAT_MS } from './watch-marker.mjs'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
+ * How often to ASK the desktop, once nothing has been happening.
+ *
+ * The beat and the poll are two different jobs, and they were one. The marker
+ * has to be refreshed inside STALE_MS or the session frees itself and a second
+ * watcher starts — so the loop must keep ticking at BEAT_MS. Asking the desktop
+ * on that same tick is what nobody needs: a machine with the app open and
+ * nobody at it answered 240 times an hour, every hour, to say nothing had
+ * changed.
+ *
+ * So the beat stays and the QUESTION slows down. The ladder is in beats:
+ *
+ *   under 5 minutes quiet   every beat      15s   — someone is working
+ *   under 30 minutes quiet  every 4th       60s   — stepped away
+ *   beyond that             every 20th      5m    — the machine is idle
+ *
+ * Any news resets it to the top, so returning to the canvas is answered at
+ * fifteen seconds again. The cost of the slowest rung is that the FIRST edit
+ * after a long idle can wait up to five minutes for the watcher — and it does
+ * not, because the turn-boundary hooks still fire the moment the person types.
+ * The watcher covers the stretch between turns; it was never the only cover.
+ */
+const QUIET_LADDER = [
+  { afterMs: 30 * 60_000, everyBeats: 20 },
+  { afterMs: 5 * 60_000, everyBeats: 4 },
+]
+
+export function pollEveryBeats(quietMs) {
+  for (const rung of QUIET_LADDER) if (quietMs >= rung.afterMs) return rung.everyBeats
+  return 1
+}
+
+/** Ask this beat? Beats are counted since the last time anything was news. */
+export function shouldPoll(quietBeats, beatMs = BEAT_MS) {
+  const every = pollEveryBeats(quietBeats * beatMs)
+  return quietBeats % every === 0
+}
+
+/**
  * How many polls in a row must answer before blindness counts as news again.
  *
  * ONE WAS NOT ENOUGH, and the failure was mine. Clearing the latch on a single
@@ -109,14 +147,28 @@ async function main() {
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
 
+  // Beats since anything was news. Drives the ladder, and nothing else.
+  let quietBeats = 0
+
   for (;;) {
-    let probe
-    try { probe = await probeInbox() } catch { probe = { unknown: 'probe failed', sessions: [] } }
-    const { line, next } = step(probe, state, cwd)
-    state = next
-    if (line) process.stdout.write(line + '\n')
-    // The beat is what keeps the marker fresh. Stop beating and the marker goes
-    // stale on its own, so a crash frees the session instead of locking it.
+    if (shouldPoll(quietBeats)) {
+      let probe
+      try { probe = await probeInbox() } catch { probe = { unknown: 'probe failed', sessions: [] } }
+      const { line, next } = step(probe, state, cwd)
+      state = next
+      if (line) {
+        process.stdout.write(line + '\n')
+        quietBeats = 0 // someone is doing something; ask at full rate again
+      } else {
+        quietBeats += 1
+      }
+    } else {
+      quietBeats += 1
+    }
+    // The beat is what keeps the marker fresh, and it does NOT slow down: the
+    // marker goes stale in 90s and a stale marker frees the session to a second
+    // watcher. Stop beating and a crash frees the session instead of locking
+    // it, which is the property worth keeping at every rung of the ladder.
     beat(sessionId)
     await sleep(BEAT_MS)
   }
