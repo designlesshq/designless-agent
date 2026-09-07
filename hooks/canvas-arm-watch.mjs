@@ -7,8 +7,8 @@
 // was armed almost never, and edits made while the agent sat idle waited for the
 // next thing the user typed - which is the opposite of what the canvas promises.
 //
-// The ask now arrives AT the moment instead: whenever a canvas tool returns, and
-// whether or not this session ever ran the command. A hook cannot start a
+// The ask now arrives AT the moment instead: whenever a Designless tool returns,
+// and whether or not this session ever ran the command. A hook cannot start a
 // background task (it returns text and exits), so this is still an ask. What
 // makes it reliable is that it repeats: the WATCHER writes the marker, so an ask
 // that was ignored looks exactly like one never sent, and the next canvas call
@@ -27,15 +27,28 @@ export const WATCHER = path.join(HERE, 'inbox-watch.mjs')
 /**
  * Does this tool call mean a canvas is in the picture?
  *
- * Every canvas tool does, with ONE exception. `less_canvas_inbox` is the
- * discovery read that runs at the start of every turn whether or not the user
- * has ever opened a canvas, so it counts only when it comes back naming one.
- * Treating it like the rest would arm a watcher in sessions that have nothing to
- * watch.
+ * ANY Designless tool does (founder ruling 2026-09-08). It used to be the
+ * canvas tools alone, which reads the intent too narrowly: an agent resolving a
+ * brand, listing templates or reading a capsule is working on something that
+ * will be painted, and arming only once the first canvas call lands means the
+ * edits made before it are the ones that wait. The watcher is cheap and refuses
+ * to start twice; a session that never opens a canvas costs one quiet process.
+ *
+ * ONE exception survives, for a reason that is not about breadth.
+ * `less_canvas_inbox` is the discovery read that runs at the start of every turn
+ * whether or not the user has ever opened a canvas, so it is not evidence that
+ * anyone chose to do anything — it counts only when it comes back naming a
+ * canvas. Every other tool here was CALLED deliberately, which is the signal.
+ *
+ * Matched on `(^|_)less_`, not a bare substring. Names arrive MCP-qualified
+ * (`mcp__plugin_designless_less-mcp__less_canvas_ops`) and also bare, so the
+ * boundary has to admit both; requiring the underscore is what keeps an
+ * unrelated `harmless_thing` out, since the character before its `less_` is
+ * an `m`.
  */
 export function canvasInPlay(toolName, responseText) {
   const name = String(toolName ?? '')
-  if (!/less_canvas_/.test(name)) return false
+  if (!/(^|_)less_/.test(name)) return false
   if (/less_canvas_inbox$/.test(name)) {
     const t = String(responseText ?? '')
     // Read the NEGATIVE first. Both empty answers open "# Designless: nothing"

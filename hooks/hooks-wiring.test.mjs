@@ -47,21 +47,62 @@ test('every hook script this plugin ships is reachable from an event', () => {
 // epilogue writes the workspace's compose memory and belongs to compose alone;
 // the watcher ask belongs to every canvas tool, because a canvas coming into
 // play is the moment to want a watcher whatever call brought it.
+// A REAL tool name, as the host delivers it. Measured 2026-09-08: the matchers
+// were written as if the name were bare (`less_canvas_`), the hooks never fired
+// for a whole session of canvas work, and nothing said so — an un-armed watcher
+// is indistinguishable from a quiet one. The assertions below are therefore
+// BEHAVIOURAL: they compile the configured matcher and run it against the names
+// that actually arrive. A string equality cannot see this class of bug at all,
+// which is how it survived.
+const QUALIFIED = (tool) => `mcp__plugin_designless_less-mcp__${tool}`
+
+// Semantics are the host's, and we do not get to know them: some match a
+// matcher as a substring search, some as a full-string match. A matcher that
+// only works under one reading is half-wired, so both are asserted.
+const matchesEitherWay = (matcher, name) =>
+  new RegExp(matcher).test(name) && new RegExp(`^(?:${matcher})$`).test(name)
+
 test('the compose epilogue runs after a compose, and nothing else', () => {
   const post = config.hooks.PostToolUse
   assert.ok(Array.isArray(post), 'PostToolUse must be registered')
   const epilogue = post.find((e) => /compose-epilogue\.mjs/.test(JSON.stringify(e.hooks)))
   assert.ok(epilogue, 'the compose epilogue must be registered')
-  assert.equal(epilogue.matcher, 'less_canvas_compose$')
+  assert.ok(
+    matchesEitherWay(epilogue.matcher, QUALIFIED('less_canvas_compose')),
+    'the epilogue must match a real compose call under either matcher semantics',
+  )
+  // Compose alone, still: it writes the workspace's compose memory.
+  assert.ok(!new RegExp(epilogue.matcher).test(QUALIFIED('less_canvas_status')), 'compose only')
+  assert.match(epilogue.matcher, /\$$/, 'anchored to compose on purpose')
 })
 
-test('the watcher ask runs after every canvas tool, not only compose', () => {
+test('the watcher ask runs after every Designless tool, not only the canvas ones', () => {
   const post = config.hooks.PostToolUse
   const armer = post.find((e) => /canvas-arm-watch\.mjs/.test(JSON.stringify(e.hooks)))
   assert.ok(armer, 'the watcher ask must be registered')
-  assert.equal(armer.matcher, 'less_canvas_')
-  // A matcher anchored to one tool is the bug this entry exists to avoid: the
-  // ask has to reach a session that composed, opened, updated or walked a
-  // canvas, not just one that called the single tool someone thought of.
+
+  // Founder ruling 2026-09-08: ANY Designless tool is reason to want a watcher,
+  // not the canvas family alone. Arming only at the first canvas call means the
+  // edits made before it are the ones that wait.
+  for (const tool of [
+    'less_canvas_compose',
+    'less_canvas_status',
+    'less_artefact_open',
+    'less_list_templates',
+    'less_resolve_brand',
+  ]) {
+    assert.ok(
+      matchesEitherWay(armer.matcher, QUALIFIED(tool)),
+      `the ask must reach ${tool} under either matcher semantics`,
+    )
+  }
+
+  // And must not fire on everything: a hook that runs after every Read and Bash
+  // is a spawn per tool call for nothing.
+  for (const other of ['Bash', 'Read', 'Edit']) {
+    assert.ok(!new RegExp(`^(?:${armer.matcher})$`).test(other), `must not fire on ${other}`)
+  }
+
+  // A matcher anchored to one tool is the bug this entry exists to avoid.
   assert.doesNotMatch(armer.matcher, /\$$/, 'the ask must not be anchored to one tool')
 })
