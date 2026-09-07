@@ -15,7 +15,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { canvasInPlay, decide, armLine } from './canvas-arm-watch.mjs'
 import { isArmed, arm, disarm, beat, STALE_MS } from './watch-marker.mjs'
-import { drainDigest, step } from './inbox-watch.mjs'
+import { drainDigest, step , shouldStandDown } from './inbox-watch.mjs'
 
 const NEVER = () => false
 const ALWAYS = () => true
@@ -196,12 +196,93 @@ test('sight returning STEADILY makes a later relapse news again', () => {
   assert.ok(step(blind, st, cwd).line, 'a relapse after a healthy stretch must speak')
 })
 
-// And a changed reason always speaks: a timeout and a refused socket are
-// different facts with different fixes, whatever the latch holds.
-test('a different reason speaks even inside a flap', () => {
+// THE REASON IS NOT THE FACT, and this test used to assert the opposite.
+//
+// It read as careful: a timeout and a refused socket are different facts with
+// different fixes, so a changed reason should speak again. Against a real
+// desktop it is useless, because an unreachable one does not fail the same way
+// twice. A machine left alone alternated between a timeout and a stale-session
+// reply on every poll, so the reason had ALWAYS changed, the latch never held,
+// and the watcher spoke every cycle for as long as nobody was there. Fifty-odd
+// lines reached one transcript that way.
+//
+// What the agent needs to know is that the accelerator cannot answer and the
+// inbox must be read directly. That is one fact however many ways it is spelled,
+// and the spelling still rides in the single line that does get sent.
+test('a changed reason is the same blindness, and does not speak again', () => {
   const cwd = process.cwd()
-  let st = step({ unknown: 'timeout after 700ms', sessions: [] }, { digest: '', blind: null, healthy: 0 }, process.cwd()).next
-  assert.ok(step({ unknown: 'desktop replied no_session_stale', sessions: [] }, st, cwd).line)
+  const reasons = ['timeout after 700ms', 'desktop replied no_session_stale']
+  let st = { digest: '', blind: false, blindSince: null, healthy: 0 }
+  let spoke = 0
+  // The live shape: the reason alternates on every single poll.
+  for (let i = 0; i < 12; i++) {
+    const r = step({ unknown: reasons[i % 2], sessions: [] }, st, cwd)
+    if (r.line) spoke += 1
+    st = r.next
+  }
+  assert.equal(spoke, 1, 'an alternating reason must not defeat the latch')
+})
+
+// Half an hour with no desktop means the app is closed or the machine is asleep
+// or locked. Nobody is editing a canvas in any of those states, so there is
+// nothing between turns left to watch, and a watcher that polls on regardless
+// spends the whole idle stretch producing lines the person reads later as spam.
+test('a desktop gone for half an hour ends the watch', () => {
+  const cwd = process.cwd()
+  const blind = { unknown: 'timeout after 700ms', sessions: [] }
+  const t0 = 1_000_000
+  let st = step(blind, { digest: '', blind: false, blindSince: null, healthy: 0 }, cwd, t0).next
+
+  assert.equal(shouldStandDown(st, t0), false, 'it must not stand down the moment it goes blind')
+  assert.equal(shouldStandDown(st, t0 + 29 * 60_000), false, 'nor a minute early')
+  assert.equal(shouldStandDown(st, t0 + 30 * 60_000), true, 'and must stand down at half an hour')
+})
+
+// The clock runs from when the blindness STARTED, not from the last poll, or a
+// watcher that keeps failing would keep resetting its own deadline and never
+// reach it.
+test('the stand-down clock is not reset by continuing to fail', () => {
+  const cwd = process.cwd()
+  const blind = { unknown: 'timeout after 700ms', sessions: [] }
+  const t0 = 1_000_000
+  let st = step(blind, { digest: '', blind: false, blindSince: null, healthy: 0 }, cwd, t0).next
+  for (let i = 1; i <= 20; i++) st = step(blind, st, cwd, t0 + i * 60_000).next
+  assert.equal(st.blindSince, t0, 'the start of the blindness must not move')
+  assert.equal(shouldStandDown(st, t0 + 30 * 60_000), true)
+})
+
+// A desktop that comes back clears the deadline, so a later relapse gets its
+// own full half hour rather than standing down immediately.
+test('a recovered desktop clears the stand-down clock', () => {
+  const cwd = process.cwd()
+  const blind = { unknown: 'timeout after 700ms', sessions: [] }
+  const good = { sessions: [] }
+  const t0 = 1_000_000
+  let st = step(blind, { digest: '', blind: false, blindSince: null, healthy: 0 }, cwd, t0).next
+  for (let i = 1; i <= 3; i++) st = step(good, st, cwd, t0 + i * 1000).next
+  assert.equal(st.blindSince, null, 'steady sight must forget when the blindness began')
+  assert.equal(shouldStandDown(st, t0 + 60 * 60_000), false, 'a healthy watcher never stands down')
+})
+
+// A watcher that can see must never stand down, whatever else is true: the
+// stretch between turns is exactly what it is for.
+test('a watcher that can see keeps watching', () => {
+  const now = Date.now()
+  assert.equal(shouldStandDown({ digest: 'a:1:0:0', healthy: 9, blind: false, blindSince: null }, now), false)
+  assert.equal(shouldStandDown({}, now), false)
+  assert.equal(shouldStandDown(undefined, now), false)
+
+  // Standing down asks whether it is blind NOW, not whether it ever was. The
+  // pair below cannot occur today, because recovery clears both together, and
+  // that is the point: if some later edit clears one and forgets the other, a
+  // watcher that can see perfectly well must not quietly switch itself off. A
+  // silent stand-down is the one failure nobody would report, because the
+  // symptom is an absence.
+  assert.equal(
+    shouldStandDown({ blind: false, blindSince: now - 60 * 60_000 }, now),
+    false,
+    'having once been blind must never end a watch that can see',
+  )
 })
 
 test('drainDigest ignores sessions with nothing drainable', () => {
