@@ -29,6 +29,25 @@ test('any canvas tool means a canvas is in play', () => {
   ]) assert.equal(canvasInPlay(t, ''), true, t)
 })
 
+// Founder ruling 2026-09-08: ANY Designless tool, not the canvas family alone.
+// Arming only at the first canvas call means the edits made before it are the
+// ones that wait, which is the thing the watcher exists to stop.
+test('any Designless tool is reason to want a watcher, not just the canvas ones', () => {
+  for (const t of [
+    'mcp__plugin_designless_less-mcp__less_artefact_open',
+    'mcp__plugin_designless_less-mcp__less_list_templates',
+    'mcp__plugin_designless_less-mcp__less_resolve_brand',
+    'less_whoami',
+  ]) assert.equal(canvasInPlay(t, ''), true, t)
+})
+
+// The boundary is an underscore, not a bare substring, so a name that merely
+// ENDS in "less" is not a Designless tool.
+test('a lookalike name is not a Designless tool', () => {
+  assert.equal(canvasInPlay('harmless_thing', ''), false)
+  assert.equal(canvasInPlay('mcp__other__stateless_probe', ''), false)
+})
+
 // The one exception, and the reason for it: this call runs at the start of every
 // turn whether or not the user has ever opened a canvas. Treating it like the
 // rest would ask for a watcher in sessions with nothing to watch.

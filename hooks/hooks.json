@@ -35,7 +35,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "less_canvas_",
+        "matcher": ".*less_.*",
         "hooks": [
           {
             "type": "command",
@@ -44,7 +44,7 @@
         ]
       },
       {
-        "matcher": "less_canvas_compose$",
+        "matcher": ".*less_canvas_compose$",
         "hooks": [
           {
             "type": "command",
