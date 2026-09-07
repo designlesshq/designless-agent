@@ -82,6 +82,24 @@ export function shouldPoll(quietBeats, beatMs = BEAT_MS) {
 const HEALTHY_STREAK = 3
 
 /**
+ * How long the desktop may stay unreachable before the watcher stands down.
+ *
+ * A desktop that has not answered for half an hour is not a slow desktop. The
+ * app is closed, or the machine is asleep or locked, and in every one of those
+ * states nobody is editing a canvas, so there is nothing for a live watcher to
+ * be live for. Polling on regardless spends the whole idle period producing
+ * nothing, and every line it does produce lands in a transcript the person
+ * reads later as noise.
+ *
+ * Standing down is safe because this was never the only cover. The
+ * turn-boundary hook runs the moment the person types, so returning to the
+ * machine is answered on the first prompt whether or not this loop is alive.
+ * The watcher covers the stretch BETWEEN turns; when the desktop is gone there
+ * is no such stretch worth covering.
+ */
+const STAND_DOWN_MS = 30 * 60_000
+
+/**
  * What is drainable right now, as a value that changes only when the work does.
  *
  * Counts, not just session ids: a second edit landing on a canvas that already
@@ -104,29 +122,63 @@ export function drainDigest(sessions) {
  * Returns the line to print, or null for silence, plus the state to carry into
  * the next poll. Silence is the common case by design.
  */
-export function step(probe, prev, cwd) {
+export function step(probe, prev, cwd, now = Date.now()) {
   // A poll that answers does not by itself mean the desktop is back. Counted
   // rather than trusted, so a flap cannot rearm the line it already said.
   const healthy = probe.unknown ? 0 : Number(prev.healthy ?? 0) + 1
-  // Cannot see. Say so ONCE per reason: an unreachable accelerator is not an
-  // all-clear, and the agent's fallback is to read the inbox itself. Repeating
-  // it every 15s for an hour is how a line stops being read.
+
   if (probe.unknown) {
-    if (prev.blind === probe.unknown) return { line: null, next: { ...prev, healthy: 0 } }
+    // When the blindness started, so a long one can end the watch below.
+    const blindSince = prev.blindSince ?? now
+
+    // LATCHED ON THE FACT, NOT ON THE REASON, and that distinction is the whole
+    // bug. Keyed on the reason string this reads as careful — a timeout and a
+    // refused socket are different facts — and against a real desktop it is
+    // useless, because an unreachable one does not fail the same way twice. A
+    // machine left alone alternated between a 700ms timeout and a stale-session
+    // reply, so every single poll saw a CHANGED reason, defeated the latch, and
+    // spoke. Fifty-odd lines reached one transcript that way while nobody was
+    // at the keyboard.
+    //
+    // The reason is diagnostic detail. What the agent needs to know is that the
+    // accelerator cannot answer and the inbox must be read directly, and that
+    // is one fact however many ways it is spelled. It is still carried in the
+    // line, so the one message that is sent still says which failure it saw.
+    if (prev.blind) {
+      return { line: null, next: { ...prev, blindSince, healthy: 0 } }
+    }
     return {
       line: `Designless canvas: the live watcher cannot see the desktop (${probe.unknown}). ` +
         `This is NOT a signal that nothing is waiting: read less_canvas_inbox yourself while it stays unreachable.`,
-      next: { ...prev, blind: probe.unknown, healthy: 0 },
+      next: { ...prev, blind: true, blindSince, healthy: 0 },
     }
   }
+
   const digest = drainDigest(probe.sessions)
   // The latch clears only once the desktop has answered steadily. Until then the
   // line already said stands, and a relapse inside a flap says nothing new.
-  const next = { digest, healthy, blind: healthy >= HEALTHY_STREAK ? null : (prev.blind ?? null) }
+  const recovered = healthy >= HEALTHY_STREAK
+  const next = {
+    digest,
+    healthy,
+    blind: recovered ? false : (prev.blind ?? false),
+    blindSince: recovered ? null : (prev.blindSince ?? null),
+  }
   if (!digest || digest === prev.digest) return { line: null, next }
   const text = summarizeInbox(probe.sessions, cwd, { includeAttention: false })
   if (!text) return { line: null, next }
   return { line: `Designless canvas: ${text}`, next }
+}
+
+/**
+ * Has the desktop been unreachable long enough that watching is pointless?
+ *
+ * Read after `step`, on its returned state, so the decision is made from the
+ * same clock the state was stamped with.
+ */
+export function shouldStandDown(state, now = Date.now(), afterMs = STAND_DOWN_MS) {
+  if (!state?.blind || !state.blindSince) return false
+  return now - state.blindSince >= afterMs
 }
 
 async function main() {
@@ -142,7 +194,7 @@ async function main() {
     return
   }
   const cwd = process.cwd()
-  let state = { digest: '', blind: null }
+  let state = { digest: '', blind: false, blindSince: null }
   const stop = () => { disarm(sessionId); process.exit(0) }
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
@@ -161,6 +213,19 @@ async function main() {
         quietBeats = 0 // someone is doing something; ask at full rate again
       } else {
         quietBeats += 1
+      }
+      // Half an hour with no desktop: the app is closed or the machine is
+      // asleep, nobody is editing a canvas, and there is nothing between turns
+      // left to watch. Say so once and let the loop end rather than poll into
+      // an empty room. The turn-boundary hook picks the person up the moment
+      // they type, so nothing is lost by not being here.
+      if (shouldStandDown(state)) {
+        process.stdout.write(
+          'Designless canvas: the desktop has been unreachable for half an hour, so the live watcher is ' +
+            'standing down. Nothing is being missed while it is off: the next thing you type checks the ' +
+            'inbox again, and the watcher comes back with it.\n',
+        )
+        stop()
       }
     } else {
       quietBeats += 1
