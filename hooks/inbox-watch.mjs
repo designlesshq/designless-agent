@@ -187,8 +187,9 @@ export function step(probe, prev, cwd, now = Date.now()) {
       return { line: null, next: { ...prev, blindSince, healthy: 0 } }
     }
     return {
-      line: `Designless canvas: the live watcher cannot see the desktop (${probe.unknown}). ` +
-        `This is NOT a signal that nothing is waiting: read less_canvas_inbox yourself while it stays unreachable.`,
+      line: `Designless canvas: the live watcher cannot see the desktop app, which usually means it is ` +
+        `closed (${probe.unknown}). A closed app and an empty inbox look identical from here, so this is ` +
+        `not an all-clear: read less_canvas_inbox yourself while it stays unreachable.`,
       next: { ...prev, blind: true, blindSince, healthy: 0 },
     }
   }

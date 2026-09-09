@@ -175,12 +175,20 @@ test('items only the user can act on never wake the agent', () => {
 
 // Cannot see is not all clear — the lesson the wake hook already carries. Said
 // once per reason, because a line repeated every 15s for an hour stops being read.
+//
+// The line says the ordinary cause first (the app is closed) and the failure
+// second, because the far more common reading of the old wording was that
+// something had broken. What it must NOT lose in the softer register is the
+// reason it exists at all: it is not an all-clear, and there is a fallback that
+// always works. Both are asserted below on MEANING, so the wording can improve
+// again without silently dropping either.
 test('a blind watcher says so once, and says it is not an all-clear', () => {
   const cwd = process.cwd()
   const blind = { unknown: 'timeout after 700ms', sessions: [] }
   const first = step(blind, { digest: '', blind: null }, cwd)
-  assert.match(first.line, /NOT a signal that nothing is waiting/)
+  assert.match(first.line, /not an all-clear/i, 'it must deny the reading that silence invites')
   assert.match(first.line, /less_canvas_inbox/, 'it must name the fallback that always works')
+  assert.match(first.line, /closed/, 'and lead with the ordinary cause, not the failure')
   assert.equal(step(blind, first.next, cwd).line, null, 'and not repeat it every poll')
 })
 

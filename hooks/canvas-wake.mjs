@@ -128,10 +128,10 @@ async function main() {
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',
         additionalContext: first
-          ? `Designless canvas: could not reach the desktop inbox accelerator (${unknown}). ` +
-            `This is NOT a signal that nothing is waiting. Call less_canvas_inbox to check for real, ` +
-            `this turn and every turn while it stays unreachable.`
-          : `Designless canvas: inbox accelerator still unreachable (${unknown}): read less_canvas_inbox yourself.`,
+          ? `Designless canvas: the desktop app is not answering, which usually means it is closed (${unknown}). ` +
+            `A closed app and an empty inbox look identical from here, so this is not an all-clear. ` +
+            `Call less_canvas_inbox to check for real, this turn and every turn while it stays unreachable.`
+          : `Designless canvas: the desktop is still unreachable (${unknown}): read less_canvas_inbox yourself.`,
       },
     }))
     return
