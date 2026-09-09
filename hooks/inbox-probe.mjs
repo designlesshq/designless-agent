@@ -41,7 +41,7 @@ export function isSafeBranchName(b) {
  * Those are two jobs and only the first is security. The character class is the
  * injection defence; the patterns are recognition. Recognising only `https://`,
  * `git@` and `owner/repo` made this predicate a THIRD identity rule beside
- * `normalizeRemote` and the server's `canon_repo_remote`, and the narrowest of
+ * `normalizeRemote` and the server's own canonicaliser, and the narrowest of
  * the three — so it rejected values the other two accept. A local checkout is
  * recorded as `file://<abs path>`, which the server instructs agents to pass,
  * and `ssh://git@host/o/r` is a spelling `normalizeRemote` folds on purpose.
@@ -52,8 +52,14 @@ export function isSafeBranchName(b) {
 export function isSafeRepoRemote(r) {
   if (typeof r !== 'string') return false
   const s = r.trim()
-  if (!s || /[\s;&$()|<>`'"\\]/.test(s)) return false
-  return /^[a-z][a-z0-9+.-]*:\/\/[\w.@:/~-]+$/i.test(s)  // any scheme normalizeRemote strips
+  // A SPACE is a legitimate path character and is handled by quoting where the
+  // value is embedded, so it no longer costs someone their whole session for
+  // owning a folder called "My Projects". Everything else in this class stays
+  // refused, newlines and tabs included: those are not path characters, they
+  // are ways to end one command and begin another. Since a quote can never
+  // survive this guard, single-quoting at the embed point is always safe.
+  if (!s || /[\n\r\t;&$()|<>`'"\\]/.test(s)) return false
+  return /^[a-z][a-z0-9+.-]*:\/\/[\w.@:/~ -]+$/i.test(s)  // any scheme normalizeRemote strips
       || /^[\w.-]+@[\w.@:/~-]+$/.test(s)                  // scp-like: git@host:org/repo
       || /^[\w.-]+\/[\w.-]+$/.test(s)                     // owner/repo shorthand
 }
@@ -202,7 +208,7 @@ export function probeInbox() {
 // Reduce a git remote URL to `host/path`: no scheme, no credentials, no port,
 // no trailing `.git`, no trailing slash, lowercased.
 //
-// This MIRRORS the server's canon_repo_remote, rule for rule and in the same
+// This MIRRORS the server's own canonicaliser, rule for rule and in the same
 // order, and the pairing is deliberate rather than accidental duplication. The
 // server folds spellings so one repo keeps one canvas session; this gate decides
 // whether the checkout you are standing in is the one those edits belong to. A
@@ -333,12 +339,18 @@ function requiredBranchHint(rows) {
  * sends the claim from the wrong place, and a source claim off the safety
  * branch is withheld — an unhelpful refusal for an avoidable reason.
  */
+// Single-quote a path for a line an agent may act on. A path that reached here
+// cannot contain a quote (isSafeRepoRemote refuses one), so this cannot be
+// broken out of, and a folder with a space in its name reads as one argument
+// instead of two.
+const q = (p) => `'${p}'`
+
 function checkoutPathHint(rows, cwd) {
   const paths = [...new Set(rows.map((s) => reachableCheckout(s, cwd)).filter(Boolean).filter((p) => path.resolve(p) !== path.resolve(cwd || '')))]
   if (!paths.length) return ''
   return paths.length > 1
-    ? ` These live in separate checkouts under this folder: ${paths.join(', ')} - run each claim from its own.`
-    : ` The checkout is ${paths[0]} - cd there before the branch checkout and the claim.`
+    ? ` These live in separate checkouts under this folder: ${paths.map(q).join(', ')} - run each claim from its own.`
+    : ` The checkout is ${q(paths[0])} - cd there before the branch checkout and the claim.`
 }
 
 /** A `file://` remote as a filesystem path, or null for anything else. */
