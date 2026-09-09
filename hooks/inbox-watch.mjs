@@ -26,6 +26,7 @@
 import path from 'node:path'
 import { probeInbox, summarizeInbox } from './inbox-probe.mjs'
 import { arm, beat, disarm, isArmed, BEAT_MS } from './watch-marker.mjs'
+import { hostIsActive } from './host-activity.mjs'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -46,24 +47,62 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  *   beyond that             every 20th      5m    — the machine is idle
  *
  * Any news resets it to the top, so returning to the canvas is answered at
- * fifteen seconds again. The cost of the slowest rung is that the FIRST edit
- * after a long idle can wait up to five minutes for the watcher — and it does
- * not, because the turn-boundary hooks still fire the moment the person types.
- * The watcher covers the stretch between turns; it was never the only cover.
+ * fifteen seconds again.
+ *
+ * THE COST, AND THE HOLE UNDER IT. The slowest rung means the first edit after a
+ * long idle can wait up to five minutes. That was held to be safe because the
+ * turn-boundary hook fires the moment the person types — but that hook fires in
+ * the session being TYPED TO, and nowhere else. With several sessions armed and
+ * one in use, the others have no such cover: they read a quiet canvas as an
+ * empty room and slow down while the person sits right there. Measured on a live
+ * run: three watchers armed, six edits, every one of them waiting between two
+ * and three and a half minutes.
+ *
+ * So the ladder now asks TWO questions instead of spending one answer twice.
+ * Elapsed quiet still says how interesting the canvas is; host activity says
+ * whether anyone is present (host-activity.mjs — a prompt in ANY session). While
+ * someone is here the ladder is capped at the middle rung: a minute, not five.
+ * Not the top rung either, because a canvas nobody is touching does not need
+ * asking every fifteen seconds — that was the cost the ladder was built to stop.
+ *
+ * With nobody there, nothing changes: no prompts anywhere, so the cap does not
+ * apply and a locked laptop keeps the five-minute quiet it was given.
  */
 const QUIET_LADDER = [
   { afterMs: 30 * 60_000, everyBeats: 20 },
   { afterMs: 5 * 60_000, everyBeats: 4 },
 ]
 
-export function pollEveryBeats(quietMs) {
-  for (const rung of QUIET_LADDER) if (quietMs >= rung.afterMs) return rung.everyBeats
-  return 1
+/**
+ * The slowest the ladder may go while a person is demonstrably at the machine.
+ * The middle rung: once a minute. Slow enough not to be the every-15s chatter
+ * the ladder exists to prevent, quick enough that an edit made while working is
+ * picked up in about a minute rather than in five.
+ */
+const ACTIVE_CAP_BEATS = 4
+
+export function pollEveryBeats(quietMs, active = false) {
+  let every = 1
+  for (const rung of QUIET_LADDER) {
+    if (quietMs >= rung.afterMs) { every = rung.everyBeats; break }
+  }
+  // Presence caps the backoff; it never accelerates past what quiet already
+  // earned, so a busy canvas is not slowed down by this and a quiet one with
+  // somebody present is not left on the five-minute rung.
+  return active ? Math.min(every, ACTIVE_CAP_BEATS) : every
 }
 
-/** Ask this beat? Beats are counted since the last time anything was news. */
-export function shouldPoll(quietBeats, beatMs = BEAT_MS) {
-  const every = pollEveryBeats(quietBeats * beatMs)
+/**
+ * Ask this beat? Beats are counted since the last time anything was news.
+ *
+ * `active` is a PARAMETER, defaulting to false, and never a filesystem read from
+ * inside here. This function is pure and is tested directly, and a default that
+ * consulted the activity stamp would make those tests pass or fail depending on
+ * whether anyone happened to be using the machine while they ran. The loop reads
+ * presence and passes it in, freshly, on every beat.
+ */
+export function shouldPoll(quietBeats, beatMs = BEAT_MS, active = false) {
+  const every = pollEveryBeats(quietBeats * beatMs, active)
   return quietBeats % every === 0
 }
 
@@ -203,7 +242,10 @@ async function main() {
   let quietBeats = 0
 
   for (;;) {
-    if (shouldPoll(quietBeats)) {
+    // Presence is read on every beat, not once at start-up: someone returning to
+    // the machine is answered on the next beat rather than whenever the loop last
+    // happened to look.
+    if (shouldPoll(quietBeats, BEAT_MS, hostIsActive())) {
       let probe
       try { probe = await probeInbox() } catch { probe = { unknown: 'probe failed', sessions: [] } }
       const { line, next } = step(probe, state, cwd)
