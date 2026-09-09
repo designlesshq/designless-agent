@@ -35,14 +35,33 @@ export function isSafeBranchName(b) {
 }
 
 /**
- * A repo remote must look like a URL or `owner/repo` and carry no shell
- * metacharacters — never an injectable string.
+ * A repo remote must carry no shell metacharacters — never an injectable
+ * string — and must be a shape `normalizeRemote` can canonicalise.
+ *
+ * Those are two jobs and only the first is security. The character class is the
+ * injection defence; the patterns are recognition. Recognising only `https://`,
+ * `git@` and `owner/repo` made this predicate a THIRD identity rule beside
+ * `normalizeRemote` and the server's own canonicaliser, and the narrowest of
+ * the three — so it rejected values the other two accept. A local checkout is
+ * recorded as `file://<abs path>`, which the server instructs agents to pass,
+ * and `ssh://git@host/o/r` is a spelling `normalizeRemote` folds on purpose.
+ * Both were rejected, `sanitizeInboxRows` dropped the whole row, and every
+ * passive surface then reported nothing waiting over real pending edits.
+ * Recognition must never be narrower than the normaliser it guards.
  */
 export function isSafeRepoRemote(r) {
   if (typeof r !== 'string') return false
   const s = r.trim()
-  if (!s || /[\s;&$()|<>`'"\\]/.test(s)) return false
-  return /^(https?:\/\/|git@)[\w.@:/~-]+$/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s)
+  // A SPACE is a legitimate path character and is handled by quoting where the
+  // value is embedded, so it no longer costs someone their whole session for
+  // owning a folder called "My Projects". Everything else in this class stays
+  // refused, newlines and tabs included: those are not path characters, they
+  // are ways to end one command and begin another. Since a quote can never
+  // survive this guard, single-quoting at the embed point is always safe.
+  if (!s || /[\n\r\t;&$()|<>`'"\\]/.test(s)) return false
+  return /^[a-z][a-z0-9+.-]*:\/\/[\w.@:/~ -]+$/i.test(s)  // any scheme normalizeRemote strips
+      || /^[\w.-]+@[\w.@:/~-]+$/.test(s)                  // scp-like: git@host:org/repo
+      || /^[\w.-]+\/[\w.-]+$/.test(s)                     // owner/repo shorthand
 }
 
 /**
@@ -189,7 +208,7 @@ export function probeInbox() {
 // Reduce a git remote URL to `host/path`: no scheme, no credentials, no port,
 // no trailing `.git`, no trailing slash, lowercased.
 //
-// This MIRRORS the server's canon_repo_remote, rule for rule and in the same
+// This MIRRORS the server's own canonicaliser, rule for rule and in the same
 // order, and the pairing is deliberate rather than accidental duplication. The
 // server folds spellings so one repo keeps one canvas session; this gate decides
 // whether the checkout you are standing in is the one those edits belong to. A
@@ -238,7 +257,19 @@ function normalizeRemote(u) {
   return v || null
 }
 
-/** The origin remote of the repo at `cwd`, normalized - or null (no git / no origin). */
+/**
+ * The identity of the repo at `cwd`, normalized - or null when there is no git.
+ *
+ * Origin first. When there is no origin the repo is LOCAL-ONLY, and a local
+ * repo's identity is its path: that is precisely what the server records for
+ * one, and what it instructs agents to pass (`file://<abs path>`). Returning
+ * null there made every local checkout unrecognisable to itself — the row was
+ * surfaced and then classified as belonging elsewhere, so the person was told
+ * to go and run the command in the repo they were already standing in.
+ *
+ * `normalizeRemote` strips any scheme and lowercases, on this side and on the
+ * server's, so the two spellings of one local checkout fold to the same string.
+ */
 export function cwdGitRemote(cwd) {
   try {
     let gitDir = path.join(cwd, '.git')
@@ -261,7 +292,14 @@ export function cwdGitRemote(cwd) {
     }
     const cfg = fs.readFileSync(path.join(gitDir, 'config'), 'utf8')
     const m = cfg.match(/\[remote "origin"\][^[]*?url\s*=\s*([^\n]+)/)
-    return m ? normalizeRemote(m[1]) : null
+    if (m) return normalizeRemote(m[1])
+    // No origin: a local-only checkout, identified by its own path. Resolve
+    // symlinks first — on macOS `/tmp` and `/var` are links, so the same
+    // checkout reaches us spelled two ways depending on who called. A path
+    // identity that is not canonical is just a second way to miss a match.
+    let root = cwd
+    try { root = fs.realpathSync(cwd) } catch { /* keep cwd as given */ }
+    return normalizeRemote('file://' + root)
   } catch { return null }
 }
 
@@ -295,11 +333,73 @@ function requiredBranchHint(rows) {
   return ` ${label}: ${branches.join(', ')} (server-owned; read from each row's safety_branch, do NOT derive).`
 }
 
+/**
+ * Name the directory to work in, when it is not the one we are standing in.
+ * Saying "drainable from this checkout" while the checkout is a subdirectory
+ * sends the claim from the wrong place, and a source claim off the safety
+ * branch is withheld — an unhelpful refusal for an avoidable reason.
+ */
+// Single-quote a path for a line an agent may act on. A path that reached here
+// cannot contain a quote (isSafeRepoRemote refuses one), so this cannot be
+// broken out of, and a folder with a space in its name reads as one argument
+// instead of two.
+const q = (p) => `'${p}'`
+
+function checkoutPathHint(rows, cwd) {
+  const paths = [...new Set(rows.map((s) => reachableCheckout(s, cwd)).filter(Boolean).filter((p) => path.resolve(p) !== path.resolve(cwd || '')))]
+  if (!paths.length) return ''
+  return paths.length > 1
+    ? ` These live in separate checkouts under this folder: ${paths.map(q).join(', ')} - run each claim from its own.`
+    : ` The checkout is ${q(paths[0])} - cd there before the branch checkout and the claim.`
+}
+
+/** A `file://` remote as a filesystem path, or null for anything else. */
+export function localCheckoutPath(remote) {
+  if (typeof remote !== 'string') return null
+  const m = remote.trim().match(/^file:\/\/(.+)$/i)
+  if (!m) return null
+  try { return decodeURI(m[1]) } catch { return m[1] }
+}
+
+/** True when `a` and `b` are the same directory, or one contains the other. */
+function sameTree(a, b) {
+  if (!a || !b) return false
+  const ra = path.resolve(a), rb = path.resolve(b)
+  if (ra === rb) return true
+  const inside = (root, child) => {
+    const rel = path.relative(root, child)
+    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel)
+  }
+  return inside(ra, rb) || inside(rb, ra)
+}
+
+/**
+ * The session's own checkout, when it is a real repo we can reach from here.
+ *
+ * `cwdGitRemote` only ever looks AT `cwd`. That answers the common case and
+ * misses two ordinary layouts: the app repo sitting one directory below the
+ * folder the person opened, and the person standing in a subdirectory of the
+ * repo. Both are the right checkout, and both used to route the person to
+ * "another repo" — which, when the repo is under their feet, reads as an
+ * instruction to go where they already are.
+ *
+ * The session NAMES its checkout, so this validates that one path rather than
+ * searching the disk, and only ever inside the tree the person opened. A
+ * server-supplied path must never send an agent somewhere they did not open.
+ */
+export function reachableCheckout(s, cwd) {
+  const p = localCheckoutPath(s && s.repo_remote)
+  if (!p || !cwd || !sameTree(cwd, p)) return null
+  try { return fs.statSync(path.join(p, '.git')) ? p : null } catch { return null }
+}
+
 /** Whether a page session is drainable from `cwd` (right checkout, §5.2). */
-function pageDrainableHere(s, origin) {
+export function pageDrainableHere(s, origin, cwd) {
   // Unknown checkout identity (no repo_remote, or no git here) → let the agent
   // decide per-op; a known mismatch routes the user instead of a wrong apply.
-  return s.repo_remote ? remotesMatch(origin, s.repo_remote) : true
+  if (!s.repo_remote) return true
+  if (remotesMatch(origin, s.repo_remote)) return true
+  return !!reachableCheckout(s, cwd)
 }
 
 /**
@@ -310,7 +410,7 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
   const origin = cwdGitRemote(cwd)
   const here = [], elsewhere = [], artefact = [], annotations = [], attention = [], recoverable = []
   for (const s of sessions) {
-    if (Number(s.n_page || 0) > 0) (pageDrainableHere(s, origin) ? here : elsewhere).push(s)
+    if (Number(s.n_page || 0) > 0) (pageDrainableHere(s, origin, cwd) ? here : elsewhere).push(s)
     if (Number(s.n_artefact || 0) > 0) artefact.push(s)
     if (Number(s.n_annotation || 0) > 0) annotations.push(s)
     if (Number(s.n_needs_human || 0) > 0) attention.push(s)
@@ -326,7 +426,7 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
       `On EVERY source claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). ` +
       `Then apply with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), ` +
       `and let the canvas re-capture. Apply them now; do not ask first.` +
-      requiredBranchHint(here),
+      requiredBranchHint(here) + checkoutPathHint(here, cwd),
     )
   }
   for (const s of elsewhere) {

