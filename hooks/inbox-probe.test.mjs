@@ -21,7 +21,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox, socketPath, isSafeRepoRemote, sanitizeInboxRows } from './inbox-probe.mjs'
+import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox, socketPath, isSafeRepoRemote, sanitizeInboxRows, pageDrainableHere, reachableCheckout, localCheckoutPath } from './inbox-probe.mjs'
 
 // ── Where the desktop is ─────────────────────────────────────────────────────
 // One machine can run more than one Designless app. Unset, the probe looks
@@ -262,6 +262,76 @@ test('the drain gate recognises a local checkout as HERE, end to end', () => {
   assert.equal(here.length, 1, 'the session must be drainable in the checkout it belongs to')
   assert.equal(here[0].n_page, 4)
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+// ── Finding the checkout you are actually standing in ───────────────────────
+//
+// cwdGitRemote only looks AT cwd. Two ordinary layouts are the right checkout
+// and used to route the person to "another repo": the app repo one directory
+// below the folder they opened, and standing in a subdirectory of the repo.
+
+const mkRepo = (dir) => { fs.mkdirSync(dir, { recursive: true }); execFileSync('git', ['init', '-q'], { cwd: dir }); return dir }
+const pageRow = (repoDir) => ({ title: 'Skyway', n_page: 1, repo_remote: `file://${repoDir}`, safety_branch: 'designless/abc' })
+
+test('localCheckoutPath reads a file:// remote and ignores every other kind', () => {
+  assert.equal(localCheckoutPath('file:///Users/me/app'), '/Users/me/app')
+  assert.equal(localCheckoutPath('file:///Users/me/my%20app'), '/Users/me/my app')
+  assert.equal(localCheckoutPath('https://github.com/o/r.git'), null)
+  assert.equal(localCheckoutPath('git@github.com:o/r.git'), null)
+  assert.equal(localCheckoutPath(null), null)
+})
+
+test('the repo one directory below the folder you opened is HERE', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-below-')))
+  const repo = mkRepo(path.join(root, 'site'))
+  const s = pageRow(repo)
+  assert.equal(pageDrainableHere(s, cwdGitRemote(root), root), true)
+  assert.equal(reachableCheckout(s, root), repo)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('standing inside the repo is HERE', () => {
+  const repo = fs.realpathSync(mkRepo(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-inside-'))))
+  const sub = path.join(repo, 'src', 'deep'); fs.mkdirSync(sub, { recursive: true })
+  assert.equal(pageDrainableHere(pageRow(repo), cwdGitRemote(sub), sub), true)
+  fs.rmSync(repo, { recursive: true, force: true })
+})
+
+test('a checkout outside the tree you opened is NOT here', () => {
+  const a = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-a-')))
+  const b = fs.realpathSync(mkRepo(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-b-'))))
+  // Containment: a server-supplied path must never send an agent somewhere the
+  // person did not open, however real that path is.
+  assert.equal(pageDrainableHere(pageRow(b), cwdGitRemote(a), a), false)
+  assert.equal(reachableCheckout(pageRow(b), a), null)
+  fs.rmSync(a, { recursive: true, force: true }); fs.rmSync(b, { recursive: true, force: true })
+})
+
+test('a path inside the tree that is not a repo is NOT here', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-norepo-')))
+  const notRepo = path.join(root, 'site'); fs.mkdirSync(notRepo)
+  assert.equal(pageDrainableHere(pageRow(notRepo), cwdGitRemote(root), root), false)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('the drain line names the checkout when it is not where you are standing', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-hint-')))
+  const repo = mkRepo(path.join(root, 'site'))
+  const out = summarizeInbox([pageRow(repo)], root)
+  const said = out?.line || (Array.isArray(out?.lines) ? out.lines.join(' ') : String(out ?? ''))
+  assert.match(said, /drainable from this checkout/)
+  assert.ok(said.includes(repo), `the line must name where to work, got: ${said.slice(0, 200)}`)
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test('a remote-backed session is unaffected by any of this', () => {
+  const repo = fs.realpathSync(mkRepo(fs.mkdtempSync(path.join(os.tmpdir(), 'dl-remote-'))))
+  execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:org/repo.git'], { cwd: repo })
+  const s = { title: 'x', n_page: 1, repo_remote: 'https://github.com/org/repo', safety_branch: 'designless/abc' }
+  assert.equal(pageDrainableHere(s, cwdGitRemote(repo), repo), true)
+  const other = { ...s, repo_remote: 'https://github.com/org/DIFFERENT' }
+  assert.equal(pageDrainableHere(other, cwdGitRemote(repo), repo), false)
+  fs.rmSync(repo, { recursive: true, force: true })
 })
 
 // ── The dark count (fail-safe A) reaches the wake line ───────────────────────

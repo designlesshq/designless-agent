@@ -327,11 +327,67 @@ function requiredBranchHint(rows) {
   return ` ${label}: ${branches.join(', ')} (server-owned; read from each row's safety_branch, do NOT derive).`
 }
 
+/**
+ * Name the directory to work in, when it is not the one we are standing in.
+ * Saying "drainable from this checkout" while the checkout is a subdirectory
+ * sends the claim from the wrong place, and a source claim off the safety
+ * branch is withheld — an unhelpful refusal for an avoidable reason.
+ */
+function checkoutPathHint(rows, cwd) {
+  const paths = [...new Set(rows.map((s) => reachableCheckout(s, cwd)).filter(Boolean).filter((p) => path.resolve(p) !== path.resolve(cwd || '')))]
+  if (!paths.length) return ''
+  return paths.length > 1
+    ? ` These live in separate checkouts under this folder: ${paths.join(', ')} - run each claim from its own.`
+    : ` The checkout is ${paths[0]} - cd there before the branch checkout and the claim.`
+}
+
+/** A `file://` remote as a filesystem path, or null for anything else. */
+export function localCheckoutPath(remote) {
+  if (typeof remote !== 'string') return null
+  const m = remote.trim().match(/^file:\/\/(.+)$/i)
+  if (!m) return null
+  try { return decodeURI(m[1]) } catch { return m[1] }
+}
+
+/** True when `a` and `b` are the same directory, or one contains the other. */
+function sameTree(a, b) {
+  if (!a || !b) return false
+  const ra = path.resolve(a), rb = path.resolve(b)
+  if (ra === rb) return true
+  const inside = (root, child) => {
+    const rel = path.relative(root, child)
+    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel)
+  }
+  return inside(ra, rb) || inside(rb, ra)
+}
+
+/**
+ * The session's own checkout, when it is a real repo we can reach from here.
+ *
+ * `cwdGitRemote` only ever looks AT `cwd`. That answers the common case and
+ * misses two ordinary layouts: the app repo sitting one directory below the
+ * folder the person opened, and the person standing in a subdirectory of the
+ * repo. Both are the right checkout, and both used to route the person to
+ * "another repo" — which, when the repo is under their feet, reads as an
+ * instruction to go where they already are.
+ *
+ * The session NAMES its checkout, so this validates that one path rather than
+ * searching the disk, and only ever inside the tree the person opened. A
+ * server-supplied path must never send an agent somewhere they did not open.
+ */
+export function reachableCheckout(s, cwd) {
+  const p = localCheckoutPath(s && s.repo_remote)
+  if (!p || !cwd || !sameTree(cwd, p)) return null
+  try { return fs.statSync(path.join(p, '.git')) ? p : null } catch { return null }
+}
+
 /** Whether a page session is drainable from `cwd` (right checkout, §5.2). */
-function pageDrainableHere(s, origin) {
+export function pageDrainableHere(s, origin, cwd) {
   // Unknown checkout identity (no repo_remote, or no git here) → let the agent
   // decide per-op; a known mismatch routes the user instead of a wrong apply.
-  return s.repo_remote ? remotesMatch(origin, s.repo_remote) : true
+  if (!s.repo_remote) return true
+  if (remotesMatch(origin, s.repo_remote)) return true
+  return !!reachableCheckout(s, cwd)
 }
 
 /**
@@ -342,7 +398,7 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
   const origin = cwdGitRemote(cwd)
   const here = [], elsewhere = [], artefact = [], annotations = [], attention = [], recoverable = []
   for (const s of sessions) {
-    if (Number(s.n_page || 0) > 0) (pageDrainableHere(s, origin) ? here : elsewhere).push(s)
+    if (Number(s.n_page || 0) > 0) (pageDrainableHere(s, origin, cwd) ? here : elsewhere).push(s)
     if (Number(s.n_artefact || 0) > 0) artefact.push(s)
     if (Number(s.n_annotation || 0) > 0) annotations.push(s)
     if (Number(s.n_needs_human || 0) > 0) attention.push(s)
@@ -358,7 +414,7 @@ export function summarizeInbox(sessions, cwd, opts = {}) {
       `On EVERY source claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). ` +
       `Then apply with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), ` +
       `and let the canvas re-capture. Apply them now; do not ask first.` +
-      requiredBranchHint(here),
+      requiredBranchHint(here) + checkoutPathHint(here, cwd),
     )
   }
   for (const s of elsewhere) {

@@ -22,7 +22,7 @@
 // SHOULD also stall on Type-1 is an open architectural question - it is
 // deliberately NOT decided here.
 
-import { probeInbox, cwdGitRemote, remotesMatch, isSafeBranchName, isSafeRepoRemote } from './inbox-probe.mjs'
+import { probeInbox, cwdGitRemote, isSafeBranchName, isSafeRepoRemote, pageDrainableHere } from './inbox-probe.mjs'
 
 async function main() {
   let raw = ''
@@ -40,10 +40,12 @@ async function main() {
   // repo_remote / safety_branch are server/IPC-supplied and get embedded into git
   // instruction text below — validate before trusting. probeInbox already drops
   // malformed rows; this is the second, explicit guard at the point of embedding.
+  // One implementation, shared with summarizeInbox. Held apart, the two answered
+  // the same question differently the moment either changed.
   const drainableHere = sessions.filter((s) =>
     Number(s.n_page || 0) > 0 &&
     (s.repo_remote == null || isSafeRepoRemote(s.repo_remote)) &&
-    (s.repo_remote ? remotesMatch(origin, s.repo_remote) : true))
+    pageDrainableHere(s, origin, cwd))
   if (!drainableHere.length) return        // nothing applies here - let the stop through
 
   // Name the required safety branch(es) so the drainer can go branch-first without
