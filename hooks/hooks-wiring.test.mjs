@@ -37,7 +37,10 @@ test('every hook script this plugin ships is reachable from an event', () => {
     //   inbox-watch   - the live watcher: a background task the AGENT starts, on
     //                   the ask canvas-arm-watch emits. No event can run it, and
     //                   an event that did would run it once per turn and exit.
-    .filter((f) => !['inbox-probe.mjs', 'watch-marker.mjs', 'inbox-watch.mjs'].includes(f))
+    //   host-activity - a library: the turn-boundary hook stamps presence into it
+    //                   and the watcher reads it, so it is reached THROUGH
+    //                   canvas-wake rather than by an event of its own.
+    .filter((f) => !['inbox-probe.mjs', 'watch-marker.mjs', 'inbox-watch.mjs', 'host-activity.mjs'].includes(f))
   for (const script of shipped) {
     assert.ok(commands.includes(script), `${script} ships but no event runs it`)
   }

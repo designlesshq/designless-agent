@@ -16,6 +16,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { probeInbox, summarizeInbox, attentionDigest } from './inbox-probe.mjs'
+import { noteActivity } from './host-activity.mjs'
 
 // Once-per-state-change gate for the INFORM-ONLY attention line. Keyed by the
 // Claude session id from the hook input, stored under the user's home (never
@@ -90,6 +91,14 @@ function clearUnknown(sessionId) {
 }
 
 async function main() {
+  // Someone submitted a prompt, which is the plainest evidence there is that a
+  // person is at this machine. Stamp it FIRST: before stdin, before the parse,
+  // before the probe. Being invoked at all is the evidence, so a malformed
+  // payload or an unreachable desktop must not cost the signal. The live
+  // watchers in every session read this to tell a quiet canvas apart from an
+  // empty room. Never throws.
+  noteActivity()
+
   let raw = ''
   for await (const chunk of process.stdin) raw += chunk
   let cwd, hookSessionId
