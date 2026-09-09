@@ -35,14 +35,27 @@ export function isSafeBranchName(b) {
 }
 
 /**
- * A repo remote must look like a URL or `owner/repo` and carry no shell
- * metacharacters — never an injectable string.
+ * A repo remote must carry no shell metacharacters — never an injectable
+ * string — and must be a shape `normalizeRemote` can canonicalise.
+ *
+ * Those are two jobs and only the first is security. The character class is the
+ * injection defence; the patterns are recognition. Recognising only `https://`,
+ * `git@` and `owner/repo` made this predicate a THIRD identity rule beside
+ * `normalizeRemote` and the server's `canon_repo_remote`, and the narrowest of
+ * the three — so it rejected values the other two accept. A local checkout is
+ * recorded as `file://<abs path>`, which the server instructs agents to pass,
+ * and `ssh://git@host/o/r` is a spelling `normalizeRemote` folds on purpose.
+ * Both were rejected, `sanitizeInboxRows` dropped the whole row, and every
+ * passive surface then reported nothing waiting over real pending edits.
+ * Recognition must never be narrower than the normaliser it guards.
  */
 export function isSafeRepoRemote(r) {
   if (typeof r !== 'string') return false
   const s = r.trim()
   if (!s || /[\s;&$()|<>`'"\\]/.test(s)) return false
-  return /^(https?:\/\/|git@)[\w.@:/~-]+$/.test(s) || /^[\w.-]+\/[\w.-]+$/.test(s)
+  return /^[a-z][a-z0-9+.-]*:\/\/[\w.@:/~-]+$/i.test(s)  // any scheme normalizeRemote strips
+      || /^[\w.-]+@[\w.@:/~-]+$/.test(s)                  // scp-like: git@host:org/repo
+      || /^[\w.-]+\/[\w.-]+$/.test(s)                     // owner/repo shorthand
 }
 
 /**
@@ -238,7 +251,19 @@ function normalizeRemote(u) {
   return v || null
 }
 
-/** The origin remote of the repo at `cwd`, normalized - or null (no git / no origin). */
+/**
+ * The identity of the repo at `cwd`, normalized - or null when there is no git.
+ *
+ * Origin first. When there is no origin the repo is LOCAL-ONLY, and a local
+ * repo's identity is its path: that is precisely what the server records for
+ * one, and what it instructs agents to pass (`file://<abs path>`). Returning
+ * null there made every local checkout unrecognisable to itself — the row was
+ * surfaced and then classified as belonging elsewhere, so the person was told
+ * to go and run the command in the repo they were already standing in.
+ *
+ * `normalizeRemote` strips any scheme and lowercases, on this side and on the
+ * server's, so the two spellings of one local checkout fold to the same string.
+ */
 export function cwdGitRemote(cwd) {
   try {
     let gitDir = path.join(cwd, '.git')
@@ -261,7 +286,14 @@ export function cwdGitRemote(cwd) {
     }
     const cfg = fs.readFileSync(path.join(gitDir, 'config'), 'utf8')
     const m = cfg.match(/\[remote "origin"\][^[]*?url\s*=\s*([^\n]+)/)
-    return m ? normalizeRemote(m[1]) : null
+    if (m) return normalizeRemote(m[1])
+    // No origin: a local-only checkout, identified by its own path. Resolve
+    // symlinks first — on macOS `/tmp` and `/var` are links, so the same
+    // checkout reaches us spelled two ways depending on who called. A path
+    // identity that is not canonical is just a second way to miss a match.
+    let root = cwd
+    try { root = fs.realpathSync(cwd) } catch { /* keep cwd as given */ }
+    return normalizeRemote('file://' + root)
   } catch { return null }
 }
 

