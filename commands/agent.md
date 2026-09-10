@@ -1,6 +1,6 @@
 ---
 name: designless
-description: Designless agent - routes your intent to the right lifecycle mode automatically based on context.
+description: Connects your agents to your brand's design intelligence and an agent-native canvas, so what they build carries your context and your brand.
 ---
 
 Invoke the `designless:orchestrator` skill via the Skill tool. Pass the user's full request - every word that followed `/designless`, plus any attached files or context - through as the `args` parameter. That skill handles context detection, intent classification, and lifecycle execution.
