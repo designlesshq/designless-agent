@@ -147,9 +147,8 @@ async function main() {
   // persists for the whole session.
   if (unknown) {
     emit(
-      `Designless canvas: the quick inbox check did not answer inside its window (${unknown}). ` +
-      `It is a bounded fast path, not a health check, and it says nothing either way about waiting edits, so this is not an all-clear. ` +
-      `Check the real inbox with the canvas-inbox tool (less_canvas_inbox) before treating it as one. ` + REG,
+      `Designless canvas: the quick inbox check did not answer (${unknown}). Not an all-clear: ` +
+      `read the real inbox with the canvas-inbox tool (less_canvas_inbox) before treating it as one. ` + REG,
     )
     return
   }

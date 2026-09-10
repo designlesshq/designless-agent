@@ -187,9 +187,8 @@ export function step(probe, prev, cwd, now = Date.now()) {
       return { line: null, next: { ...prev, blindSince, healthy: 0 } }
     }
     return {
-      line: `Designless canvas: the live watcher's quick check did not answer inside its window ` +
-        `(${probe.unknown}). It is a bounded fast path, not a health check, so this is not an all-clear: ` +
-        `read less_canvas_inbox yourself while it stays unreachable.`,
+      line: `Designless canvas: the watcher's quick check did not answer (${probe.unknown}). Not an ` +
+        `all-clear: read less_canvas_inbox yourself while it stays unreachable.`,
       next: { ...prev, blind: true, blindSince, healthy: 0 },
     }
   }
