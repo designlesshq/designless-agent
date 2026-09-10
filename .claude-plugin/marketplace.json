@@ -5,7 +5,7 @@
     "email": "ai@designless.io"
   },
   "metadata": {
-    "description": "Designless agents for the agentic era. Design judgment encoded into infrastructure — not tools, not templates."
+    "description": "Designless agents for the agentic era. Design judgment encoded into infrastructure, not tools, not templates."
   },
   "plugins": [
     {
@@ -15,7 +15,7 @@
         "repo": "designlesshq/designless-agent",
         "ref": "v1.12.47"
       },
-      "description": "Designless agent — encode your brand's design judgment into an agent that builds with your intent. Routes user intent through lifecycle modes to the right capabilities at runtime.",
+      "description": "Designless agent orchestrator. Connects your coding agents to your brand's design intelligence and to Prism, the agent-native canvas, so everything they build carries your context and your brand instead of a generic default.",
       "version": "1.12.47",
       "author": {
         "name": "Designless"
