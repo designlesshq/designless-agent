@@ -128,9 +128,8 @@ async function main() {
       hookSpecificOutput: {
         hookEventName: 'UserPromptSubmit',
         additionalContext: first
-          ? `Designless canvas: the quick inbox check did not answer inside its window (${unknown}). ` +
-            `It is a bounded fast path, not a health check, and it says nothing either way about waiting edits, so this is not an all-clear. ` +
-            `Call less_canvas_inbox to check for real, this turn and every turn while it stays unreachable.`
+          ? `Designless canvas: the quick inbox check did not answer (${unknown}). Not an all-clear: ` +
+            `read less_canvas_inbox, this turn and every turn while it stays unreachable.`
           : `Designless canvas: the quick check is still unreachable (${unknown}): read less_canvas_inbox yourself.`,
       },
     }))

@@ -194,9 +194,36 @@ test('a blind watcher says so once, and says it is not an all-clear', () => {
   const first = step(blind, { digest: '', blind: null }, cwd)
   assert.match(first.line, /not an all-clear/i, 'it must deny the reading that silence invites')
   assert.match(first.line, /less_canvas_inbox/, 'it must name the fallback that always works')
-  assert.match(first.line, /bounded/i, 'and say what the window is, rather than guess why it lapsed')
   assert.doesNotMatch(first.line, /closed|shut|quit|not running/i, 'it must not diagnose a cause it cannot see')
   assert.equal(step(blind, first.next, cwd).line, null, 'and not repeat it every poll')
+})
+
+// THE SHELL STAYS THIN, and this is the ratchet that keeps it that way.
+//
+// This line has three jobs: deny the all-clear, name the fallback, name the
+// standing duty. Everything else is teaching, and teaching is what grows a thin
+// shell back into a thick one. The previous version of this file asserted the
+// presence of an explanatory clause — "a bounded fast path, not a health check"
+// — which pinned a lesson into a layer meant to shrink, and put an internal
+// mechanism into a public repo besides.
+//
+// The ceiling only ever comes down. Raising it is the visible decision; a line
+// that needs more room almost always wants the server to say it instead, at the
+// point of use, where the tool response already carries the register.
+//
+// Headroom accounts for the longest reason string the probe can produce
+// (`desktop replied no_session_stale`), not for another sentence.
+const BLIND_LINE_CEILING = 190;
+
+test('the blind line stays a signal, not a lesson', () => {
+  const cwd = process.cwd()
+  for (const unknown of ['timeout after 700ms', 'desktop replied no_session_stale', 'socket connect failed']) {
+    const { line } = step({ unknown, sessions: [] }, { digest: '', blind: null }, cwd)
+    assert.ok(
+      line.length <= BLIND_LINE_CEILING,
+      `blind line grew to ${line.length}B (ceiling ${BLIND_LINE_CEILING}) with reason "${unknown}"`,
+    )
+  }
 })
 
 // THE FLAP. Clearing the latch on ONE good poll is right for a relapse after a
