@@ -12,7 +12,7 @@
       "name": "designless",
       "source": "./",
       "description": "Designless agent orchestrator. Connects your coding agents to your brand's design intelligence and to Prism, the agent-native canvas, so everything they build carries your context and your brand instead of a generic default.",
-      "version": "1.12.47",
+      "version": "1.12.48",
       "author": {
         "name": "Designless"
       },
