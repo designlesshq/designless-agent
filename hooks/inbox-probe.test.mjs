@@ -21,7 +21,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox, socketPath, isSafeRepoRemote, sanitizeInboxRows, pageDrainableHere, reachableCheckout, localCheckoutPath } from './inbox-probe.mjs'
+import { remotesMatch, cwdGitRemote, darkCount, attentionDigest, summarizeInbox, socketPath, isSafeRepoRemote, sanitizeInboxRows, pageDrainableHere, reachableCheckout, localCheckoutPath, probeInbox } from './inbox-probe.mjs'
 
 // ── Where the desktop is ─────────────────────────────────────────────────────
 // One machine can run more than one Designless app. Unset, the probe looks
@@ -446,4 +446,23 @@ test('summarizeInbox: an attention-only message no longer ends with an apply tai
   assert.match(text, /waiting for them in the canvas/)
   assert.doesNotMatch(text, /After applying/)
   assert.doesNotMatch(text, /Apply them on sight/)
+})
+
+// A CLOSED canvas is not what this signal reports, and the wording must not say
+// it is. probeInbox resolves `empty` (unknown:null) when the socket file is
+// absent, so an app that is not running produces NO unreachable line anywhere.
+// Every reason that reaches those lines came over a socket that exists. This is
+// pinned because the prose drifted to "the desktop app is usually closed" once,
+// which sent sessions hunting a shut app that, by this branch, cannot be shut.
+test('no desktop socket is emptiness, never an unknown', async () => {
+  const prev = process.env.DESIGNLESS_IPC_SOCKET
+  process.env.DESIGNLESS_IPC_SOCKET = '/tmp/designless-a-socket-that-is-not-there/ipc.sock'
+  try {
+    const r = await probeInbox()
+    assert.equal(r.unknown, null, 'an absent socket is not an unknown')
+    assert.equal(r.count, 0)
+  } finally {
+    if (prev === undefined) delete process.env.DESIGNLESS_IPC_SOCKET
+    else process.env.DESIGNLESS_IPC_SOCKET = prev
+  }
 })

@@ -176,19 +176,26 @@ test('items only the user can act on never wake the agent', () => {
 // Cannot see is not all clear — the lesson the wake hook already carries. Said
 // once per reason, because a line repeated every 15s for an hour stops being read.
 //
-// The line says the ordinary cause first (the app is closed) and the failure
-// second, because the far more common reading of the old wording was that
-// something had broken. What it must NOT lose in the softer register is the
-// reason it exists at all: it is not an all-clear, and there is a fallback that
-// always works. Both are asserted below on MEANING, so the wording can improve
-// again without silently dropping either.
+// THE LINE MUST NAME NO CAUSE, and that is a correction of this file's own
+// previous version. It briefly said the desktop app was "usually closed", which
+// reads gently and is wrong: probeInbox returns `empty` with unknown:null when
+// the socket is absent, so a CLOSED canvas produces no line here at all. Every
+// reason that reaches this branch arrives over a socket that exists, i.e. from a
+// running app that did not answer inside a bounded window. Naming the one cause
+// that cannot produce the signal sent every session looking for a shut app.
+//
+// What it must keep is the reason it exists: it is not an all-clear, and there
+// is a fallback that always works. Both are asserted on MEANING so the wording
+// can improve again without dropping either, and the cause-claim is asserted
+// ABSENT so the drift cannot come back quietly.
 test('a blind watcher says so once, and says it is not an all-clear', () => {
   const cwd = process.cwd()
   const blind = { unknown: 'timeout after 700ms', sessions: [] }
   const first = step(blind, { digest: '', blind: null }, cwd)
   assert.match(first.line, /not an all-clear/i, 'it must deny the reading that silence invites')
   assert.match(first.line, /less_canvas_inbox/, 'it must name the fallback that always works')
-  assert.match(first.line, /closed/, 'and lead with the ordinary cause, not the failure')
+  assert.match(first.line, /bounded/i, 'and say what the window is, rather than guess why it lapsed')
+  assert.doesNotMatch(first.line, /closed|shut|quit|not running/i, 'it must not diagnose a cause it cannot see')
   assert.equal(step(blind, first.next, cwd).line, null, 'and not repeat it every poll')
 })
 

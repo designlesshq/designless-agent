@@ -147,8 +147,8 @@ async function main() {
   // persists for the whole session.
   if (unknown) {
     emit(
-      `Designless canvas: the desktop app is not answering, which usually means it is closed (${unknown}). ` +
-      `A closed app and an empty inbox look identical from here, so this is not an all-clear. ` +
+      `Designless canvas: the quick inbox check did not answer inside its window (${unknown}). ` +
+      `It is a bounded fast path, not a health check, and it says nothing either way about waiting edits, so this is not an all-clear. ` +
       `Check the real inbox with the canvas-inbox tool (less_canvas_inbox) before treating it as one. ` + REG,
     )
     return
