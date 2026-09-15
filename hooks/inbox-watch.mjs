@@ -258,17 +258,19 @@ async function main() {
       }
       // Half an hour with no desktop: the app is closed or the machine is
       // asleep, nobody is editing a canvas, and there is nothing between turns
-      // left to watch. Say so once and let the loop end rather than poll into
-      // an empty room. The turn-boundary hook picks the person up the moment
-      // they type, so nothing is lost by not being here.
-      if (shouldStandDown(state)) {
-        process.stdout.write(
-          'Designless canvas: the desktop has been unreachable for half an hour, so the live watcher is ' +
-            'standing down. Nothing is being missed while it is off: the next thing you type checks the ' +
-            'inbox again, and the watcher comes back with it.\n',
-        )
-        stop()
-      }
+      // left to watch. Let the loop end rather than poll into an empty room.
+      // The turn-boundary hook picks the person up the moment they type, so
+      // nothing is lost by not being here.
+      //
+      // IN SILENCE. This used to print a stand-down line, and the line was the
+      // loop: it can only reach an agent, it told the agent the watcher "comes
+      // back", the agent read that as an ask and re-armed it, the first poll
+      // went blind, and the pair repeated every half hour for as long as the
+      // desktop was away. Measured on 2026-09-15: three re-arms, six lines, no
+      // news in any of them. Standing down can only happen while blind, and
+      // the blind line has already been sent, so there is nothing left that
+      // the agent may act on. The host reports the exit itself.
+      if (shouldStandDown(state)) stop()
     } else {
       quietBeats += 1
     }
