@@ -346,6 +346,32 @@ test('a watcher that can see keeps watching', () => {
   )
 })
 
+// THE STAND-DOWN IS SILENT, and this is a wiring guard, which it says so that
+// nobody mistakes it for a behaviour test. `shouldStandDown` is pinned above;
+// what is pinned here is what `main` does with a true answer: it stops, and it
+// prints nothing on the way out.
+//
+// The line it used to print was the loop. A watcher's line can only reach an
+// agent, and the line told the agent the watcher "comes back", so the agent
+// re-armed it, the first poll went blind and spoke, and half an hour later the
+// pair repeated, for as long as the desktop stayed away. Standing down can only
+// happen while blind, and the blind line already says the one thing an agent
+// may act on; the host reports the exit on its own.
+test('a desktop gone for half an hour ends the watch in silence', async () => {
+  const src = await (await import('node:fs/promises')).readFile(new URL('./inbox-watch.mjs', import.meta.url), 'utf8')
+  const mainBody = src.slice(src.indexOf('async function main()'))
+  const at = mainBody.indexOf('shouldStandDown(state)')
+  assert.ok(at > 0, 'main must consult shouldStandDown')
+  const afterCheck = mainBody.slice(at, at + 400)
+  const stopAt = afterCheck.indexOf('stop()')
+  assert.ok(stopAt > 0, 'a true answer must stop the watcher')
+  assert.doesNotMatch(afterCheck.slice(0, stopAt), /stdout\.write/, 'and must print nothing between deciding and stopping')
+  // The sentence that was printed, not the phrase: comments may explain the
+  // stand-down all they like, and this file's own header does. What must not
+  // come back is a written line announcing it, under this guard or another.
+  assert.doesNotMatch(src, /stdout\.write\([^)]*standing down/is, 'the stand-down sentence must not be printed under another guard')
+})
+
 test('drainDigest ignores sessions with nothing drainable', () => {
   assert.equal(drainDigest([{ session_id: 'a', n_needs_human: 5 }]), '')
   assert.equal(drainDigest([]), '')
