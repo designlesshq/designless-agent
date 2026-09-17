@@ -13,7 +13,8 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { canvasInPlay, decide, armLine } from './canvas-arm-watch.mjs'
+import fs from 'node:fs'
+import { canvasInPlay, decide, armLine, WATCH_MS } from './canvas-arm-watch.mjs'
 import { isArmed, arm, disarm, beat, STALE_MS } from './watch-marker.mjs'
 import { drainDigest, step , shouldStandDown } from './inbox-watch.mjs'
 
@@ -91,6 +92,31 @@ test('the ask names the facility whose lines are heard, and says why the other o
   const line = armLine('s1')
   assert.match(line, /Monitor tool/, 'on Claude Code the watcher runs under the Monitor tool')
   assert.match(line, /reports only when the process exits/, 'the ask says why a plain background command will not do')
+})
+
+// THE EXPIRY IS NOT AN ASK. A host watch ends with one notice that says to
+// re-arm if still needed. Read as an ask, that notice was a loop: re-arm, read
+// the inbox, get asked again, every ten minutes for the life of the session
+// (Brain 18010d98). The ask now says what the notice cannot, and names the
+// longest watch the host allows so the wakes are as few as the host permits.
+test('the ask names the longest watch the host allows', () => {
+  assert.equal(WATCH_MS, 30 * 60_000, 'a Claude Code monitor is capped at thirty minutes')
+  assert.match(armLine('s1'), new RegExp(`timeout_ms ${WATCH_MS}\\b`), 'the number is in the ask, not left to the agent')
+})
+
+test('the ask says an expiry with no event ends the watch, and what not to do then', () => {
+  const line = armLine('s1')
+  assert.match(line, /expired and delivered no event/, 'the condition is the one the host reports')
+  assert.match(line, /not an ask/)
+  assert.match(line, /do not start another, do not read the inbox, say nothing/, 'all three moves of the loop are refused')
+  assert.match(line, /next Designless tool call asks for a fresh watcher/, 'and the way back is named')
+})
+
+test('WIRING: the skill carries the same expiry rule, so an agent that never sees the hook line has it too', () => {
+  const skill = fs.readFileSync(new URL('../skills/orchestrator/SKILL.md', import.meta.url), 'utf8')
+  assert.match(skill, /expires with no event has ended, and its expiry notice is not an ask/)
+  assert.match(skill, /do not start another, do not read the inbox, say nothing and end the turn/)
+  assert.match(skill, /Give it the longest watch the host allows/)
 })
 
 test('a hook input with no session id asks for nothing', () => {

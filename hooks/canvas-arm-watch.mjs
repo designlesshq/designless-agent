@@ -63,27 +63,52 @@ export function canvasInPlay(toolName, responseText) {
 }
 
 /**
- * The ask, and the one word in it that decides whether the watcher works.
+ * The longest watch the host allows. A Claude Code monitor is capped at thirty
+ * minutes whatever is asked for, and expires with one notice either way; an
+ * ask that names no length got a ten-minute watch and three times the wakes.
+ */
+export const WATCH_MS = 30 * 60_000
+
+/**
+ * The ask, and the two things in it that decide whether the watcher works.
  *
- * The watcher speaks by printing a line. It only helps if that line reaches
- * the agent WHILE the process keeps running, so the facility it is started
- * under has to stream its output. In Claude Code that is the Monitor tool with
- * persistence on. A plain background command is the wrong facility: it reports
- * once, when the process exits, and a watcher never exits on its own, so every
- * line it prints goes unheard for the whole session while it looks alive. The
- * ask therefore names the right facility and says why the other will not do,
- * rather than leaving "background task" to be read either way.
+ * THE FACILITY. The watcher speaks by printing a line. It only helps if that
+ * line reaches the agent WHILE the process keeps running, so the facility it is
+ * started under has to stream its output. In Claude Code that is the Monitor
+ * tool with persistence on. A plain background command is the wrong facility:
+ * it reports once, when the process exits, and a watcher never exits on its
+ * own, so every line it prints goes unheard for the whole session while it
+ * looks alive. The ask therefore names the right facility and says why the
+ * other will not do, rather than leaving "background task" to be read either
+ * way.
+ *
+ * THE EXPIRY. A host watch has a ceiling and ends with one notice that says,
+ * in the host's words, to re-arm if the watch is still needed. That sentence
+ * was a loop (Brain 18010d98): the agent re-armed, read the inbox because a
+ * turn had begun, this hook saw a canvas in play with no watcher and asked
+ * again, and the three repeated every ten minutes for as long as the session
+ * lived, six wakes in forty minutes with no edit in any of them, in a paying
+ * customer's session as much as in the harness. So the ask says what the
+ * notice cannot: an expiry that delivered no event is the end of the watch.
+ * Nothing is lost by it ending. The turn-boundary hook reads the inbox the
+ * moment the person types, and the next Designless tool call arms a fresh
+ * watcher through this same ask. The one wake the host insists on is spent
+ * saying nothing.
  */
 export function armLine(sessionId, watcher = WATCHER) {
   return 'Designless canvas: this session has a canvas in play and no live watcher running, so edits made ' +
     'while you are idle will wait for the next thing the user types. Start one now as a persistent ' +
     'background task whose printed lines reach you while you work: in Claude Code that is the Monitor ' +
     'tool with persistence on, never a plain background command, which reports only when the process ' +
-    `exits and would leave every line unheard. Label it exactly "Designless Agent": ` +
-    `node ${watcher} ${sessionId}. It stays silent until new edits arrive and prints one line when they ` +
-    'do; apply them then, the same as at a turn boundary. It refuses to start a second one, so starting ' +
-    'it when one is already running is harmless. If this host has no such facility, ignore this line: ' +
-    'the turn-boundary hooks remain the floor.'
+    `exits and would leave every line unheard. Label it exactly "Designless Agent", give it the longest ` +
+    `watch the host allows (timeout_ms ${WATCH_MS}), and run: node ${watcher} ${sessionId}. It stays silent ` +
+    'until new edits arrive and prints one line when they do; apply them then, the same as at a turn ' +
+    'boundary. It refuses to start a second one, so starting it when one is already running is harmless. ' +
+    'When the host later reports that this watch expired and delivered no event, that is the end of the ' +
+    'watch and not an ask: do not start another, do not read the inbox, say nothing and end the turn. The ' +
+    'hooks cover the next thing the user types, and the next Designless tool call asks for a fresh watcher ' +
+    'through this line. If this host has no such facility, ignore this line: the turn-boundary hooks ' +
+    'remain the floor.'
 }
 
 export function decide(input, armed = isArmed) {
