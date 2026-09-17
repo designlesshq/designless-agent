@@ -15,7 +15,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { probeInbox, summarizeInbox, attentionDigest } from './inbox-probe.mjs'
+import { probeInbox, summarizeInbox, attentionDigest, MISSED_HINT } from './inbox-probe.mjs'
 import { noteActivity } from './host-activity.mjs'
 
 // Once-per-state-change gate for the INFORM-ONLY attention line. Keyed by the
@@ -129,8 +129,8 @@ async function main() {
         hookEventName: 'UserPromptSubmit',
         additionalContext: first
           ? `Designless canvas: the quick inbox check did not answer (${unknown}). Not an all-clear: ` +
-            `read less_canvas_inbox, this turn and every turn while it stays unreachable.`
-          : `Designless canvas: the quick check is still unreachable (${unknown}): read less_canvas_inbox yourself.`,
+            `read less_canvas_inbox, this turn and every turn while it stays unanswered. ${MISSED_HINT}`
+          : `Designless canvas: the quick check is still unanswered (${unknown}): read less_canvas_inbox yourself. ${MISSED_HINT}`,
       },
     }))
     return
