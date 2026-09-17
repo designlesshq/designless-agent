@@ -7,7 +7,7 @@
 // and items needing the user. Any error / empty inbox exits 0 silently. Node
 // built-ins only; one dependency: a reachable, signed-in desktop.
 
-import { probeInbox, summarizeInbox } from './inbox-probe.mjs'
+import { probeInbox, summarizeInbox, MISSED_HINT } from './inbox-probe.mjs'
 import { isArmed } from './watch-marker.mjs'
 import { armLine } from './canvas-arm-watch.mjs'
 import fs from 'node:fs'
@@ -148,7 +148,7 @@ async function main() {
   if (unknown) {
     emit(
       `Designless canvas: the quick inbox check did not answer (${unknown}). Not an all-clear: ` +
-      `read the real inbox with the canvas-inbox tool (less_canvas_inbox) before treating it as one. ` + REG,
+      `read the real inbox with the canvas-inbox tool (less_canvas_inbox) before treating it as one. ${MISSED_HINT} ` + REG,
     )
     return
   }

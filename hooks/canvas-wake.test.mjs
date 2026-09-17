@@ -31,8 +31,8 @@ test('the unreachable branch always writes, and only the wording is gated', () =
 })
 
 test('it names the standing duty, not just the fact', () => {
-  assert.match(SRC, /every turn while it stays unreachable/)
-  assert.match(SRC, /still unreachable/)
+  assert.match(SRC, /every turn while it stays unanswered/)
+  assert.match(SRC, /still unanswered/)
 })
 
 test('a reachable accelerator still clears the state, so a relapse speaks in full', () => {

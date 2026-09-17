@@ -24,7 +24,7 @@
 // Node built-ins only. Any error ends the watch quietly rather than spraying.
 
 import path from 'node:path'
-import { probeInbox, summarizeInbox } from './inbox-probe.mjs'
+import { probeInbox, summarizeInbox, MISSED_HINT } from './inbox-probe.mjs'
 import { arm, beat, disarm, isArmed, BEAT_MS } from './watch-marker.mjs'
 import { hostIsActive } from './host-activity.mjs'
 
@@ -188,7 +188,7 @@ export function step(probe, prev, cwd, now = Date.now()) {
     }
     return {
       line: `Designless canvas: the watcher's quick check did not answer (${probe.unknown}). Not an ` +
-        `all-clear: read less_canvas_inbox yourself while it stays unreachable.`,
+        `all-clear: read less_canvas_inbox. ${MISSED_HINT}`,
       next: { ...prev, blind: true, blindSince, healthy: 0 },
     }
   }

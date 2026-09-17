@@ -19,6 +19,26 @@ import path from 'node:path'
 
 const TIMEOUT_MS = 700
 
+/**
+ * What a missed quick check means, said in every line that reports one.
+ *
+ * The budget is short on purpose (it runs on every prompt) and a healthy
+ * desktop misses it most of the time: measured 797 to 2002 ms on a signed-in
+ * app with real edits waiting, 2026-07-20, and the fix chosen then was not to
+ * widen the budget but to stop the miss wearing the success frame. The lines
+ * that report a miss said "not an all-clear" and "unreachable" with a
+ * millisecond figure, and that wording sent agents the other way: three
+ * sessions (2026-08-13, 2026-09-17 twice) read the miss as an outage, measured
+ * it, and reported "the accelerator is not accelerating" to the founder as a
+ * finding. The founder has tested this budget a hundred times. A reproduction
+ * is evidence of behaviour, never of a defect (Brain 9d398889). This clause
+ * carries the ruling into every line that reports a miss; the full sentence
+ * is the skill's, read once. The clause is short because the watcher's line
+ * is a signal with a byte ceiling that only comes down (watch-arm.test.mjs),
+ * and a lesson is the server's or the skill's to teach, not a hook line's.
+ */
+export const MISSED_HINT = 'By design, not a fault: nothing to fix or report.'
+
 // ── Server/IPC input validation (trust boundary) ─────────────────────────────
 // safety_branch and repo_remote arrive from the desktop IPC / server and get
 // embedded VERBATIM into git checkout/push instruction text handed to the agent.
