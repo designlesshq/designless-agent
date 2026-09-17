@@ -18,9 +18,10 @@
 //
 // Artefact edits are surfaced instead by the UserPromptSubmit wake
 // (canvas-wake.mjs -> summarizeInbox) and backstopped by the server, which refuses
-// a fresh compose or set_image while ops are still pending. Whether this hook
-// SHOULD also stall on Type-1 is an open architectural question - it is
-// deliberately NOT decided here.
+// a fresh compose or set_image while ops are still pending. That settles whether
+// this hook should stall on Type-1: it should not. A stall says "only this agent,
+// here, can apply this", and that is true of a page edit alone; an artefact edit
+// applies wherever its source is, and its source is the manifest the server holds.
 
 import { probeInbox, cwdGitRemote, isSafeBranchName, isSafeRepoRemote, pageDrainableHere } from './inbox-probe.mjs'
 
