@@ -116,7 +116,10 @@ test('WIRING: the skill carries the same expiry rule, so an agent that never see
   const skill = fs.readFileSync(new URL('../skills/orchestrator/SKILL.md', import.meta.url), 'utf8')
   assert.match(skill, /expires with no event has ended, and its expiry notice is not an ask/)
   assert.match(skill, /do not start another, do not read the inbox, say nothing and end the turn/)
-  assert.match(skill, /Give it the longest watch the host allows/)
+  // The first arm on `/designless` happens before any hook line exists, so the
+  // number has to be in the skill too: measured 2026-09-17 on 1.12.51, the
+  // skill said "the ask names the number" and the agent armed for ten minutes.
+  assert.match(skill, new RegExp(`timeout_ms: ${WATCH_MS}\\b`), 'the skill names the same ceiling as the ask')
 })
 
 test('a hook input with no session id asks for nothing', () => {
