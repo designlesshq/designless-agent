@@ -174,7 +174,7 @@ Rules for the `verified` block:
 - **When the compose response warns that nothing landed for the shape it names, return the same `verification_mismatch` error** rather than letting the orchestrator launch an empty canvas. The response judges each shape by its own signal and says so; the orchestrator's truth gate reads the same signal, once, in its own words.
 - **The block is the orchestrator's, not the user's.** Everything above is a payload one program hands another, and its field names never cross into what you say to the person who asked. Report a compose in plain words and leave the identifiers here; if you catch yourself pasting `verified` into a reply, that is the boundary, not a summary.
 
-The orchestrator launches the desktop app from `canvas.open_url` (see "Open Designless desktop after canvas operations" in the orchestrator skill). Don't try to launch it yourself - the orchestrator owns the platform-specific launch path.
+The orchestrator launches the desktop app from `canvas.open_url` (see "Open Designless desktop after canvas operations" in the orchestrator skill). Don't try to launch it yourself - the orchestrator owns the platform-specific launch path, and it opens a session once: a recompose, a slot change or a picture set into a session that is already open paints in place, and a second `open` of the same link would only drag the app to the foreground. Return the link every time; never run it.
 
 ## Constraints
 

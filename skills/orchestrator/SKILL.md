@@ -33,6 +33,8 @@ Every session attests this plugin's files to the server, which compares them aga
 
 When a canvas compose response says the desktop can open what it staged, launch the desktop app immediately: the user just asked for visual output and they want to see it live. The response carries the link and the exact open command; read both from it rather than from memory, and keep the session id it names for the status and launch checks below.
 
+**Open once per session.** The link is opened when a session is first staged or first composed, and never again for that session: a later compose, a slot change, a picture set, an edit applied into the same session all paint on the canvas that is already in front of the user. On macOS `open` activates the app, so re-opening the link on every write drags the desktop to the foreground over whatever the user was doing, once per fix; measured on 2026-09-18 that happened three times on one five-slide deck. Every compose answer carries the link because every host may be reading it cold; the rule for when to use it is this one, and a second open of a session id you already opened is a mistake, not a refresh.
+
 Try the three launch paths in order; **stop at the first success**. Do not double-confirm through the host's question UI - the user already asked for visual output by triggering Express/Build, and the first-time consent dialogs (Bash permission prompt, computer-use approval) are the natural gates.
 
 ### Path 1 - Bash + URL handler (Claude Code on the user's machine)
