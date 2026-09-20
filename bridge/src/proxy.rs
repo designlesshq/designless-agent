@@ -13,6 +13,7 @@ use crate::auth::AuthProvider;
 use crate::error::{BridgeError, BridgeResult};
 use crate::integrity::Integrity;
 use crate::mcp::{FrameReader, FrameWriter};
+use crate::picture;
 use anyhow::Result;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -20,9 +21,13 @@ use serde_json::{json, Value};
 /// Upstream MCP endpoint. Compile-time constant for now; environment override
 /// supported for testing via `DESIGNLESS_MCP_URL`.
 const DEFAULT_UPSTREAM: &str = "https://mcp.designless.app/mcp";
+/// The session body store a picked picture is stored in (picture.rs).
+/// Environment override `DESIGNLESS_EDITOR_URL`, as the upstream has one.
+const DEFAULT_EDITOR: &str = "https://api.designless.app/functions/v1/less-editor";
 
 pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()> {
     let upstream = std::env::var("DESIGNLESS_MCP_URL").unwrap_or_else(|_| DEFAULT_UPSTREAM.into());
+    let editor = std::env::var("DESIGNLESS_EDITOR_URL").unwrap_or_else(|_| DEFAULT_EDITOR.into());
     let client = Client::builder()
         .user_agent(format!(
             "designless-mcp-bridge/{}",
@@ -53,6 +58,10 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
         // empty 202 body — is an unsolicited response a strict client rejects,
         // failing the connect handshake right after `notifications/initialized`.
         let is_notification = matches!(id, None | Some(Value::Null));
+        // A picture the agent picks from disk is stored here first, and the
+        // call goes up carrying the pointer (picture.rs). Anything that
+        // cannot be prepared goes up as it came.
+        let frame = with_stored_picture(&client, &editor, &*auth, &frame).await;
         let result = forward(&client, &upstream, &*auth, integrity, &frame).await;
         if is_notification {
             if let Err(e) = result {
@@ -248,4 +257,42 @@ fn upstream_hint(body: &str) -> Option<&'static str> {
         tracing::warn!(server_hint = %hint, "integrity refusal from server");
     }
     None
+}
+
+/// A `less_canvas_set_image` call with a local file and a session: the
+/// picture is read, scaled, named by its bytes and stored in the session's
+/// body store, and the call is returned carrying the store pointer. Any
+/// other frame, and any picture that cannot be prepared or stored, is
+/// returned untouched: the desktop path then resolves it as before, and
+/// nothing here can fail a call.
+async fn with_stored_picture(
+    client: &Client,
+    editor: &str,
+    auth: &(dyn AuthProvider + Send + Sync),
+    frame: &Value,
+) -> Value {
+    let Some((path, session_id)) = picture::local_picture_call(frame) else {
+        return frame.clone();
+    };
+    let Some(prepared) = picture::prepare_file(std::path::Path::new(&path)).await else {
+        tracing::info!(path = %path, "picture left to the desktop: not a picture this bridge prepares");
+        return frame.clone();
+    };
+    let bearer = match auth.bearer_or_refresh().await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::info!(error = %e, "picture left to the desktop: no bearer");
+            return frame.clone();
+        }
+    };
+    match picture::store_picture(client, editor, &bearer, &session_id, &prepared).await {
+        Ok(()) => {
+            tracing::info!(hash = %prepared.hash, mime = prepared.mime, bytes = prepared.data_url.len(), "picture stored; the call carries the pointer");
+            picture::with_pointer(frame, &prepared.hash)
+        }
+        Err(reason) => {
+            tracing::info!(reason = %reason, "picture left to the desktop: the store refused");
+            frame.clone()
+        }
+    }
 }

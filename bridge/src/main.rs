@@ -32,6 +32,7 @@ mod integrity;
 mod mcp;
 mod paths;
 mod proxy;
+mod picture;
 
 #[tokio::main]
 async fn main() -> Result<()> {

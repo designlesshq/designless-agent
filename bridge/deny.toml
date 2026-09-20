@@ -28,6 +28,9 @@ allow = [
   "Unlicense",
   "BSL-1.0",
   "CDLA-Permissive-2.0",
+  # The picture crates (image, zune-jpeg, zlib-rs): permissive, OSI-approved.
+  "Zlib",
+  "0BSD",
 ]
 confidence-threshold = 0.8
 
