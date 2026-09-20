@@ -13,6 +13,7 @@ use crate::auth::AuthProvider;
 use crate::error::{BridgeError, BridgeResult};
 use crate::integrity::Integrity;
 use crate::mcp::{FrameReader, FrameWriter};
+use crate::measure;
 use crate::picture;
 use anyhow::Result;
 use reqwest::Client;
@@ -62,7 +63,14 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
         // call goes up carrying the pointer (picture.rs). Anything that
         // cannot be prepared goes up as it came.
         let frame = with_stored_picture(&client, &editor, &*auth, &frame).await;
-        let result = forward(&client, &upstream, &*auth, integrity, &frame).await;
+        // A dry run is measured by the app on this machine (measure.rs): the
+        // render goes to the app, the numbers go to the server, and the
+        // server's second answer is the agent's. Any other frame goes up once.
+        let result = if measure::dry_run_compose(&frame) {
+            forward_measured(&client, &upstream, &*auth, integrity, &frame).await
+        } else {
+            forward(&client, &upstream, &*auth, integrity, &frame).await
+        };
         if is_notification {
             if let Err(e) = result {
                 tracing::debug!(error = %e, "notification upstream result ignored");
@@ -81,6 +89,34 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
 }
 
 /// Single attempt: fetch a current Bearer and POST the frame upstream.
+/// The dry run, measured by the app: up once for the render, over IPC for
+/// the numbers, up again for the verdict. Whatever cannot happen leaves the
+/// first answer standing, without the bridge's key, and that answer already
+/// says the layout was not measured.
+async fn forward_measured(
+    client: &Client,
+    upstream: &str,
+    auth: &(dyn AuthProvider + Send + Sync),
+    integrity: Option<&Integrity>,
+    frame: &Value,
+) -> BridgeResult<Value> {
+    let first = forward(client, upstream, auth, integrity, &measure::asking_for_the_render(frame)).await?;
+    let Some((html, page)) = measure::render_in(&first) else {
+        return Ok(measure::without_bridge(&first));
+    };
+    let Some((page, slides, ms)) = measure::measured_by_the_app(&html, &page).await else {
+        return Ok(measure::without_bridge(&first));
+    };
+    tracing::info!(ms, "layout measured by the app; the verdict is asked for");
+    match forward(client, upstream, auth, integrity, &measure::carrying_the_measure(frame, &page, &slides, ms)).await {
+        Ok(second) => Ok(measure::without_bridge(&second)),
+        Err(e) => {
+            tracing::info!(error = %e, "the verdict did not answer; the unmeasured dry run stands");
+            Ok(measure::without_bridge(&first))
+        }
+    }
+}
+
 async fn post_once(
     client: &Client,
     upstream: &str,
