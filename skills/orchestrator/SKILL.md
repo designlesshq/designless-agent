@@ -291,7 +291,7 @@ Whichever path you compose through, give a deck a `title` that names the piece, 
 
 **Decision rule:** if the document is one-off or specific to this user, take Path A. If it is a common shape worth reusing across runs, take Path B so the first run saves the content and every later run is faster. If no template fits and the deck is authored, take Path B for its gate, whatever the reuse.
 
-**Stage only for a registry template.** A deck authored as html has no template id until compose mints one, and a frame staged on a built-in template refuses that deck (`session_not_writable`; measured three times in one run before this rule). For an authored deck, do not stage: compose creates the session, and the canvas opens on the composed deck. Stage-and-beat belongs to Path A and to the cached half of Path B, where the template is known before the slots are written.
+**An authored deck is staged too.** A deck authored as html has no template id until compose mints one, so it is staged with its document type instead (`less_canvas_stage` with `document_type` and no `template_id`): the canvas opens on a blank sheet of that type in the composing state while Prism writes, the beats narrate each slide, and the compose lands into that session. Stage-and-beat therefore covers Path A, the cached half of Path B, and the authored deck alike: nothing composes into a closed window.
 
 ### Build - Production HTML generation
 
