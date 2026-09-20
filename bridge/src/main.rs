@@ -30,6 +30,7 @@ mod auth;
 mod error;
 mod integrity;
 mod mcp;
+mod measure;
 mod paths;
 mod proxy;
 mod picture;

@@ -195,6 +195,13 @@ impl IpcClient {
     pub async fn get_token(&mut self) -> BridgeResult<IpcResponse> {
         self.send_frame(&json!({"op": "get_token"})).await
     }
+
+    /// Ask the app to lay a render out and answer numbers (the dry run's
+    /// layout measure, measure.rs). A desktop older than the op answers
+    /// `error: unknown_op`, which the caller reads as not measured.
+    pub async fn measure(&mut self, html: &str, page: &Value) -> BridgeResult<IpcResponse> {
+        self.send_frame(&json!({"op": "measure", "html": html, "page": page})).await
+    }
 }
 
 /// All possible reply frames the server emits. Matches electron/bridge-ipc.js.
@@ -225,6 +232,17 @@ pub enum IpcResponse {
     // directions. Same shape as AccessDenied and Error two variants above.
     #[serde(rename = "no_session")]
     NoSession { reason: Option<String> },
+    /// The app's layout measure (measure.rs): numbers when `ok`, a reason
+    /// when not. Every field but `ok` is optional for the same reason
+    /// `reason` is above: a desktop of another age answers what it can.
+    #[serde(rename = "measure")]
+    Measure {
+        ok: bool,
+        page: Option<Value>,
+        slides: Option<Value>,
+        ms: Option<u64>,
+        reason: Option<String>,
+    },
     #[serde(rename = "error")]
     Error { reason: Option<String> },
 }
