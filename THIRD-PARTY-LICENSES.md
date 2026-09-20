@@ -123,9 +123,9 @@ binary (135 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | regex-syntax | 0.8.10 | MIT OR Apache-2.0 | Copyright (c) 2014 The Rust Project Developers |
 | reqwest | 0.12.28 | MIT OR Apache-2.0 | Copyright 2016 Sean McArthur |
 | ring | 0.17.14 | Apache-2.0 AND ISC | Copyright (c) 2009 The Go Authors. All rights reserved. |
-| rustls | 0.23.40 | Apache-2.0 OR ISC OR MIT | Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com> |
+| rustls | 0.23.45 | Apache-2.0 OR ISC OR MIT | Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com> |
 | rustls-pki-types | 1.14.1 | MIT OR Apache-2.0 | Copyright 2023 Dirkjan Ochtman |
-| rustls-webpki | 0.103.13 | ISC | Copyright 2015 Brian Smith. |
+| rustls-webpki | 0.103.15 | ISC | Copyright 2015 Brian Smith. |
 | ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 | (no holder stated upstream) |
 | serde | 1.0.228 | MIT OR Apache-2.0 | (no holder stated upstream) |
 | serde_core | 1.0.228 | MIT OR Apache-2.0 | (no holder stated upstream) |
