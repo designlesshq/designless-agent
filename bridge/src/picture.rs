@@ -168,6 +168,7 @@ pub async fn store_picture(client: &Client, editor: &str, bearer: &str, session_
         .post(format!("{editor}/less/canvas-frame-body"))
         .bearer_auth(bearer)
         .header("content-type", "application/json")
+        .header("x-region", crate::proxy::edge_region())
         .json(&json!({
             "op": "store",
             "session_id": session_id,
