@@ -117,6 +117,17 @@ async fn forward_measured(
     }
 }
 
+/// The region the server-bound calls land in (2026-09-21). Edge functions run
+/// where the caller is; the database is in Sydney (ap-southeast-2), and every
+/// database round trip from a function elsewhere crossed that gap, serial,
+/// on every call. Supabase's regional invocation (`x-region`) runs the
+/// function beside the database instead: one longer hop in, every database
+/// call local. `DESIGNLESS_EDGE_REGION` overrides; empty sends no header.
+pub const DATABASE_REGION: &str = "ap-southeast-2";
+pub fn edge_region() -> String {
+    std::env::var("DESIGNLESS_EDGE_REGION").unwrap_or_else(|_| DATABASE_REGION.to_string())
+}
+
 async fn post_once(
     client: &Client,
     upstream: &str,
@@ -131,7 +142,8 @@ async fn post_once(
     let mut req = client
         .post(upstream)
         .bearer_auth(&bearer)
-        .header("content-type", "application/json");
+        .header("content-type", "application/json")
+        .header("x-region", edge_region());
     if let Some(integrity) = integrity {
         req = req.header("x-designless-plugin-integrity", integrity.header_value());
     }
