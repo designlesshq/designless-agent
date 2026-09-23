@@ -1,7 +1,7 @@
 // A missed quick check is not a finding.
 //
 // Three sessions read the 700ms miss as an outage and reported it to the
-// founder as one (Brain 9d398889; 2026-09-17 twice). The lines that report a
+// founder as one (2026-09-17 twice). The lines that report a
 // miss now say what it means, from one sentence, and no line reports a miss
 // without it. This is a guard on the consumed surface: it renders each line
 // the way its hook does and looks for the sentence in the output, not for an
