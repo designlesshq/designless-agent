@@ -97,7 +97,7 @@ test('the ask names the facility whose lines are heard, and says why the other o
 // THE EXPIRY IS NOT AN ASK. A host watch ends with one notice that says to
 // re-arm if still needed. Read as an ask, that notice was a loop: re-arm, read
 // the inbox, get asked again, every ten minutes for the life of the session
-// (Brain 18010d98). The ask now says what the notice cannot, and names the
+// The ask now says what the notice cannot, and names the
 // longest watch the host allows so the wakes are as few as the host permits.
 test('the ask names the longest watch the host allows', () => {
   assert.equal(WATCH_MS, 30 * 60_000, 'a Claude Code monitor is capped at thirty minutes')

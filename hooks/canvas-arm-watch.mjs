@@ -84,7 +84,7 @@ export const WATCH_MS = 30 * 60_000
  *
  * THE EXPIRY. A host watch has a ceiling and ends with one notice that says,
  * in the host's words, to re-arm if the watch is still needed. That sentence
- * was a loop (Brain 18010d98): the agent re-armed, read the inbox because a
+ * was a loop: the agent re-armed, read the inbox because a
  * turn had begun, this hook saw a canvas in play with no watcher and asked
  * again, and the three repeated every ten minutes for as long as the session
  * lived, six wakes in forty minutes with no edit in any of them, in a paying

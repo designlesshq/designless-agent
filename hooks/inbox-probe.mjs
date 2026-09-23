@@ -31,7 +31,7 @@ const TIMEOUT_MS = 700
  * sessions (2026-08-13, 2026-09-17 twice) read the miss as an outage, measured
  * it, and reported "the accelerator is not accelerating" to the founder as a
  * finding. The founder has tested this budget a hundred times. A reproduction
- * is evidence of behaviour, never of a defect (Brain 9d398889). This clause
+ * is evidence of behaviour, never of a defect. This clause
  * carries the ruling into every line that reports a miss; the full sentence
  * is the skill's, read once. The clause is short because the watcher's line
  * is a signal with a byte ceiling that only comes down (watch-arm.test.mjs),
