@@ -28,6 +28,7 @@ use tracing_subscriber::EnvFilter;
 mod anchored;
 mod auth;
 mod error;
+mod identity;
 mod integrity;
 mod mcp;
 mod measure;
