@@ -78,7 +78,7 @@ impl Identity {
     pub fn detect() -> Self {
         let host = std::env::var("HOSTNAME")
             .ok()
-            .or_else(|| hostname_fallback())
+            .or_else(hostname_fallback)
             .unwrap_or_else(|| "host".to_string());
         let started = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
