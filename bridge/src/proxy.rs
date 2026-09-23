@@ -46,12 +46,17 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
     // run from cargo target dirs), in which case no header is sent and the
     // server treats the client as legacy.
     let integrity = Integrity::detect();
+    // Who is speaking (identity.rs): the harness from the handshake, the
+    // process from its own start. Both ride every frame as headers.
+    let mut identity = crate::identity::Identity::detect();
 
-    tracing::info!(upstream = %upstream, attesting = integrity.is_some(), "proxy ready");
+    tracing::info!(upstream = %upstream, attesting = integrity.is_some(), actor = %identity.actor, "proxy ready");
 
     while let Some(frame) = reader.read_frame().await? {
         let id = frame.get("id").cloned();
         let integrity = integrity.as_ref();
+        identity.learn_from(&frame);
+        let identity = &identity;
         // JSON-RPC notifications (no `id`) must never receive a response. The MCP
         // Streamable HTTP server answers them with 202 Accepted + empty body;
         // forward fire-and-forget and emit nothing. Emitting a frame here — in
@@ -67,9 +72,9 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
         // render goes to the app, the numbers go to the server, and the
         // server's second answer is the agent's. Any other frame goes up once.
         let result = if measure::dry_run_compose(&frame) {
-            forward_measured(&client, &upstream, &*auth, integrity, &frame).await
+            forward_measured(&client, &upstream, &*auth, integrity, identity, &frame).await
         } else {
-            forward(&client, &upstream, &*auth, integrity, &frame).await
+            forward(&client, &upstream, &*auth, integrity, identity, &frame).await
         };
         if is_notification {
             if let Err(e) = result {
@@ -98,9 +103,10 @@ async fn forward_measured(
     upstream: &str,
     auth: &(dyn AuthProvider + Send + Sync),
     integrity: Option<&Integrity>,
+    identity: &crate::identity::Identity,
     frame: &Value,
 ) -> BridgeResult<Value> {
-    let first = forward(client, upstream, auth, integrity, &measure::asking_for_the_render(frame)).await?;
+    let first = forward(client, upstream, auth, integrity, identity, &measure::asking_for_the_render(frame)).await?;
     let Some((html, page)) = measure::render_in(&first) else {
         return Ok(measure::without_bridge(&first));
     };
@@ -108,7 +114,7 @@ async fn forward_measured(
         return Ok(measure::without_bridge(&first));
     };
     tracing::info!(ms, "layout measured by the app; the verdict is asked for");
-    match forward(client, upstream, auth, integrity, &measure::carrying_the_measure(frame, &page, &slides, ms)).await {
+    match forward(client, upstream, auth, integrity, identity, &measure::carrying_the_measure(frame, &page, &slides, ms)).await {
         Ok(second) => Ok(measure::without_bridge(&second)),
         Err(e) => {
             tracing::info!(error = %e, "the verdict did not answer; the unmeasured dry run stands");
@@ -133,6 +139,7 @@ async fn post_once(
     upstream: &str,
     auth: &(dyn AuthProvider + Send + Sync),
     integrity: Option<&Integrity>,
+    identity: &crate::identity::Identity,
     frame: &Value,
 ) -> BridgeResult<reqwest::Response> {
     let bearer = auth.bearer_or_refresh().await?;
@@ -143,7 +150,10 @@ async fn post_once(
         .post(upstream)
         .bearer_auth(&bearer)
         .header("content-type", "application/json")
-        .header("x-region", edge_region());
+        .header("x-region", edge_region())
+        // Who is speaking (identity.rs): the server paints each actor as itself.
+        .header("x-designless-harness", identity.harness_header())
+        .header("x-designless-actor", identity.actor.as_str());
     if let Some(integrity) = integrity {
         req = req.header("x-designless-plugin-integrity", integrity.header_value());
     }
@@ -164,9 +174,10 @@ async fn forward(
     upstream: &str,
     auth: &(dyn AuthProvider + Send + Sync),
     integrity: Option<&Integrity>,
+    identity: &crate::identity::Identity,
     frame: &Value,
 ) -> BridgeResult<Value> {
-    let mut res = post_once(client, upstream, auth, integrity, frame).await?;
+    let mut res = post_once(client, upstream, auth, integrity, identity, frame).await?;
 
     // The desktop app is the token-rotation authority. On a 401, asking it
     // again (`bearer_or_refresh()` → a fresh IPC `get_token`) yields a
@@ -174,7 +185,7 @@ async fn forward(
     // race where the token expired in flight or just after it was read.
     if res.status().as_u16() == 401 {
         tracing::warn!("upstream 401 — requesting a fresh token from the desktop app and retrying once");
-        res = post_once(client, upstream, auth, integrity, frame).await?;
+        res = post_once(client, upstream, auth, integrity, identity, frame).await?;
     }
 
     let status = res.status();
