@@ -143,7 +143,7 @@ mod tests {
     fn the_initialize_frame_names_the_harness_and_no_other_frame_does() {
         let init = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "clientInfo": { "name": "claude-code", "version": "2.3.1" } } });
         assert_eq!(harness_from_initialize(&init), Some(("claude-code".to_string(), Some("2.3.1".to_string()))));
-        let call = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "less_canvas_compose", "arguments": { "by": "codex:ffff0000" } } });
+        let call = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "less_canvas_compose", "arguments": {} } });
         assert_eq!(harness_from_initialize(&call), None);
         let bare = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {} });
         assert_eq!(harness_from_initialize(&bare), None);
