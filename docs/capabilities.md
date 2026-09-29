@@ -25,7 +25,7 @@ Create a complete brand expression system from natural language, visual referenc
 > dark mode first, inspired by terminal aesthetics but not cold.
 ```
 
-The agent creates the entire expression system from your description, walks you through the key decisions, compiles a capsule, and publishes it so any agent in your environment can build with it. This is the DLM, the Design Language Model, resolving natural language into deterministic infrastructure.
+The agent creates the entire expression system from your description, walks you through the key decisions, compiles a capsule, and publishes it so any agent in your environment can build with it. The DLM, the Designless Language Model, reads the design intention behind a request and carries the compounded sum of fractional design decisions. Its judgment is instrumented, not written down.
 
 ## Adopt an existing design system
 
