@@ -24,7 +24,7 @@ The Designless agent is the user-facing orchestrator. It receives your intent an
 
 ### LoomX
 
-LoomX is the public support and answer sub-agent. It answers questions about Designless and helps people understand its products and vocabulary, so they can find the guidance they need.
+LoomX is the support and answer sub-agent. It answers questions about Designless and helps people find the guidance they need.
 
 [Full definition →](https://designless.live/vocabulary/what-is-loomx)
 
@@ -66,7 +66,7 @@ The capability that resolves brand expression in both directions: from brand int
 
 ### DLM (Designless Language Model)
 
-A Designless Language Model captures the compounded sum of fractional design decisions: the infinitesimal judgments designers make that machines don't know. It resolves a brand description into a complete, production-ready expression system. The model that makes taste computable.
+The Designless Language Model is the engine of Designless. It reads the design intention behind a request: what is being asked for and why. It carries the compounded sum of fractional design decisions, the judgments designers make that machines do not know. Its judgment is instrumented, not written down.
 
 ### WGLL (What Good Looks Like)
 
