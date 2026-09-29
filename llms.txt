@@ -18,8 +18,10 @@ The agent discovers its capabilities from the expression infrastructure server a
 - **Brand Capsule**: A self-contained compilation of everything defining how a brand should look, feel, and speak. One artifact. Versioned. Deterministic. Any agent can consume it.
 - **Expression Contracts**: Beyond design tokens; they encode intent, context, relationships, and reasoning. Tokens are a dictionary. Contracts are the grammar.
 - **LESS MCP**: Expression infrastructure served as a runtime MCP server. Agents query for design decisions the same way they query any other tool server.
-- **LoomX**: The expression engine under the hood: silent design judgment at runtime. Powers the Designless agent's ability to resolve design decisions and validate output.
-- **DLM (Design Language Model)**: Resolves brand descriptions into complete expression systems. The model that makes taste computable.
+- **LoomX**: The public support and answer sub-agent. Answers questions about Designless and helps people understand its products and vocabulary.
+- **Prism**: Paints the canvas with visual expressions that carry your brand's intent.
+- **Arbiter**: Governs the brand by checking whether an expression follows its rules, keeping what agents create consistent.
+- **DLM (Designless Language Model)**: Resolves brand descriptions into complete expression systems. The model that makes taste computable.
 - **EvidenceKit**: Quality proof layer. Structured, traceable verification that output is on-brand.
 - **ContentKit**: Content intelligence. Voice-modulated content compiled to match brand tone across surfaces.
 - **Blueprint**: A structural template matched to your intent: the starting composition an agent builds from, carrying layout, content zones, emphasis hierarchy, and pattern slots.

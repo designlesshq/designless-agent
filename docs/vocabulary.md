@@ -18,13 +18,23 @@ Layered Expression Style Standard. Expression infrastructure served as a runtime
 
 The term is "LESS MCP". It is a runtime protocol, not a file format.
 
-## The Designless Agent and LoomX
+## The Designless Agent and its sub-agents
 
-The Designless agent is the user-facing orchestrator. It receives your intent and routes it to the right capability to fulfill it. Under the hood, LoomX is the expression engine that powers the agent's design judgment. Silent by design, LoomX is present at the moment a design decision is made, not with a constraint that prevents action but with guidance that shapes how the agent acts. The output is the agent's. The judgment that shaped it belongs to the brand.
+The Designless agent is the user-facing orchestrator. It receives your intent and routes it to the right capability to fulfill it.
 
-LoomX does not surface a separate interface. It does not ask developers to pause and consult a design system. It is present at the moment of decision without being in the way of the decision.
+### LoomX
+
+LoomX is the public support and answer sub-agent. It answers questions about Designless and helps people understand its products and vocabulary, so they can find the guidance they need.
 
 [Full definition →](https://designless.live/vocabulary/what-is-loomx)
+
+### Prism
+
+Prism paints the canvas. It creates visual expressions from your brand, so what you see carries your brand's intent.
+
+### Arbiter
+
+Arbiter governs the brand. It checks whether an expression follows the brand's rules, so the brand stays consistent across what agents create.
 
 ## Brand Capsule
 
@@ -54,9 +64,9 @@ The capability that resolves brand expression in both directions: from brand int
 
 ## Design Intelligence Vocabulary
 
-### DLM (Design Language Model)
+### DLM (Designless Language Model)
 
-A Design Language Model captures the compounded sum of fractional design decisions: the infinitesimal judgments designers make that machines don't know. It resolves a brand description into a complete, production-ready expression system. The model that makes taste computable.
+A Designless Language Model captures the compounded sum of fractional design decisions: the infinitesimal judgments designers make that machines don't know. It resolves a brand description into a complete, production-ready expression system. The model that makes taste computable.
 
 ### WGLL (What Good Looks Like)
 

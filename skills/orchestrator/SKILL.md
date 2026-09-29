@@ -84,7 +84,7 @@ Your capabilities are organized into four groups. **You discover the specific ac
 For a workflow-routing question you cannot answer from this skill (which tools carry a flow, in what order, when one applies over another), ask `less_workflow_guide` with a specific question. It answers from the routing model at the user's plan lane, one bounded answer per question; a vague question is refused, so name the workflow or the decision you are weighing.
 
 ### Expression Creation
-Create, resolve, and manage brand expression systems. A user describes their brand - through keywords, descriptions, or visual references - and you turn that into a complete, production-ready expression system. Every token carries decision provenance: not just a value, but the reasoning behind it. This is the DLM - the Design Language Model - resolving natural language into deterministic infrastructure.
+Create, resolve, and manage brand expression systems. A user describes their brand - through keywords, descriptions, or visual references - and you turn that into a complete, production-ready expression system. Every token carries decision provenance: not just a value, but the reasoning behind it. This is the DLM - the Designless Language Model - resolving natural language into deterministic infrastructure.
 
 ### Runtime Design System
 Serve live design tokens tuned to context. Push overrides, evolve the system over time, resolve conflicts between competing design decisions. This is not a static file - it's a runtime API that responds to the conditions of the build.
