@@ -1,0 +1,71 @@
+#!/bin/sh
+#
+# bin/designless: starts the Designless bridge for this machine.
+#
+# Every host runs this with /bin/sh, which every Mac has. Nothing else is
+# assumed: no Node, no PATH beyond what a GUI app gets, only /bin/sh builtins
+# and absolute system paths. With no arguments the bridge is the plugin's MCP
+# server on stdio; `hook <name>` and `inbox-watch <id>` run the plugin's hooks
+# and its live watcher.
+#
+# Designless runs on Apple Silicon Macs only. hw.optional.arm64 reads 1 on
+# Apple Silicon even when this shell itself runs under Rosetta, and is absent
+# or 0 on an Intel Mac.
+
+set -eu
+
+case $0 in
+  */*) here=${0%/*} ;;
+  *) here=. ;;
+esac
+here=$(CDPATH='' cd -- "$here" && pwd -P)
+bin=$here/designless-mcp-bridge-darwin-arm64
+
+# A hook must never fail the host's turn: where the bridge cannot run, the
+# hooks and the watcher are silent rather than an error on every prompt.
+quiet=
+case ${1:-} in
+  hook|inbox-watch) quiet=1 ;;
+esac
+
+os=$( /usr/bin/uname -s 2>/dev/null || echo unknown )
+arm64=$( /usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null || : )
+
+if [ "$os" != Darwin ] || [ "$arm64" != 1 ]; then
+  [ -n "$quiet" ] && exit 0
+  case $os in
+    Darwin) platform=darwin ;;
+    Linux) platform=linux ;;
+    *) platform=$(printf '%s' "$os" | /usr/bin/tr '[:upper:]' '[:lower:]') ;;
+  esac
+  machine=$( /usr/bin/uname -m 2>/dev/null || echo unknown )
+  case $machine in
+    x86_64|amd64) arch=x64 ;;
+    arm64|aarch64) arch=arm64 ;;
+    i386|i686) arch=ia32 ;;
+    *) arch=$machine ;;
+  esac
+  {
+    echo "Designless MCP bridge: this platform ($platform/$arch) is not supported."
+    echo 'The Designless plugin and the Designless app run on Apple Silicon Macs only.'
+  } >&2
+  exit 1
+fi
+
+if [ ! -e "$bin" ]; then
+  [ -n "$quiet" ] && exit 0
+  {
+    echo "Designless MCP bridge: binary not found at $bin."
+    echo 'The plugin install may be incomplete. Try `claude plugin update designless@designless-plugins`.'
+    echo 'If the issue persists, reinstall with `claude plugin install designless@designless-plugins`.'
+  } >&2
+  exit 1
+fi
+
+if [ ! -x "$bin" ]; then
+  [ -n "$quiet" ] && exit 0
+  echo "Designless MCP bridge: failed to spawn $bin: spawn EACCES" >&2
+  exit 1
+fi
+
+exec "$bin" "$@"

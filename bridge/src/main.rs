@@ -28,20 +28,31 @@ use tracing_subscriber::EnvFilter;
 mod anchored;
 mod auth;
 mod error;
+mod hooks;
 mod identity;
 mod integrity;
+mod launch;
 mod mcp;
 mod measure;
 mod paths;
 mod proxy;
 mod picture;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // The plugin's hooks and its live watcher are subcommands of this binary,
+    // so a host with nothing installed beyond itself can run them. They speak
+    // the host's hook protocol on stdout and never start the MCP server.
+    let args: Vec<String> = std::env::args().collect();
+    match args.get(1).map(String::as_str) {
+        Some("hook") => std::process::exit(hooks::run_hook(args.get(2).map(String::as_str))),
+        Some("inbox-watch") => std::process::exit(hooks::run_watch(args.get(2).map(String::as_str))),
+        _ => {}
+    }
+
     // Support + release tooling: print the attestation this install would send
     // and exit. release.mjs cross-checks this against its own hasher before
     // publishing an expected hash, so the two implementations cannot drift.
-    if std::env::args().any(|a| a == "--integrity") {
+    if args.iter().any(|a| a == "--integrity") {
         match integrity::Integrity::detect() {
             Some(i) => {
                 println!("{}", i.header_value());
@@ -53,6 +64,23 @@ async fn main() -> Result<()> {
             }
         }
     }
+
+    // The desktop-app pre-flight (launch.rs), decided before any worker thread
+    // exists, so the chosen mode can be set in this process's environment
+    // safely, exactly where the old launcher put it.
+    let mode = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(launch::resolve_mode());
+    std::env::set_var("DESIGNLESS_BRIDGE_MODE", &mode);
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(serve())
+}
+
+async fn serve() -> Result<()> {
     init_tracing();
     // Any panic logs to stderr (the host editor's MCP log captures it) and the
     // process exits plainly. With the previous panic=abort profile every host

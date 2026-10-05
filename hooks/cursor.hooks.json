@@ -3,23 +3,23 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "node ./hooks/session-start-inbox.mjs"
+        "command": "/bin/sh ./bin/designless hook session-start-inbox"
       }
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "node ./hooks/canvas-wake.mjs"
+        "command": "/bin/sh ./bin/designless hook canvas-wake"
       }
     ],
     "stop": [
       {
-        "command": "node ./hooks/canvas-drain-check.mjs",
+        "command": "/bin/sh ./bin/designless hook canvas-drain-check",
         "loop_limit": 3
       }
     ],
     "afterMCPExecution": [
       {
-        "command": "node ./hooks/compose-epilogue.mjs"
+        "command": "/bin/sh ./bin/designless hook compose-epilogue"
       }
     ]
   }

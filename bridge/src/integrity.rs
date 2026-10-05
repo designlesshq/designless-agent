@@ -226,7 +226,7 @@ mod tests {
         fs::create_dir_all(dir.join("skills/orchestrator")).unwrap();
         fs::create_dir_all(dir.join("bin")).unwrap();
         fs::write(dir.join("skills/orchestrator/SKILL.md"), "content").unwrap();
-        fs::write(dir.join("bin/launch.mjs"), "launcher").unwrap();
+        fs::write(dir.join("bin/designless"), "launcher").unwrap();
         fs::write(dir.join("README.md"), "readme").unwrap();
         fs::create_dir_all(dir.join(".claude-plugin")).unwrap();
         fs::write(dir.join(".claude-plugin/plugin.json"), r#"{"version":"1.0.0"}"#).unwrap();
@@ -301,11 +301,11 @@ mod tests {
     #[test]
     fn cursor_stamp_normalizes_to_template() {
         let dir = scratch();
-        let template = r#"{"args":["./bin/launch.mjs"],"cwd":"."}"#;
+        let template = r#"{"args":["./bin/designless"],"cwd":"."}"#;
         fs::write(dir.join(".mcp.cursor.json"), template).unwrap();
         let template_hash = tree_hash(&dir).unwrap();
         let stamped = format!(
-            r#"{{"args":["{r}/bin/launch.mjs"],"cwd":"{r}"}}"#,
+            r#"{{"args":["{r}/bin/designless"],"cwd":"{r}"}}"#,
             r = dir.to_string_lossy()
         );
         fs::write(dir.join(".mcp.cursor.json"), stamped).unwrap();

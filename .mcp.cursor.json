@@ -2,8 +2,8 @@
   "mcpServers": {
     "less-mcp": {
       "type": "stdio",
-      "command": "node",
-      "args": ["./bin/launch.mjs"],
+      "command": "/bin/sh",
+      "args": ["./bin/designless"],
       "cwd": "."
     }
   }
