@@ -34,7 +34,7 @@ The app asks you to review the plugin's hooks once before they run - approve the
 
 How you connect depends on your setup.
 
-**With the plugin.** The plugin connects through the Designless desktop app, so open the app and sign in there. There is no separate sign-in step, and no browser opens. If the app is installed but closed, the plugin opens it. Verify with:
+**With the plugin.** The plugin connects through the Designless desktop app, so open the app and sign in there; there is no separate sign-in step. Verify with:
 ```
 > /designless status
 ```
@@ -185,7 +185,7 @@ On Team plans, you can share the session with your team so teammates propose edi
 
 ## Troubleshooting
 
-**"The Designless desktop app isn't reachable" or "Not authenticated".** With the plugin, open the Designless app and sign in, then reconnect the server (in Claude Code, from the `/mcp` panel) or start a new session. Without the plugin, sign in again from your agent's MCP settings.
+**"The Designless desktop app isn't reachable" or "Not authenticated".** Open the Designless app and sign in, then reconnect the server (in Claude Code, from the `/mcp` panel) or start a new session.
 
 **"No brands found".** Run `/designless` and describe a new brand, or adopt an existing one, to get started. Most flows need a brand.
 

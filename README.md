@@ -58,7 +58,7 @@ Add the expression infrastructure runtime directly to any MCP-compatible agent:
 claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
 
-This gives your agent access to LESS MCP tools; it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available. Authentication is handled via OAuth on first use.
+This gives your agent access to LESS MCP tools; it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available. MCP OAuth sign-in is available for connections that need it.
 
 ### Skills (any coding agent)
 
@@ -74,7 +74,7 @@ The installer will:
 3. Choose scope: **Project** (current directory) or **Global** (all projects)
 4. Copy the skill into each agent's `.agents/skills/` directory
 
-After install, the orchestrator is available in your chosen agents. It reaches the expression infrastructure through the MCP server, so add that too (see MCP server above); that connection signs in through your browser on first use.
+After install, the orchestrator is available in your chosen agents. It connects to the expression infrastructure at `mcp.designless.app/mcp`; MCP OAuth sign-in is available for connections that need it.
 
 ## One command, every flow
 
@@ -104,7 +104,7 @@ The agent discovers capabilities from the expression infrastructure server at ru
 
 ## Troubleshooting
 
-**"The Designless desktop app isn't reachable" or "Not authenticated"**: the plugin connects through the Designless desktop app. Open it and sign in, then reconnect the server (in Claude Code, from the `/mcp` panel) or start a new session. If you added the MCP server directly instead of the plugin, sign in again from your agent's MCP settings.
+**"The Designless desktop app isn't reachable" or "Not authenticated"**: open the Designless app and sign in, then reconnect the server (in Claude Code, from the `/mcp` panel) or start a new session.
 
 **"No brands found"**: run `/designless` and ask for a new brand to get started.
 
