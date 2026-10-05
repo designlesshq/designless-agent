@@ -157,6 +157,11 @@ async fn post_once(
     if let Some(integrity) = integrity {
         req = req.header("x-designless-plugin-integrity", integrity.header_value());
     }
+    // What this Mac can do (machine.rs), read fresh so a change is carried on
+    // the next call. A fact only; the server decides what it means.
+    if let Some(machine) = crate::machine::header_value() {
+        req = req.header(crate::machine::HEADER, machine);
+    }
     let res = req
         // MCP Streamable HTTP transport spec requires the client to accept
         // both JSON and SSE — the server is allowed to upgrade to streaming
@@ -353,5 +358,61 @@ async fn with_stored_picture(
             tracing::info!(reason = %reason, "picture left to the desktop: the store refused");
             frame.clone()
         }
+    }
+}
+
+#[cfg(test)]
+mod machine_header_on_the_wire {
+    //! The header the server reads is the one the bridge actually sends: the
+    //! real request builder, a real socket, the bridge's own HOME lookup.
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct Fixed;
+    #[async_trait::async_trait]
+    impl AuthProvider for Fixed {
+        async fn bearer_or_refresh(&self) -> BridgeResult<String> { Ok("t".into()) }
+    }
+
+    async fn sent_headers() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut s, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 16384];
+            let n = s.read(&mut buf).await.unwrap();
+            let _ = s.write_all(b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}").await;
+            String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase()
+        });
+        let client = Client::new();
+        let identity = crate::identity::Identity::detect();
+        let frame = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/list"});
+        let _ = post_once(&client, &url, &Fixed, None, &identity, &frame).await;
+        server.await.unwrap()
+    }
+
+    // One test, run in order: HOME is process-wide.
+    #[tokio::test]
+    async fn the_file_decides_the_header_and_nothing_else_does() {
+        let home = std::env::temp_dir().join(format!("bridge-mf-{}", std::process::id()));
+        let dir = home.join(".designless");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("HOME", &home);
+
+        let _ = std::fs::remove_file(dir.join("machine.json"));
+        assert!(!sent_headers().await.contains("x-designless-machine"), "no file must send no header");
+
+        std::fs::write(dir.join("machine.json"), r#"{"version":1,"git_runnable":false}"#).unwrap();
+        assert!(sent_headers().await.contains("x-designless-machine: git=0"));
+
+        std::fs::write(dir.join("machine.json"), r#"{"version":1,"git_runnable":true}"#).unwrap();
+        assert!(sent_headers().await.contains("x-designless-machine: git=1"), "a change is carried on the next call");
+
+        std::fs::write(dir.join("machine.json"), "{broken").unwrap();
+        let h = sent_headers().await;
+        assert!(!h.contains("x-designless-machine"), "a broken file must send no header");
+        assert!(h.contains("x-designless-harness"), "the other facts still travel");
+
+        let _ = std::fs::remove_dir_all(&home);
     }
 }
