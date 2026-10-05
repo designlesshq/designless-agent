@@ -39,11 +39,10 @@ How you connect depends on your setup.
 > /designless status
 ```
 
-**Without the plugin** (any other MCP-compatible agent, or a deliberately plugin-free setup). Connect over HTTP and authenticate in your browser:
+**Without the plugin** (any other MCP-compatible agent, or a deliberately plugin-free setup). Connect over HTTP; MCP OAuth sign-in is available for connections that need it:
 ```bash
 claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
-On first use, a browser opens so you can sign in and authorize access at [designless.app](https://designless.app). Once you approve, the connection completes automatically. Spec-compliant MCP clients discover this flow on their own from the server.
 
 **Verify the connection:**
 ```
