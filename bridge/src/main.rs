@@ -32,6 +32,7 @@ mod hooks;
 mod identity;
 mod integrity;
 mod launch;
+mod machine;
 mod mcp;
 mod measure;
 mod paths;
