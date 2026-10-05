@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "less-mcp": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/launch.mjs"]
+      "command": "/bin/sh",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/designless"]
     }
   }
 }

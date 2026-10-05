@@ -4,7 +4,9 @@
 # manual dispatch. This is the pre-merge half — the frame-contract tests matter
 # most on a pull request, because a change to how a reply is parsed is invisible
 # in a diff and only shows up when a desktop build the bridge has never seen
-# sends something new.
+# sends something new. The plugin's hooks and live watcher are bridge
+# subcommands, so their tests run here too (test-hooks.yml runs the same suite
+# when only the plugin files they read change).
 #
 name: Test bridge
 
@@ -23,7 +25,7 @@ jobs:
   test:
     # ubuntu, deliberately. The release path is macOS-arm64-only because that is
     # where the binary ships, but nothing under test here is platform-specific —
-    # frame parsing and error mapping — and a cheap runner that always has
+    # frame parsing, error mapping and the hook logic — and a cheap runner that always has
     # capacity is what keeps a pre-merge gate from being the slow step people
     # learn to skip.
     runs-on: ubuntu-latest

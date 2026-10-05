@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/session-start-inbox.mjs"
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}\"/bin/designless hook session-start-inbox"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/canvas-wake.mjs"
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}\"/bin/designless hook canvas-wake"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/canvas-drain-check.mjs"
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}\"/bin/designless hook canvas-drain-check"
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/canvas-arm-watch.mjs"
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}\"/bin/designless hook canvas-arm-watch"
           }
         ]
       },
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/compose-epilogue.mjs"
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}\"/bin/designless hook compose-epilogue"
           }
         ]
       }
