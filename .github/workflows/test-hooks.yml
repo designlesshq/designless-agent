@@ -45,5 +45,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: bridge
+      # Inside bridge/, so its rust-toolchain.toml pins the compiler.
       - name: Tests
-        run: cargo test --manifest-path bridge/Cargo.toml --all-features
+        working-directory: bridge
+        run: cargo test --all-features

@@ -38,13 +38,19 @@ jobs:
         with:
           workspaces: bridge
 
+      # Both steps run INSIDE bridge/, so bridge/rust-toolchain.toml picks the
+      # Rust the release build uses. From the repo root cargo ignores that file
+      # and runs whatever stable the runner has, which tested one compiler and
+      # shipped another.
       - name: Tests
-        run: cargo test --manifest-path bridge/Cargo.toml --all-features
+        working-directory: bridge
+        run: cargo test --all-features
 
       # Warnings are errors here. The bridge is small and its warnings have been
       # zero; letting the first one land is how a wall of them starts.
       - name: Lints
-        run: cargo clippy --manifest-path bridge/Cargo.toml --all-targets -- -D warnings
+        working-directory: bridge
+        run: cargo clippy --all-targets -- -D warnings
 
   # Supply-chain gate: RUSTSEC advisories and a license allowlist over the exact
   # dependency tree the binary ships. The allowlist mirrors the families in
