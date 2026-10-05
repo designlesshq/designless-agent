@@ -15,7 +15,15 @@ This repository is public so you can read what runs on your machine: the plugin 
 
 ## Install
 
-### Plugin (recommended)
+### What you need
+
+- An Apple Silicon Mac (M1 or later). Other platforms are not supported yet.
+- The Designless desktop app, signed in. The plugin connects through it, so there is no separate sign-in in your coding agent. Get the app by signing in at [designless.app](https://designless.app) (or creating an account) and downloading it from the user menu; it is not offered on the signed-out page.
+- The coding agent you want to use it in: Claude Code (including the Claude desktop app), the ChatGPT app (Codex), or Cursor.
+
+The easiest install is from the Designless app: it installs and updates the plugin in each of these for you.
+
+### Plugin from a terminal
 
 Install the Designless plugin in Claude Code:
 
@@ -38,7 +46,9 @@ codex plugin marketplace add designlesshq/designless-agent
 codex plugin add designless@designless-plugins
 ```
 
-**Cursor:** the Designless desktop app installs and updates the plugin for you; no manual step in Cursor. See Troubleshooting for where to get the app.
+**Cursor:** the Designless desktop app installs and updates the plugin for you; no manual step in Cursor.
+
+Adding a marketplace from a terminal makes Claude Code and Codex fetch it with git. On a Mac without Apple's command line developer tools, macOS asks to install them first; install from the Designless app instead, which needs neither.
 
 ### MCP server
 
@@ -64,7 +74,7 @@ The installer will:
 3. Choose scope: **Project** (current directory) or **Global** (all projects)
 4. Copy the skill into each agent's `.agents/skills/` directory
 
-After install, the orchestrator is available in your chosen agents. It connects to the expression infrastructure at `mcp.designless.app/mcp`; authentication is handled via OAuth on first use.
+After install, the orchestrator is available in your chosen agents. It reaches the expression infrastructure through the MCP server, so add that too (see MCP server above); that connection signs in through your browser on first use.
 
 ## One command, every flow
 
@@ -94,7 +104,7 @@ The agent discovers capabilities from the expression infrastructure server at ru
 
 ## Troubleshooting
 
-**"Not authenticated"**: run `/designless connect` and complete the OAuth flow in your browser.
+**"The Designless desktop app isn't reachable" or "Not authenticated"**: the plugin connects through the Designless desktop app. Open it and sign in, then reconnect the server (in Claude Code, from the `/mcp` panel) or start a new session. If you added the MCP server directly instead of the plugin, sign in again from your agent's MCP settings.
 
 **"No brands found"**: run `/designless` and ask for a new brand to get started.
 
