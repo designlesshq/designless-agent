@@ -406,7 +406,7 @@ fn an_unsupported_machine_is_told_so_and_its_hooks_stay_silent() {
     let (code, out, err) = sh(&l, &[], &s.path("home"));
     assert_eq!((code, out.as_str()), (1, ""));
     assert!(err.starts_with("Designless MCP bridge: this platform ("), "{err}");
-    assert!(err.contains(") is not currently supported.\nApple Silicon Macs are the only shipped target today.\nUse the web app at https://designless.app instead, or watch the changelog for new platform support.\n"));
+    assert!(err.contains(") is not supported.\nThe Designless plugin and the Designless app run on Apple Silicon Macs only.\n"));
     assert_eq!(sh(&l, &["hook", "canvas-wake"], &s.path("home")), (0, String::new(), String::new()));
 }
 

@@ -8,7 +8,7 @@
 # server on stdio; `hook <name>` and `inbox-watch <id>` run the plugin's hooks
 # and its live watcher.
 #
-# Apple Silicon Macs are the only shipped target. hw.optional.arm64 reads 1 on
+# Designless runs on Apple Silicon Macs only. hw.optional.arm64 reads 1 on
 # Apple Silicon even when this shell itself runs under Rosetta, and is absent
 # or 0 on an Intel Mac.
 
@@ -46,9 +46,8 @@ if [ "$os" != Darwin ] || [ "$arm64" != 1 ]; then
     *) arch=$machine ;;
   esac
   {
-    echo "Designless MCP bridge: this platform ($platform/$arch) is not currently supported."
-    echo 'Apple Silicon Macs are the only shipped target today.'
-    echo 'Use the web app at https://designless.app instead, or watch the changelog for new platform support.'
+    echo "Designless MCP bridge: this platform ($platform/$arch) is not supported."
+    echo 'The Designless plugin and the Designless app run on Apple Silicon Macs only.'
   } >&2
   exit 1
 fi
