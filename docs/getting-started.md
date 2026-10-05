@@ -4,10 +4,16 @@ This guide walks you through connecting to Designless and creating your first br
 
 ## Prerequisites
 
-- Claude Code (v1.0.33+), the ChatGPT app (Codex), Cursor, or any other agent with skill or MCP support
+- An Apple Silicon Mac (M1 or later). The plugin and the Designless app run on Apple Silicon Macs only.
 - A Designless account. Create one at [designless.app](https://designless.app)
+- The Designless desktop app, signed in. The plugin connects through it. Sign in at [designless.app](https://designless.app) and download the app from the user menu; the download is not shown to a signed-out visit.
+- Claude Code (v1.0.33+, including the Claude desktop app), the ChatGPT app (Codex), or Cursor. Any other agent with MCP support can connect without the plugin (see Step 2).
 
 ## Step 1: Install the plugin
+
+The simplest route is the Designless app: it installs and updates the plugin in Claude Code, the ChatGPT app and Cursor for you.
+
+From a terminal instead (Claude Code and Codex fetch the marketplace with git, so on a Mac without Apple's command line developer tools macOS will ask to install them first):
 
 **Claude Code:**
 ```bash
@@ -28,18 +34,15 @@ The app asks you to review the plugin's hooks once before they run - approve the
 
 How you connect depends on your setup.
 
-**With the Designless desktop app (recommended).** To get the app, sign in at [designless.app](https://designless.app) (or create an account) and download it from there; the download sits in the user menu, so a signed-out visit will not show it. Open the app and sign in there. The plugin then connects through it automatically, with no separate sign-in step. Verify with:
+**With the plugin.** The plugin connects through the Designless desktop app, so open the app and sign in there; there is no separate sign-in step. Verify with:
 ```
 > /designless status
 ```
 
-**Without the desktop app, with the plugin installed.** Run `/designless` and the agent takes you through browser sign-in on first use; the plugin manages its own server connection, so there is no manual step.
-
-**Without the plugin** (any other MCP-compatible agent, or a deliberately plugin-free setup). Connect over HTTP and authenticate in your browser:
+**Without the plugin** (any other MCP-compatible agent, or a deliberately plugin-free setup). Connect over HTTP; MCP OAuth sign-in is available for connections that need it:
 ```bash
 claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
-On first use, a browser opens so you can sign in and authorize access at [designless.app](https://designless.app). Once you approve, the connection completes automatically. Spec-compliant MCP clients discover this flow on their own from the server.
 
 **Verify the connection:**
 ```
@@ -181,7 +184,7 @@ On Team plans, you can share the session with your team so teammates propose edi
 
 ## Troubleshooting
 
-**"Not authenticated".** Run `/designless connect` to trigger the sign-in flow and authenticate in your browser.
+**"The Designless desktop app isn't reachable" or "Not authenticated".** Open the Designless app and sign in, then reconnect the server (in Claude Code, from the `/mcp` panel) or start a new session.
 
 **"No brands found".** Run `/designless` and describe a new brand, or adopt an existing one, to get started. Most flows need a brand.
 

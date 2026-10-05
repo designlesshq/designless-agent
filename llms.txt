@@ -73,7 +73,7 @@ Or add the MCP server directly to any MCP-compatible agent:
 claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
 
-Authentication is handled via OAuth on first use. Visit https://designless.app to create an account.
+Requirements: an Apple Silicon Mac and the Designless desktop app, signed in; the plugin connects through the app. MCP OAuth sign-in is available for connections that need it. Visit https://designless.app to create an account.
 
 ## Links
 

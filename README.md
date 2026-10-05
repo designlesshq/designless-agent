@@ -15,7 +15,15 @@ This repository is public so you can read what runs on your machine: the plugin 
 
 ## Install
 
-### Plugin (recommended)
+### What you need
+
+- An Apple Silicon Mac (M1 or later). The plugin and the Designless app run on Apple Silicon Macs only.
+- The Designless desktop app, signed in. The plugin connects through it, so there is no separate sign-in in your coding agent. Get the app by signing in at [designless.app](https://designless.app) (or creating an account) and downloading it from the user menu; it is not offered on the signed-out page.
+- The coding agent you want to use it in: Claude Code (including the Claude desktop app), the ChatGPT app (Codex), or Cursor.
+
+The easiest install is from the Designless app: it installs and updates the plugin in each of these for you.
+
+### Plugin from a terminal
 
 Install the Designless plugin in Claude Code:
 
@@ -38,7 +46,9 @@ codex plugin marketplace add designlesshq/designless-agent
 codex plugin add designless@designless-plugins
 ```
 
-**Cursor:** the Designless desktop app installs and updates the plugin for you; no manual step in Cursor. See Troubleshooting for where to get the app.
+**Cursor:** the Designless desktop app installs and updates the plugin for you; no manual step in Cursor.
+
+Adding a marketplace from a terminal makes Claude Code and Codex fetch it with git. On a Mac without Apple's command line developer tools, macOS asks to install them first; install from the Designless app instead, which needs neither.
 
 ### MCP server
 
@@ -48,7 +58,7 @@ Add the expression infrastructure runtime directly to any MCP-compatible agent:
 claude mcp add --transport http less-mcp https://mcp.designless.app/mcp
 ```
 
-This gives your agent access to LESS MCP tools; it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available. Authentication is handled via OAuth on first use.
+This gives your agent access to LESS MCP tools; it will use them when you reference your brand, ask about design tokens, or request brand-consistent output. No `/designless` commands, but the runtime capabilities are available. MCP OAuth sign-in is available for connections that need it.
 
 ### Skills (any coding agent)
 
@@ -64,7 +74,7 @@ The installer will:
 3. Choose scope: **Project** (current directory) or **Global** (all projects)
 4. Copy the skill into each agent's `.agents/skills/` directory
 
-After install, the orchestrator is available in your chosen agents. It connects to the expression infrastructure at `mcp.designless.app/mcp`; authentication is handled via OAuth on first use.
+After install, the orchestrator is available in your chosen agents. It connects to the expression infrastructure at `mcp.designless.app/mcp`; MCP OAuth sign-in is available for connections that need it.
 
 ## One command, every flow
 
@@ -94,7 +104,7 @@ The agent discovers capabilities from the expression infrastructure server at ru
 
 ## Troubleshooting
 
-**"Not authenticated"**: run `/designless connect` and complete the OAuth flow in your browser.
+**"The Designless desktop app isn't reachable" or "Not authenticated"**: open the Designless app and sign in, then reconnect the server (in Claude Code, from the `/mcp` panel) or start a new session.
 
 **"No brands found"**: run `/designless` and ask for a new brand to get started.
 
