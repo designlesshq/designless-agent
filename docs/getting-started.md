@@ -4,7 +4,7 @@ This guide walks you through connecting to Designless and creating your first br
 
 ## Prerequisites
 
-- An Apple Silicon Mac (M1 or later) for the plugin. Other platforms are not supported yet.
+- An Apple Silicon Mac (M1 or later). The plugin and the Designless app run on Apple Silicon Macs only.
 - A Designless account. Create one at [designless.app](https://designless.app)
 - The Designless desktop app, signed in. The plugin connects through it. Sign in at [designless.app](https://designless.app) and download the app from the user menu; the download is not shown to a signed-out visit.
 - Claude Code (v1.0.33+, including the Claude desktop app), the ChatGPT app (Codex), or Cursor. Any other agent with MCP support can connect without the plugin (see Step 2).

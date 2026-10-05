@@ -17,7 +17,7 @@ This repository is public so you can read what runs on your machine: the plugin 
 
 ### What you need
 
-- An Apple Silicon Mac (M1 or later). Other platforms are not supported yet.
+- An Apple Silicon Mac (M1 or later). The plugin and the Designless app run on Apple Silicon Macs only.
 - The Designless desktop app, signed in. The plugin connects through it, so there is no separate sign-in in your coding agent. Get the app by signing in at [designless.app](https://designless.app) (or creating an account) and downloading it from the user menu; it is not offered on the signed-out page.
 - The coding agent you want to use it in: Claude Code (including the Claude desktop app), the ChatGPT app (Codex), or Cursor.
 
