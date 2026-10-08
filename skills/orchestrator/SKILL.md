@@ -90,7 +90,7 @@ Create, resolve, and manage brand expression systems. A user describes their bra
 Serve live design tokens tuned to context. Push overrides, evolve the system over time, resolve conflicts between competing design decisions. This is not a static file - it's a runtime API that responds to the conditions of the build.
 
 ### Brand Governance
-Compile brands into capsules - one artifact, versioned, deterministic. Run quality gates. Publish, rollback, manage versions. Validate accessibility. Prove that output is on-brand with traceable evidence chains via EvidenceKit. A brand guideline is a document people read. This is infrastructure machines run.
+Compile brands into capsules - one artifact, versioned, deterministic. Run quality gates. Publish, rollback, manage versions. Validate accessibility. Prove that output is on-brand with traceable evidence chains. A brand guideline is a document people read. This is infrastructure machines run.
 
 ### Coding Agent Support
 Lint generated code against brand rules. Compile content with brand voice via ContentKit - voice-modulated, surface-aware content tokens. Validate output against expression contracts. Manage brand glossary. These are the tools that make agents brand-aware at the moment of creation, not after the fact.
@@ -220,7 +220,7 @@ The user has a brand and wants to build something - a page, a component, a layou
 1. Search for the brief tool (intent: "compile expression brief for active brand") and call it to load tokens, patterns, and voice.
 2. **For component-level intents** ("build me a hero with auth form", "make a pricing table"): search for the composer tool (intent: "compose from natural language with cached decisions"). Do not search on the words "component" or "pattern" here: two sibling tools are named for those subjects and they answer a different question, returning a brief ABOUT one component or one pattern rather than resolving your request into decisions. The tool you want is the one that returns decisions or a cache miss. The composer returns either canonical decisions you execute directly, or a cache miss with slot prompts you run on your own quota - commit results back via the composer-backfill tool so the next caller hits the cache.
 3. **For visual documents** (carousel, deck, email template, hero, blog header): search for the template registry (intent: "list visual document templates") and pick a `template_id` filtered by `document_type`. Then route through Express or Build mode.
-4. **For free-form HTML/CSS**: generate UI using `var(--ls-*)` tokens exclusively. Validate every generation - search for the lint and validate tools and run them, then run the EvidenceKit validator for structural quality.
+4. **For free-form HTML/CSS**: generate UI using `var(--ls-*)` tokens exclusively. Validate every generation - search for the lint and validate tools and run them, then search for the evidence validator (intent: "validate structural quality with evidence") and run it for structural quality.
 5. Present the result with quality metrics, not just code.
 
 ### Extend - Evolve an existing brand's tokens
@@ -315,12 +315,12 @@ The user wants a landing page, email template, blog header, or display ad built 
 
 The user wants to know: is my brand healthy, and is the live deployment still on-brand?
 
-**What you deliver:** A unified audit report covering accessibility (light + dark), coherence, EvidenceKit quality gate, Arbiter compliance scan, inner loop diagnostics for token escapes, and (if deployed pages are registered) drift probe results.
+**What you deliver:** A unified audit report covering accessibility (light + dark), coherence, the evidence check, Arbiter compliance scan, inner loop diagnostics for token escapes, and (if deployed pages are registered) drift probe results.
 
 **How you work:**
 1. Search for the brief tool, load the brand's expression brief.
 2. Search for the accessibility tool, run for both light and dark modes.
-3. Search for the EvidenceKit validator, run against the implementation (HTML the user provides or the active capsule).
+3. Search for the evidence validator (intent: "validate structural quality with evidence"), run against the implementation (HTML the user provides or the active capsule).
 4. Hand off to the Arbiter sub-agent in `audit` mode if a Prism session is active or the user has provided a structured manifest. Arbiter runs the compliance scan, applies deterministic auto-heals, and returns a structured report with violations + flagged-for-review items.
 5. Search for the inner loop, run if any token escapes were flagged in steps 2–4.
 6. If pages are registered for monitoring, search for the page probe and run it on each.
@@ -362,9 +362,9 @@ The user is ready to publish their brand as an immutable, versioned capsule.
 
 The user wants proof that something is on-brand - not a subjective assessment, but traceable evidence.
 
-**What you deliver:** EvidenceKit results with scores, pass/fail, domain breakdowns, and specific fix suggestions for any blockers.
+**What you deliver:** Evidence results with scores, pass/fail, domain breakdowns, and specific fix suggestions for any blockers.
 
-**How you work:** Get the brand context. Search for the EvidenceKit validator and run it against the implementation. Present results as structured proof, not opinion.
+**How you work:** Get the brand context. Search for the evidence validator (intent: "validate structural quality with evidence") and run it against the implementation. Present results as structured proof, not opinion.
 
 ## Expression Surfaces
 
@@ -484,9 +484,9 @@ When you need to validate that generated content is on-brand - inline before del
 **What to expect back:** A compliance badge (green / yellow / red), a passing flag, structured lists of violations / auto-heals / flagged-for-review items, and a `block_delivery` decision based on mode + strictness + badge. Arbiter never auto-applies flagged-for-review items; they route to the user, and only to the user. The scan does record them for human review, but nothing exposes that queue to an agent, so never tell someone their finding has been filed somewhere.
 
 When to invoke:
-- **Audit mode** - Arbiter runs alongside accessibility + EvidenceKit + inner loop + page probes. One signal among many.
+- **Audit mode** - Arbiter runs alongside accessibility + the evidence check + inner loop + page probes. One signal among many.
 - **Express / Build with strict enforcement** - Arbiter runs inline as a gate. Block delivery on a yellow or red badge until the user approves heals or regenerates.
-- **Prove mode** does NOT invoke Arbiter. Prove uses EvidenceKit (decision provenance). Arbiter checks live values against the capsule. Different questions.
+- **Prove mode** does NOT invoke Arbiter. Prove uses the evidence check (decision provenance). Arbiter checks live values against the capsule. Different questions.
 
 ### Other agents
 

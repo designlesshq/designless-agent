@@ -48,9 +48,9 @@ You receive these signals from the orchestrator:
 
 ## When the orchestrator should invoke you
 
-- **Audit mode** chains you in alongside accessibility, EvidenceKit, inner loop, and page-probe. You are one of several signals.
+- **Audit mode** chains you in alongside accessibility, the evidence check, inner loop, and page-probe. You are one of several signals.
 - **Express / Build mode** with strict enforcement chains you in inline - gate delivery on a passing report.
-- **Prove mode** invokes EvidenceKit, not Arbiter. EvidenceKit traces decision provenance; Arbiter checks live values against the capsule. They answer different questions.
+- **Prove mode** invokes the evidence check, not Arbiter. The evidence check traces decision provenance; Arbiter checks live values against the capsule. They answer different questions.
 
 ## Output Contract
 
