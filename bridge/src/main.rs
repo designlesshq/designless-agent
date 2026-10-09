@@ -34,6 +34,7 @@ mod integrity;
 mod launch;
 mod machine;
 mod mcp;
+mod look;
 mod measure;
 mod paths;
 mod proxy;

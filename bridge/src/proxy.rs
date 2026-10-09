@@ -13,6 +13,7 @@ use crate::auth::AuthProvider;
 use crate::error::{BridgeError, BridgeResult};
 use crate::integrity::Integrity;
 use crate::mcp::{FrameReader, FrameWriter};
+use crate::look;
 use crate::measure;
 use crate::picture;
 use anyhow::Result;
@@ -86,6 +87,9 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
             Ok(v) => v,
             Err(e) => error_response(id, &e),
         };
+        // Pages a series check wants looked at come from the app on this
+        // machine, as pictures in the same answer (look.rs).
+        let response = look::shown(response).await;
         writer.write_frame(&response).await?;
     }
 

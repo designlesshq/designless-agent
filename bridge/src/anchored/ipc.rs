@@ -202,6 +202,21 @@ impl IpcClient {
     pub async fn measure(&mut self, html: &str, page: &Value) -> BridgeResult<IpcResponse> {
         self.send_frame(&json!({"op": "measure", "html": html, "page": page})).await
     }
+
+    /// Collect the page sheets the app holds for a series check (look.rs),
+    /// once each. A desktop older than the op answers `error: unknown_op`.
+    pub async fn look_sheets(&mut self, request_ids: &[String]) -> BridgeResult<IpcResponse> {
+        self.send_frame(&json!({"op": "look_sheets", "request_ids": request_ids})).await
+    }
+}
+
+/// One page sheet the app hands over: a PNG, base64, for the request it
+/// answers. The app also says the sheet's index and size; the bridge keeps
+/// the order it arrives in and needs neither.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LookSheet {
+    pub request_id: String,
+    pub png_base64: String,
 }
 
 /// All possible reply frames the server emits. Matches electron/bridge-ipc.js.
@@ -241,6 +256,15 @@ pub enum IpcResponse {
         page: Option<Value>,
         slides: Option<Value>,
         ms: Option<u64>,
+        reason: Option<String>,
+    },
+    /// The page sheets the app held for a series check (look.rs). Every field
+    /// but `ok` is optional, as for the measure.
+    #[serde(rename = "look_sheets")]
+    LookSheets {
+        ok: bool,
+        sheets: Option<Vec<LookSheet>>,
+        missing: Option<Vec<String>>,
         reason: Option<String>,
     },
     #[serde(rename = "error")]
