@@ -35,6 +35,18 @@ const ACTIVE_CAP_BEATS: u64 = 4;
 /// an accelerator that flaps is logged once, not once per cycle.
 const HEALTHY_STREAK: u64 = 3;
 
+/// How long one check may wait for the desktop. The hooks' 700 ms budget is
+/// theirs: they run on every prompt and must not hold up the turn. The watcher
+/// blocks nothing, so it waits as long as the desktop itself can take, which
+/// bounds an inbox read at about 8 s (4 s to get the sign-in, 4 s for the
+/// server) and then answers with the inbox or a refusal. A watcher held to
+/// 700 ms read a desktop answering in 0.9 s as blind on every check and heard
+/// nothing (measured 2026-10-09, on the release that shipped the one-shot).
+/// It stays under one beat, so a slow answer never doubles a check.
+pub const WATCH_BUDGET_MS: u64 = 10_000;
+// Past the longest the desktop takes to answer, and inside one beat.
+const _: () = assert!(WATCH_BUDGET_MS >= 8_000 && WATCH_BUDGET_MS < BEAT_MS);
+
 /// How long the desktop may stay unanswering before a streaming watcher stands
 /// down. Half an hour means the app is closed or the machine asleep; nobody is
 /// editing, and the turn-boundary hook covers the person's return. A one-shot
@@ -309,11 +321,12 @@ pub async fn run(args: &[String], env: &Env) -> i32 {
     // Beats since anything was news. Drives the ladder, and nothing else.
     let mut quiet_beats: u64 = 0;
     loop {
+        let beat_started = std::time::Instant::now();
         // Presence is read on every beat, so a return to the machine is
         // answered on the next one.
         let active = marker::host_is_active(&env.home, js::now_ms(), marker::ACTIVE_WINDOW_MS);
         if should_poll(quiet_beats, BEAT_MS, active) {
-            let probe = probe::probe_inbox().await;
+            let probe = probe::probe_inbox_within(WATCH_BUDGET_MS).await;
             let (voice, next) = step(&probe, &state, &cwd, js::now_ms());
             if probe.unknown.is_none() && next.seen != state.seen {
                 marker::write_seen(&env.home, &sid, seen_json(&next.seen), js::now_ms());
@@ -346,7 +359,10 @@ pub async fn run(args: &[String], env: &Env) -> i32 {
         // The beat never slows: a stale marker frees the session to a second
         // watcher, and a crash that stops beating frees it instead of locking it.
         marker::beat(&env.home, &sid, js::now_ms());
-        tokio::time::sleep(std::time::Duration::from_millis(BEAT_MS)).await;
+        // A slow check spends part of the beat; the rest is slept, so the
+        // cadence holds whatever the desktop takes.
+        let beat = std::time::Duration::from_millis(BEAT_MS);
+        tokio::time::sleep(beat.saturating_sub(beat_started.elapsed())).await;
     }
 }
 
@@ -657,6 +673,16 @@ mod tests {
             st = next;
         }
         assert_eq!(spoke, 1);
+    }
+
+    #[test]
+    fn the_watcher_waits_for_the_desktop_and_the_hooks_do_not() {
+        // The hooks' 700 ms is theirs. The bounds on the watcher's own budget
+        // are checked where it is declared, at compile time.
+        let src = include_str!("watch.rs");
+        let body = &src[src.find("pub async fn run(").unwrap()..src.find("#[cfg(test)]").unwrap()];
+        assert!(body.contains("probe_inbox_within(WATCH_BUDGET_MS)"));
+        assert!(!body.contains("probe::probe_inbox()"), "the hooks' budget is not the watcher's");
     }
 
     #[test]

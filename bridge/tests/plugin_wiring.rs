@@ -222,6 +222,23 @@ impl Drop for Scratch {
     }
 }
 
+/// A stand-in desktop that takes `after` to answer each connection.
+fn slow_desktop(sock: &str, reply: &'static str, after: std::time::Duration) {
+    let listener = std::os::unix::net::UnixListener::bind(sock).unwrap();
+    std::thread::spawn(move || {
+        for conn in listener.incoming().flatten() {
+            std::thread::spawn(move || {
+                let mut r = BufReader::new(conn.try_clone().unwrap());
+                let mut line = String::new();
+                let _ = r.read_line(&mut line);
+                std::thread::sleep(after);
+                let mut w = conn;
+                let _ = w.write_all(reply.as_bytes());
+            });
+        }
+    });
+}
+
 /// A stand-in desktop: answers each connection's first line with `reply`.
 fn desktop(sock: &str, reply: &'static str) {
     let listener = std::os::unix::net::UnixListener::bind(sock).unwrap();
@@ -468,6 +485,24 @@ fn a_restarted_watcher_hears_an_edit_that_brings_the_count_back() {
 }
 
 #[test]
+fn a_desktop_slower_than_the_hooks_budget_still_reaches_the_watcher() {
+    // Measured 2026-10-09: the app answered in 0.9 s and a watcher held to the
+    // hooks' 700 ms heard nothing. The hook still says it could not see; the
+    // watcher waits and hears the edit.
+    let s = Scratch::new("slow1");
+    let sock = s.path("ipc.sock");
+    let reply = "{\"op\":\"inbox\",\"sessions\":[{\"session_id\":\"a\",\"n_artefact\":1,\"n_undelivered\":1,\"latest_seq\":1,\"title\":\"Deck\"}]}\n";
+    slow_desktop(&sock, reply, std::time::Duration::from_millis(1_500));
+    let home = s.path("home");
+    let (_, out, _) = run(&["hook", "canvas-wake"], r#"{"cwd":"/tmp","session_id":"slow-1"}"#, &home, &sock);
+    assert!(context(&out).contains("did not answer (timeout after 700ms)"), "{out}");
+    let mut w = Watcher::start(&["inbox-watch", "--once", "slow-1"], &home, &sock);
+    let line = w.line_within(6).expect("the watcher waits past the hooks' budget");
+    assert!(line.contains("\"Deck\""), "{line}");
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+}
+
+#[test]
 fn edits_in_an_agents_hands_and_a_blind_desktop_wake_nobody() {
     let s = Scratch::new("quiet");
     let home = s.path("home");
@@ -477,14 +512,15 @@ fn edits_in_an_agents_hands_and_a_blind_desktop_wake_nobody() {
     let w = Watcher::start(&["inbox-watch", "--once", "quiet-1"], &home, &held);
     assert_eq!(w.line_within(3), None, "nobody can take those edits, so they are not news");
     assert_eq!(w.stop().0, Some(0));
-    // A desktop that holds the request past the budget.
+    // A desktop that never answers: the watcher waits out its own budget,
+    // then logs it and keeps looking, and says nothing to the agent.
     let slow = s.path("slow.sock");
     desktop(&slow, "");
     let w = Watcher::start(&["inbox-watch", "quiet-2"], &home, &slow);
-    assert_eq!(w.line_within(3), None, "a watcher that cannot see says nothing to the agent");
+    assert_eq!(w.line_within(11), None, "a watcher that cannot see says nothing to the agent");
     let (code, err) = w.stop();
     assert_eq!(code, Some(0));
-    assert!(err.contains("the quick check did not answer (timeout after 700ms); still watching"), "{err}");
+    assert!(err.contains("the quick check did not answer (timeout after 10000ms); still watching"), "{err}");
 }
 
 /// The launcher with this build beside it, in a scratch plugin tree.
