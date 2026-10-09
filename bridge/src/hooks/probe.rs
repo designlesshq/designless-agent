@@ -14,6 +14,8 @@ use super::js::{self, J};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+/// The hooks' budget. They run on every prompt, so the check must never hold
+/// up the turn: a desktop slower than this reads as "could not see".
 const TIMEOUT_MS: u64 = 700;
 
 /// What a missed quick check means, said in every line that reports one.
@@ -211,18 +213,25 @@ fn errno_name(e: &std::io::Error) -> String {
     names.iter().find(|(c, _)| *c == n).map(|(_, s)| s.to_string()).unwrap_or_else(|| "UNKNOWN".into())
 }
 
-/// Probe the desktop inbox over the IPC socket. Never fails: every outcome is
-/// either a trustworthy answer or a stated reason it is not one.
+/// Probe the desktop inbox over the IPC socket, within the hooks' budget.
+/// Never fails: every outcome is either a trustworthy answer or a stated
+/// reason it is not one.
 pub async fn probe_inbox() -> Probe {
+    probe_inbox_within(TIMEOUT_MS).await
+}
+
+/// The same probe with the caller's own budget. The watcher blocks nothing,
+/// so it waits as long as the desktop can take to answer.
+pub async fn probe_inbox_within(budget_ms: u64) -> Probe {
     let Some(sp) = socket_path() else { return Probe::default() };
     // No desktop socket at all is a legitimate "nothing to report": the canvas
     // is not running, so there is no inbox to miss.
     if !dir_is_safe(&sp.dir) || !std::path::Path::new(&sp.sock).exists() {
         return Probe::default();
     }
-    match tokio::time::timeout(Duration::from_millis(TIMEOUT_MS), ask(&sp.sock)).await {
+    match tokio::time::timeout(Duration::from_millis(budget_ms), ask(&sp.sock)).await {
         Ok(p) => p,
-        Err(_) => Probe::unknown(format!("timeout after {TIMEOUT_MS}ms")),
+        Err(_) => Probe::unknown(format!("timeout after {budget_ms}ms")),
     }
 }
 
