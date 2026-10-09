@@ -10,6 +10,12 @@
 //! prompt in ANY session. The watcher's idle ladder reads it, so a quiet canvas
 //! with someone at the keyboard is not mistaken for an empty room.
 //!
+//! **What was last seen** (`<session>.seen.json`): per canvas, the edits nobody
+//! had taken and the notes waiting, as last observed for a host session. A
+//! watcher wakes the agent only for MORE than this, so work the agent was
+//! already told about, by a hook or by the watcher before it, never wakes it
+//! twice. Written by the watcher and by the hooks that read the inbox.
+//!
 //! Never fails: an unreadable file reads as "not armed" or "nobody there".
 
 use super::js::{self, J};
@@ -88,6 +94,29 @@ pub fn beat(home: &str, session: &J, now: f64) -> bool {
 
 pub fn disarm(home: &str, session: &J) -> bool {
     std::fs::remove_file(marker_path(home, session)).is_ok()
+}
+
+pub fn seen_path(home: &str, session: &J) -> String {
+    js::join(&[&watch_dir(home), &format!("{}.seen.json", sanitize_id(&js::to_string(Some(session))))])
+}
+
+/// The last observation for this session, or `None` when there is none yet.
+pub fn read_seen(home: &str, session: &J) -> Option<J> {
+    if !js::truthy(Some(session)) {
+        return None;
+    }
+    let v = js::parse(&js::read_utf8(&seen_path(home, session)).ok()?)?;
+    js::get(Some(&v), "sessions").cloned()
+}
+
+/// Record an observation. Last writer wins: every writer read the inbox, so
+/// the newest observation is the truest one.
+pub fn write_seen(home: &str, session: &J, sessions: J, now: f64) -> bool {
+    if !js::truthy(Some(session)) {
+        return false;
+    }
+    let body = js::obj(vec![("at", J::Str(js::iso_string(now))), ("sessions", sessions)]);
+    std::fs::create_dir_all(watch_dir(home)).is_ok() && std::fs::write(seen_path(home, session), js::stringify(&body)).is_ok()
 }
 
 pub fn activity_path(home: &str) -> String {

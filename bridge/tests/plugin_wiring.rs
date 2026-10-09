@@ -8,7 +8,7 @@
 //! rather than assumed.
 
 use serde_json::Value;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -154,7 +154,8 @@ fn every_host_starts_the_server_with_sh() {
 #[test]
 fn the_command_starts_the_watcher_through_the_launcher() {
     let md = read("commands/agent.md");
-    assert!(md.contains("run `/bin/sh \"${CLAUDE_PLUGIN_ROOT}\"/bin/designless inbox-watch <this session's id>` as a persistent background task labelled exactly \"Designless Agent\""));
+    assert!(md.contains("run `/bin/sh \"${CLAUDE_PLUGIN_ROOT}\"/bin/designless inbox-watch --once <this session's id>` as a background command described exactly \"Designless Agent\""));
+    assert!(md.contains("Bash with `run_in_background`, not the Monitor tool"));
 }
 
 #[test]
@@ -325,7 +326,14 @@ fn the_arm_line_names_the_launcher_beside_the_binary() {
     let (code, out, _) = run(&["hook", "canvas-arm-watch"], input, &s.path("home"), &s.path("absent.sock"));
     assert_eq!(code, 0);
     let dir = Path::new(BIN).canonicalize().unwrap().parent().unwrap().join("designless");
-    assert!(context(&out).contains(&format!("run: /bin/sh '{}' inbox-watch abc-123.", dir.display())), "{out}");
+    assert!(context(&out).contains(&format!("): /bin/sh '{}' inbox-watch --once abc-123.", dir.display())), "{out}");
+    // Once a turn: the same session's next Designless call is not asked again
+    // until the user types.
+    let (_, again, _) = run(&["hook", "canvas-arm-watch"], input, &s.path("home"), &s.path("absent.sock"));
+    assert_eq!(again, "");
+    run(&["hook", "canvas-wake"], r#"{"cwd":"/tmp","session_id":"abc-123"}"#, &s.path("home"), &s.path("absent.sock"));
+    let (_, next_turn, _) = run(&["hook", "canvas-arm-watch"], input, &s.path("home"), &s.path("absent.sock"));
+    assert!(context(&next_turn).contains("inbox-watch --once abc-123."), "{next_turn}");
 }
 
 #[test]
@@ -367,6 +375,116 @@ fn the_watcher_speaks_on_news_and_frees_the_session_when_stopped() {
     let status = child.wait().unwrap();
     assert_eq!(status.code(), Some(0));
     assert!(!Path::new(&marker).exists(), "a stopped watcher frees the session");
+}
+
+/// A watcher process, its stdout and stderr gathered in the background.
+struct Watcher {
+    child: std::process::Child,
+    out: std::sync::mpsc::Receiver<String>,
+}
+impl Watcher {
+    fn start(args: &[&str], home: &str, sock: &str) -> Watcher {
+        let mut child = Command::new(BIN)
+            .args(args)
+            .env_clear()
+            .env("HOME", home)
+            .env("DESIGNLESS_IPC_SOCKET", sock)
+            .current_dir("/tmp")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let (tx, out) = std::sync::mpsc::channel();
+        let stdout = child.stdout.take().unwrap();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                let _ = tx.send(line);
+            }
+        });
+        Watcher { child, out }
+    }
+    /// The first line within `secs`, if any.
+    fn line_within(&self, secs: u64) -> Option<String> {
+        self.out.recv_timeout(std::time::Duration::from_secs(secs)).ok()
+    }
+    /// Stop it and hand back what it wrote to stderr.
+    fn stop(mut self) -> (Option<i32>, String) {
+        unsafe { libc::kill(self.child.id() as i32, libc::SIGTERM) };
+        let status = self.child.wait().unwrap();
+        let mut err = String::new();
+        let _ = self.child.stderr.take().unwrap().read_to_string(&mut err);
+        (status.code(), err)
+    }
+}
+
+#[test]
+fn the_one_shot_prints_once_exits_and_frees_the_session() {
+    let s = Scratch::new("once");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, "{\"op\":\"inbox\",\"sessions\":[{\"session_id\":\"a\",\"n_artefact\":1,\"n_undelivered\":1,\"title\":\"Deck\"}]}\n");
+    let home = s.path("home");
+    let mut w = Watcher::start(&["inbox-watch", "--once", "once-1"], &home, &sock);
+    let line = w.line_within(5).expect("the news");
+    assert!(line.starts_with("Designless canvas: 1 edit(s) are waiting on the Designless app for \"Deck\"."), "{line}");
+    assert!(line.ends_with("inbox-watch --once once-1"), "{line}");
+    assert!(!line.contains("less_stream") && !line.contains("wait_seconds"), "{line}");
+    let status = w.child.wait().unwrap();
+    assert_eq!(status.code(), Some(0), "the exit is the news");
+    assert!(w.line_within(1).is_none(), "one line, then nothing");
+    assert!(!Path::new(&format!("{home}/.designless/watch/once-1.json")).exists(), "an exited watcher frees the session");
+    let seen = std::fs::read_to_string(format!("{home}/.designless/watch/once-1.seen.json")).unwrap();
+    assert!(seen.contains(r#""sessions":[["a",1,0,null]]"#), "{seen}");
+}
+
+#[test]
+fn the_one_shot_does_not_wake_for_what_it_was_already_told() {
+    let s = Scratch::new("told");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, "{\"op\":\"inbox\",\"sessions\":[{\"session_id\":\"a\",\"n_artefact\":1,\"n_undelivered\":1,\"title\":\"Deck\"}]}\n");
+    let home = s.path("home");
+    // The turn-boundary hook told the agent about this edit...
+    let (_, out, _) = run(&["hook", "canvas-wake"], r#"{"cwd":"/tmp","session_id":"told-1"}"#, &home, &sock);
+    assert!(context(&out).contains("\"Deck\""));
+    // ...so a watcher started after it waits for more.
+    let w = Watcher::start(&["inbox-watch", "--once", "told-1"], &home, &sock);
+    assert_eq!(w.line_within(3), None);
+    assert_eq!(w.stop().0, Some(0));
+}
+
+#[test]
+fn a_restarted_watcher_hears_an_edit_that_brings_the_count_back() {
+    // The agent was told about edit 4 and applied it with no watcher running.
+    // Edit 5 brings the count back to one: the restarted watcher must hear it.
+    let s = Scratch::new("again");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, "{\"op\":\"inbox\",\"sessions\":[{\"session_id\":\"a\",\"n_artefact\":1,\"n_undelivered\":1,\"latest_seq\":5,\"title\":\"Deck\"}]}\n");
+    let home = s.path("home");
+    std::fs::create_dir_all(format!("{home}/.designless/watch")).unwrap();
+    std::fs::write(format!("{home}/.designless/watch/again-1.seen.json"), r#"{"at":"2026-10-09T00:00:00.000Z","sessions":[["a",1,0,4]]}"#).unwrap();
+    let mut w = Watcher::start(&["inbox-watch", "--once", "again-1"], &home, &sock);
+    let line = w.line_within(5).expect("the next edit");
+    assert!(line.contains("\"Deck\""), "{line}");
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+}
+
+#[test]
+fn edits_in_an_agents_hands_and_a_blind_desktop_wake_nobody() {
+    let s = Scratch::new("quiet");
+    let home = s.path("home");
+    // An expired canvas whose edits an agent took and never finished.
+    let held = s.path("held.sock");
+    desktop(&held, "{\"op\":\"inbox\",\"sessions\":[{\"session_id\":\"old\",\"recoverable\":true,\"n_artefact\":5,\"n_undelivered\":0,\"title\":\"Old badge\"}]}\n");
+    let w = Watcher::start(&["inbox-watch", "--once", "quiet-1"], &home, &held);
+    assert_eq!(w.line_within(3), None, "nobody can take those edits, so they are not news");
+    assert_eq!(w.stop().0, Some(0));
+    // A desktop that holds the request past the budget.
+    let slow = s.path("slow.sock");
+    desktop(&slow, "");
+    let w = Watcher::start(&["inbox-watch", "quiet-2"], &home, &slow);
+    assert_eq!(w.line_within(3), None, "a watcher that cannot see says nothing to the agent");
+    let (code, err) = w.stop();
+    assert_eq!(code, Some(0));
+    assert!(err.contains("the quick check did not answer (timeout after 700ms); still watching"), "{err}");
 }
 
 /// The launcher with this build beside it, in a scratch plugin tree.

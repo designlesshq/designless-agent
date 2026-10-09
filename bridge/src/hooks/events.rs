@@ -5,6 +5,7 @@
 use super::js::{self, J};
 use super::marker;
 use super::probe::{self, Probe, MISSED_HINT};
+use super::watch;
 use super::Env;
 
 fn emit(event: &str, context: &str) -> String {
@@ -145,8 +146,12 @@ pub async fn session_start(raw: &str, env: &Env) -> Option<String> {
 }
 
 pub fn session_start_text(cwd: &str, sid: Option<&J>, memory: Option<String>, probe: &Probe, env: &Env) -> String {
+    let live = marker::is_armed(&env.home, sid, js::now_ms());
     let want_watch = |has: bool| {
-        if has && js::truthy(sid) && !marker::is_armed(&env.home, sid, js::now_ms()) {
+        if has && js::truthy(sid) && !live {
+            // Always asked at a session start, a resumed one included; the
+            // stamp only spares the rest of this turn a second ask.
+            note_arm_ask(&env.home, sid);
             format!(" {}", arm_line(&js::to_string(sid), env))
         } else {
             String::new()
@@ -167,10 +172,11 @@ read the real inbox with the canvas-inbox tool (less_canvas_inbox) before treati
             ),
         );
     }
+    note_seen(&env.home, sid, probe);
     if probe.count() == 0 {
         return emit("SessionStart", &format!("{reg}{}", want_watch(memory.is_some())));
     }
-    let text = probe::summarize_inbox(&probe.sessions, cwd, probe::Opts::default());
+    let text = probe::summarize_inbox(&probe.sessions, cwd, probe::Opts { watcher_live: live, ..probe::Opts::default() });
     if text.is_empty() {
         return emit("SessionStart", &format!("{reg}{}", want_watch(memory.is_some())));
     }
@@ -250,6 +256,40 @@ fn clear_unknown(home: &str, sid: Option<&J>) {
     }
 }
 
+/// A new turn: the watcher ask may be made once more.
+fn note_turn(home: &str, sid: Option<&J>) {
+    let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
+    let _ = write_state(home, sid, vec![("turn_at", Some(J::Num(js::now_ms())))]);
+}
+
+fn note_arm_ask(home: &str, sid: Option<&J>) {
+    let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
+    let _ = write_state(home, sid, vec![("arm_asked_at", Some(J::Num(js::now_ms())))]);
+}
+
+/// Was the watcher already asked for since the user last typed? The ask is
+/// long, and an agent that cannot or does not start one (a sub-agent, a
+/// headless run, a host with no background commands) heard it after every
+/// Designless call, each copy re-read on every call after it.
+pub fn arm_asked_this_turn(home: &str, sid: &J) -> bool {
+    let st = J::Obj(read_state(home, sid));
+    let asked = js::to_number(js::get(Some(&st), "arm_asked_at"));
+    if !asked.is_finite() {
+        return false;
+    }
+    let turn = js::to_number(js::get(Some(&st), "turn_at"));
+    !(turn.is_finite() && turn > asked)
+}
+
+/// What a hook read is what the agent was told: a watcher started after it
+/// wakes the agent only for more.
+fn note_seen(home: &str, sid: Option<&J>, probe: &Probe) {
+    let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
+    if probe.unknown.is_none() {
+        marker::write_seen(home, sid, watch::seen_json(&watch::work_of(&probe.sessions)), js::now_ms());
+    }
+}
+
 pub async fn canvas_wake(raw: &str, env: &Env) -> Option<String> {
     // A prompt is the plainest evidence a person is here. Stamped first, so a
     // malformed payload or an unreachable desktop does not cost the signal.
@@ -257,6 +297,7 @@ pub async fn canvas_wake(raw: &str, env: &Env) -> Option<String> {
     let input = js::parse(raw).filter(|v| !matches!(v, J::Null))?;
     let cwd = js::nonempty_str(js::get(Some(&input), "cwd"))?.to_string();
     let sid = js::get(Some(&input), "session_id").cloned();
+    note_turn(&env.home, sid.as_ref());
     let probe = probe::probe_inbox().await;
     wake_text(&cwd, sid.as_ref(), &probe, env)
 }
@@ -277,12 +318,14 @@ read less_canvas_inbox, this turn and every turn while it stays unanswered. {MIS
         return Some(emit("UserPromptSubmit", &context));
     }
     clear_unknown(&env.home, sid);
+    note_seen(&env.home, sid, probe);
     // A dark count beside an empty listing is a real message.
     if probe.count() == 0 && !probe.attn_dark.is_some_and(|d| d != 0.0) {
         return None;
     }
     let include_attention = attention_gate(&env.home, sid, &probe::attention_digest(&probe.sessions, probe.attn_dark));
-    let text = probe::summarize_inbox(&probe.sessions, cwd, probe::Opts { include_attention, attn_dark: probe.attn_dark });
+    let watcher_live = marker::is_armed(&env.home, sid, js::now_ms());
+    let text = probe::summarize_inbox(&probe.sessions, cwd, probe::Opts { include_attention, attn_dark: probe.attn_dark, watcher_live });
     if text.is_empty() {
         return None;
     }
@@ -339,17 +382,12 @@ checkout it if it exists) BEFORE you claim - the server withholds every source o
 branch. If safety_branch is null the session is un-stamped: no branch is required. On EVERY source \
 claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). \
 Enumerate with less_canvas_inbox, then apply with less_canvas_ops (claim -> apply on previous_value -> ack). \
-If none remain claimable from here, you are done - and if you keep working beside the open canvas, \
-loop less_stream so the next edit is drained the moment it lands.{hint}"
+If none remain claimable from here, you are done: the watcher brings the next edit, so do not wait or loop for it.{hint}"
     );
     Some(js::stringify(&js::obj(vec![("continue", J::Bool(false)), ("stopReason", J::Str(reason))])))
 }
 
 // ── after a Designless tool ─────────────────────────────────────────────────
-
-/// The longest watch the host allows: a Claude Code monitor is capped at
-/// thirty minutes whatever is asked for.
-pub const WATCH_MS: u64 = 30 * 60_000;
 
 /// Does this tool call mean a canvas is in the picture? Any Designless tool
 /// does, matched on `(^|_)less_` so a lookalike name stays out. The one
@@ -383,23 +421,20 @@ fn says_nothing(t: &str) -> bool {
     })
 }
 
-/// The ask. It names the facility whose lines are heard, the longest watch,
-/// and that an expiry with no event is the end of the watch and not an ask.
+/// The ask: the one-shot watcher, as a background command that reports when
+/// it exits. It waits outside the model, so an idle canvas costs no turns at
+/// all, and its exit is the news. A streaming monitor was the old facility: the
+/// host caps it at half an hour, and the expiry notice woke the agent with
+/// nothing to do, every half hour, for as long as a session stayed open.
 pub fn arm_line(session: &str, env: &Env) -> String {
     format!(
-        "Designless canvas: this session has a canvas in play and no live watcher running, so edits made \
-while you are idle will wait for the next thing the user types. Start one now as a persistent \
-background task whose printed lines reach you while you work: in Claude Code that is the Monitor \
-tool with persistence on, never a plain background command, which reports only when the process \
-exits and would leave every line unheard. Label it exactly \"Designless Agent\", give it the longest \
-watch the host allows (timeout_ms {WATCH_MS}), and run: {} {session}. It stays silent \
-until new edits arrive and prints one line when they do; apply them then, the same as at a turn \
-boundary. It refuses to start a second one, so starting it when one is already running is harmless. \
-When the host later reports that this watch expired and delivered no event, that is the end of the \
-watch and not an ask: do not start another, do not read the inbox, say nothing and end the turn. The \
-hooks cover the next thing the user types, and the next Designless tool call asks for a fresh watcher \
-through this line. If this host has no such facility, ignore this line: the turn-boundary hooks \
-remain the floor.",
+        "Designless canvas: no watcher is running for this session, so an edit made in the app while you are \
+idle would wait for the user's next message. Start one now as a background command that reports when it \
+exits (in Claude Code: Bash with run_in_background, described exactly \"Designless Agent\"): {} --once \
+{session}. It costs nothing while it waits and exits with one line when new edits arrive: apply them as \
+at a turn boundary, then start it again the same way. A second copy refuses to start. If it ends without \
+a line, do nothing. If this host has no such facility, ignore this line: the turn-boundary hooks remain \
+the floor.",
         env.watcher
     )
 }
@@ -432,6 +467,12 @@ pub async fn arm_watch(raw: &str, env: &Env) -> Option<String> {
     let input = js::parse(raw)?;
     let home = env.home.clone();
     let context = decide(Some(&input), env, &|s| marker::is_armed(&home, Some(s), js::now_ms()))?;
+    // decide answers only with a session id in hand.
+    let sid = js::coalesce(js::get(Some(&input), "session_id"), js::get(Some(&input), "sessionId"))?;
+    if arm_asked_this_turn(&env.home, sid) {
+        return None;
+    }
+    note_arm_ask(&env.home, Some(sid));
     Some(emit("PostToolUse", &context))
 }
 
@@ -739,28 +780,43 @@ mod tests {
     }
 
     #[test]
-    fn the_ask_carries_the_session_and_the_command() {
+    fn the_ask_is_made_once_a_turn() {
+        let h = home("arm-turn");
+        let sid = s("s-turn");
+        assert!(!arm_asked_this_turn(&h, &sid), "never asked");
+        note_arm_ask(&h, Some(&sid));
+        assert!(arm_asked_this_turn(&h, &sid), "asked, and the user has not typed since");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        note_turn(&h, Some(&sid));
+        assert!(!arm_asked_this_turn(&h, &sid), "a new turn may ask again");
+        note_arm_ask(&h, Some(&sid));
+        assert!(arm_asked_this_turn(&h, &sid));
+    }
+
+    #[test]
+    fn the_ask_carries_the_session_and_the_one_shot_command() {
         let e = env("/nowhere");
         let input = js::obj(vec![("tool_name", s("x_less_canvas_compose")), ("session_id", s("abc-123")), ("tool_response", s(""))]);
         let line = decide(Some(&input), &e, NEVER).unwrap();
-        assert!(line.contains("inbox-watch abc-123"), "the command must be runnable as written");
-        assert!(line.contains("run: /bin/sh '/p/bin/designless' inbox-watch abc-123."));
+        assert!(line.contains("inbox-watch --once abc-123"), "the command must be runnable as written");
+        assert!(line.contains("): /bin/sh '/p/bin/designless' inbox-watch --once abc-123."));
         assert!(line.contains("\"Designless Agent\""));
-        assert!(line.contains("persistent"));
         assert!(!line.contains("node "), "no Node on the user's machine");
     }
 
     #[test]
-    fn the_ask_names_the_heard_facility_the_ceiling_and_the_expiry_rule() {
+    fn the_ask_names_a_background_command_that_reports_its_exit() {
         let line = arm_line("s1", &env("/nowhere"));
-        assert!(line.contains("Monitor tool"));
-        assert!(line.contains("reports only when the process exits"));
-        assert_eq!(WATCH_MS, 30 * 60_000);
-        assert!(line.contains(&format!("timeout_ms {WATCH_MS})")));
-        assert!(line.contains("expired and delivered no event"));
-        assert!(line.contains("not an ask"));
-        assert!(line.contains("do not start another, do not read the inbox, say nothing"));
-        assert!(line.contains("next Designless tool call asks for a fresh watcher"));
+        assert!(line.contains("background command that reports when it exits"));
+        assert!(line.contains("Bash with run_in_background"));
+        assert!(line.contains("costs nothing while it waits"));
+        assert!(line.contains("then start it again the same way"));
+        // The old facility was capped at half an hour and woke the agent at
+        // every expiry; the ask no longer names it or its ceiling.
+        assert!(!line.contains("Monitor"));
+        assert!(!line.contains("timeout_ms"));
+        assert!(!line.contains('\u{2014}'));
+        assert!(line.len() < 700, "the ask is re-read on every call after it: {}", line.len());
         assert!(!line.to_lowercase().split(|c: char| !c.is_alphanumeric()).any(|w| w == "drain"));
     }
 
@@ -771,13 +827,27 @@ mod tests {
     }
 
     #[test]
-    fn wiring_the_skill_carries_the_same_expiry_rule_and_ceiling() {
+    fn wiring_the_skill_starts_the_watcher_the_ask_names() {
         let skill = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../skills/orchestrator/SKILL.md")).unwrap();
-        assert!(skill.contains("expires with no event has ended, and its expiry notice is not an ask"));
+        assert!(skill.contains("`bin/designless inbox-watch --once`"));
+        assert!(skill.contains("In Claude Code that is Bash with `run_in_background`. Not the Monitor tool"));
+        assert!(skill.contains("A watcher that ends without a line is not an ask"));
         assert!(skill.contains("do not start another, do not read the inbox, say nothing and end the turn"));
-        assert!(skill.contains(&format!("timeout_ms: {WATCH_MS}`")));
+        assert!(!skill.contains("timeout_ms: 1800000"), "the capped monitor and its ceiling are gone");
+        assert!(!skill.contains("loop `less_stream`"), "a stream loop is a turn per keepalive");
+        assert!(skill.contains("Never loop a wait"));
         assert!(skill.contains("A missed quick check is the designed behaviour of a deliberately short budget"));
         assert!(skill.contains("never a fault to diagnose, a finding to report, or a thing to mention to the user"));
+    }
+
+    #[test]
+    fn wiring_no_agent_text_asks_for_a_stream_loop() {
+        for f in ["agents/prism-agent.md", "commands/agent.md", "skills/orchestrator/SKILL.md"] {
+            let t = std::fs::read_to_string(format!("{}/../{f}", env!("CARGO_MANIFEST_DIR"))).unwrap();
+            for bad in ["loop `less_stream`", "loop less_stream", "Monitor tool with persistence"] {
+                assert!(!t.contains(bad), "{f}: {bad}");
+            }
+        }
     }
 
     // ── the turn-boundary hook (canvas-wake) ──
@@ -870,7 +940,7 @@ mod tests {
         let out = ctx(&session_start_text("/tmp", Some(&s("sid-9")), None, &probe, &env(&h)));
         assert!(out.starts_with("Designless canvas (waiting edits): 1 edit(s) are waiting on the Designless app for \"Deck\"."));
         assert!(out.ends_with("remain the floor."));
-        assert!(out.contains("inbox-watch sid-9."));
+        assert!(out.contains("inbox-watch --once sid-9."));
         // Nothing waiting and no memory: the register alone.
         assert_eq!(ctx(&session_start_text("/tmp", Some(&s("sid-9")), None, &Probe::default(), &env(&h))), REGISTER);
     }
@@ -892,6 +962,8 @@ mod tests {
         let out = drain_text("/tmp", &unknown_checkout).unwrap();
         assert!(out.starts_with(r#"{"continue":false,"stopReason":"Designless canvas: page (Type-2 SOURCE)"#));
         assert!(out.ends_with(r#" Required safety branch(es): designless/abc (server-owned; read from each row's safety_branch, do NOT derive)."}"#));
+        assert!(out.contains("the watcher brings the next edit, so do not wait or loop for it."));
+        assert!(!out.contains("less_stream"));
     }
 
     // ── the compose epilogue ──
