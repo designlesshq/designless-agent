@@ -69,6 +69,12 @@ pub struct Work {
     /// Notes left on the canvas. Reading one does not take it, so a note in
     /// hand looks like a new one; only MORE notes than were seen are news.
     pub notes: f64,
+    /// The canvas's newest edit number. Every new edit advances it and
+    /// applying one does not, so it tells a new edit from an old one when the
+    /// counts alone cannot: the agent applies what it was told while no
+    /// watcher runs, and the next edit brings the count back to where it was.
+    /// `None` from a server that does not say.
+    pub seq: Option<f64>,
 }
 
 /// Per canvas, what it holds, as a value that changes only when the work does.
@@ -83,7 +89,9 @@ pub fn work_of(sessions: &[J]) -> Vec<(String, Work)> {
             // A row from an older server does not say, and counts every edit
             // as untaken, as the server's wait does for the same row.
             let untaken = if js::nullish(undelivered) { n("n_page") + n("n_artefact") } else { js::num_or_zero(undelivered) };
-            let w = Work { untaken, notes: n("n_annotation") };
+            let seq = js::get(Some(s), "latest_seq");
+            let seq = if js::nullish(seq) { None } else { Some(js::to_number(seq)).filter(|v| v.is_finite()) };
+            let w = Work { untaken, notes: n("n_annotation"), seq };
             // NaN counts as nothing.
             if (w.untaken + w.notes).partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
                 return None;
@@ -96,13 +104,15 @@ pub fn work_of(sessions: &[J]) -> Vec<(String, Work)> {
     rows
 }
 
-/// The canvases holding more than `before` said they did. Less is never news:
-/// it is the agent's own work landing.
+/// The canvases holding work the agent has not been told about: more of it
+/// than `before` said, or, at the same count, a newer edit. Less is never
+/// news: it is the agent's own work landing.
 pub fn news(before: &[(String, Work)], now: &[(String, Work)]) -> Vec<String> {
     now.iter()
         .filter(|(id, w)| {
             let was = before.iter().find(|(b, _)| b == id).map(|(_, w)| w.clone()).unwrap_or_default();
-            w.untaken > was.untaken || w.notes > was.notes
+            let newer = matches!((w.seq, was.seq), (Some(s), Some(b)) if s > b);
+            w.untaken > was.untaken || w.notes > was.notes || newer
         })
         .map(|(id, _)| id.clone())
         .collect()
@@ -110,7 +120,11 @@ pub fn news(before: &[(String, Work)], now: &[(String, Work)]) -> Vec<String> {
 
 /// `work_of` as the shape `marker::write_seen` keeps on disk.
 pub fn seen_json(work: &[(String, Work)]) -> J {
-    J::Arr(work.iter().map(|(id, w)| J::Arr(vec![J::Str(id.clone()), J::Num(w.untaken), J::Num(w.notes)])).collect())
+    J::Arr(
+        work.iter()
+            .map(|(id, w)| J::Arr(vec![J::Str(id.clone()), J::Num(w.untaken), J::Num(w.notes), w.seq.map(J::Num).unwrap_or(J::Null)]))
+            .collect(),
+    )
 }
 
 /// The shape on disk read back. Anything unreadable is nothing seen.
@@ -118,9 +132,16 @@ pub fn seen_from_json(v: Option<&J>) -> Vec<(String, Work)> {
     let Some(J::Arr(rows)) = v else { return Vec::new() };
     rows.iter()
         .filter_map(|r| match r {
-            J::Arr(f) if f.len() == 3 => Some((
+            J::Arr(f) if f.len() == 3 || f.len() == 4 => Some((
                 js::to_string(f.first()),
-                Work { untaken: js::num_or_zero(f.get(1)), notes: js::num_or_zero(f.get(2)) },
+                Work {
+                    untaken: js::num_or_zero(f.get(1)),
+                    notes: js::num_or_zero(f.get(2)),
+                    seq: match f.get(3) {
+                        Some(J::Num(n)) if n.is_finite() => Some(*n),
+                        _ => None,
+                    },
+                },
             )),
             _ => None,
         })
@@ -480,6 +501,30 @@ mod tests {
     }
 
     #[test]
+    fn a_new_edit_after_the_agent_applied_is_news_at_the_same_count() {
+        // The agent was told about one edit and applied it while no watcher
+        // ran, so nothing saw the count fall. The next edit brings it back to
+        // one: only the edit number says it is new.
+        let told = sessions(r#"[{"session_id":"a","n_artefact":1,"n_undelivered":1,"latest_seq":4}]"#);
+        let st = State { seen: work_of(&told.sessions), ..Default::default() };
+        let next = sessions(r#"[{"session_id":"a","n_artefact":1,"n_undelivered":1,"latest_seq":5}]"#);
+        assert!(wake(&step(&next, &st, &cwd(), 0.0).0).is_some());
+        // The same edit, still waiting, is not.
+        assert_eq!(step(&told, &st, &cwd(), 0.0).0, Voice::Silent);
+    }
+
+    #[test]
+    fn applying_does_not_advance_the_edit_number() {
+        let rows = |n: u32| sessions(&format!(r#"[{{"session_id":"a","n_artefact":{n},"n_undelivered":{n},"latest_seq":7}}]"#));
+        let (_, mut st) = step(&rows(2), &State::default(), &cwd(), 0.0);
+        for n in [1, 0] {
+            let (v, next) = step(&rows(n), &st, &cwd(), 0.0);
+            assert_eq!(v, Voice::Silent);
+            st = next;
+        }
+    }
+
+    #[test]
     fn claiming_an_edit_is_not_news_either() {
         let (_, st) = step(&sessions(r#"[{"session_id":"a","n_artefact":1,"n_undelivered":1}]"#), &State::default(), &cwd(), 0.0);
         let claimed = sessions(r#"[{"session_id":"a","n_artefact":1,"n_undelivered":0}]"#);
@@ -519,7 +564,7 @@ mod tests {
 
     #[test]
     fn a_row_from_an_older_server_counts_every_edit_as_untaken() {
-        assert_eq!(work_of(&sessions(r#"[{"session_id":"a","n_page":1,"n_artefact":2}]"#).sessions), vec![("a".into(), Work { untaken: 3.0, notes: 0.0 })]);
+        assert_eq!(work_of(&sessions(r#"[{"session_id":"a","n_page":1,"n_artefact":2}]"#).sessions), vec![("a".into(), Work { untaken: 3.0, notes: 0.0, seq: None })]);
         assert_eq!(work_of(&sessions(r#"[{"session_id":"a","n_page":1,"n_artefact":2,"n_undelivered":null}]"#).sessions)[0].1.untaken, 3.0);
         assert_eq!(work_of(&sessions(r#"[{"session_id":"a","n_artefact":2,"n_undelivered":1}]"#).sessions)[0].1.untaken, 1.0);
     }
@@ -530,7 +575,10 @@ mod tests {
         assert_eq!(seen_from_json(Some(&js::parse(&js::stringify(&seen_json(&w))).unwrap())), w);
         assert_eq!(seen_from_json(None), vec![]);
         assert_eq!(seen_from_json(Some(&J::Str("junk".into()))), vec![]);
-        assert_eq!(seen_from_json(Some(&js::parse(r#"[["a",1],"x",["b",1,0]]"#).unwrap())), vec![("b".into(), Work { untaken: 1.0, notes: 0.0 })]);
+        assert_eq!(seen_from_json(Some(&js::parse(r#"[["a",1],"x",["b",1,0]]"#).unwrap())), vec![("b".into(), Work { untaken: 1.0, notes: 0.0, seq: None })]);
+        let with_seq = work_of(&sessions(r#"[{"session_id":"c","n_artefact":1,"latest_seq":9}]"#).sessions);
+        assert_eq!(with_seq[0].1.seq, Some(9.0));
+        assert_eq!(seen_from_json(Some(&js::parse(&js::stringify(&seen_json(&with_seq))).unwrap())), with_seq);
     }
 
     #[test]
@@ -684,7 +732,7 @@ mod tests {
     #[test]
     fn a_watcher_that_can_see_keeps_watching() {
         let now = js::now_ms();
-        assert!(!should_stand_down(&State { seen: vec![("a".into(), Work { untaken: 1.0, notes: 0.0 })], healthy: 9, ..Default::default() }, now, STAND_DOWN_MS));
+        assert!(!should_stand_down(&State { seen: vec![("a".into(), Work { untaken: 1.0, notes: 0.0, seq: None })], healthy: 9, ..Default::default() }, now, STAND_DOWN_MS));
         assert!(!should_stand_down(&State::default(), now, STAND_DOWN_MS));
         assert!(!should_stand_down(&State { blind: false, blind_since: Some(now - 60.0 * MIN), ..Default::default() }, now, STAND_DOWN_MS));
     }
@@ -708,7 +756,7 @@ mod tests {
         assert_eq!(work_of(&[]), vec![]);
         assert_eq!(
             work_of(&sessions(r#"[{"session_id":"b","n_page":"2"},{"n_artefact":1}]"#).sessions),
-            vec![("".into(), Work { untaken: 1.0, notes: 0.0 }), ("b".into(), Work { untaken: 2.0, notes: 0.0 })]
+            vec![("".into(), Work { untaken: 1.0, notes: 0.0, seq: None }), ("b".into(), Work { untaken: 2.0, notes: 0.0, seq: None })]
         );
     }
 }

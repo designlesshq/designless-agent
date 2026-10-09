@@ -433,7 +433,7 @@ fn the_one_shot_prints_once_exits_and_frees_the_session() {
     assert!(w.line_within(1).is_none(), "one line, then nothing");
     assert!(!Path::new(&format!("{home}/.designless/watch/once-1.json")).exists(), "an exited watcher frees the session");
     let seen = std::fs::read_to_string(format!("{home}/.designless/watch/once-1.seen.json")).unwrap();
-    assert!(seen.contains(r#""sessions":[["a",1,0]]"#), "{seen}");
+    assert!(seen.contains(r#""sessions":[["a",1,0,null]]"#), "{seen}");
 }
 
 #[test]
@@ -449,6 +449,22 @@ fn the_one_shot_does_not_wake_for_what_it_was_already_told() {
     let w = Watcher::start(&["inbox-watch", "--once", "told-1"], &home, &sock);
     assert_eq!(w.line_within(3), None);
     assert_eq!(w.stop().0, Some(0));
+}
+
+#[test]
+fn a_restarted_watcher_hears_an_edit_that_brings_the_count_back() {
+    // The agent was told about edit 4 and applied it with no watcher running.
+    // Edit 5 brings the count back to one: the restarted watcher must hear it.
+    let s = Scratch::new("again");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, "{\"op\":\"inbox\",\"sessions\":[{\"session_id\":\"a\",\"n_artefact\":1,\"n_undelivered\":1,\"latest_seq\":5,\"title\":\"Deck\"}]}\n");
+    let home = s.path("home");
+    std::fs::create_dir_all(format!("{home}/.designless/watch")).unwrap();
+    std::fs::write(format!("{home}/.designless/watch/again-1.seen.json"), r#"{"at":"2026-10-09T00:00:00.000Z","sessions":[["a",1,0,4]]}"#).unwrap();
+    let mut w = Watcher::start(&["inbox-watch", "--once", "again-1"], &home, &sock);
+    let line = w.line_within(5).expect("the next edit");
+    assert!(line.contains("\"Deck\""), "{line}");
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
 }
 
 #[test]
