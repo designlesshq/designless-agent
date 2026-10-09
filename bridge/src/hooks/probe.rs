@@ -619,13 +619,22 @@ fn checkout_path_hint(rows: &[&J], cwd: &str) -> String {
 pub struct Opts {
     pub include_attention: bool,
     pub attn_dark: Option<f64>,
+    /// A watcher is running for this session, so the next edit reaches the
+    /// agent without it asking: the text says nothing about waiting.
+    pub watcher_live: bool,
 }
 
 impl Default for Opts {
     fn default() -> Self {
-        Opts { include_attention: true, attn_dark: None }
+        Opts { include_attention: true, attn_dark: None, watcher_live: false }
     }
 }
+
+/// How an agent with no watcher stays synced inside a long turn. One wait,
+/// never a loop: every pass of a loop is a whole turn re-read, and a keepalive
+/// every half minute made an idle stretch the most expensive part of a session.
+pub const WAIT_ONCE: &str = "If your turn goes on beside the open canvas after applying them, wait once for the next edit \
+(less_canvas_inbox with wait_seconds). Do not loop the wait: each pass costs a whole turn.";
 
 /// The agent-facing wake text, routed by surface and checkout. Empty when
 /// there is nothing actionable to say.
@@ -753,10 +762,11 @@ tell the user plainly, once, that an edit of theirs is still waiting there. Do n
             recoverable.len()
         ));
     }
-    // Only when there is something to drain: "after draining" over nothing is
-    // a heading over empty space.
-    if here.len() + elsewhere.len() + artefact.len() + annotations.len() + recoverable.len() > 0 {
-        lines.push("After applying them, loop less_stream to stay synced for the rest of the turn - it waits server-side and returns the moment the next edit lands.".into());
+    // Only when there is something to drain, and only when no watcher will
+    // bring the next edit: "after draining" over nothing is a heading over
+    // empty space, and a wait beside a live watcher is paid for twice.
+    if !opts.watcher_live && here.len() + elsewhere.len() + artefact.len() + annotations.len() + recoverable.len() > 0 {
+        lines.push(WAIT_ONCE.into());
     }
     lines.join(" ")
 }
@@ -1150,7 +1160,7 @@ mod tests {
 
     #[test]
     fn a_dark_count_speaks_beside_an_empty_listing_inform_only() {
-        let text = summarize_inbox(&[], &tmpdir(), Opts { include_attention: true, attn_dark: Some(1.0) });
+        let text = summarize_inbox(&[], &tmpdir(), Opts { include_attention: true, attn_dark: Some(1.0), ..Opts::default() });
         assert!(text.contains("waited more than a day"));
         assert!(text.contains("Designless app"));
         assert!(text.contains("Do not act on it"));
@@ -1162,22 +1172,37 @@ mod tests {
 
     #[test]
     fn the_dark_line_obeys_the_gate() {
-        assert_eq!(summarize_inbox(&[], &tmpdir(), Opts { include_attention: false, attn_dark: Some(3.0) }), "");
+        assert_eq!(summarize_inbox(&[], &tmpdir(), Opts { include_attention: false, attn_dark: Some(3.0), ..Opts::default() }), "");
     }
 
     #[test]
     fn an_absent_dark_count_says_nothing() {
         for d in [None, Some(0.0)] {
-            assert_eq!(summarize_inbox(&[], &tmpdir(), Opts { include_attention: true, attn_dark: d }), "");
+            assert_eq!(summarize_inbox(&[], &tmpdir(), Opts { include_attention: true, attn_dark: d, ..Opts::default() }), "");
         }
     }
 
     #[test]
     fn the_apply_tail_follows_waiting_edits() {
         let rows = vec![row(vec![("session_id", s("s")), ("n_artefact", J::Num(1.0)), ("title", s("Deck"))])];
-        let text = summarize_inbox(&rows, &tmpdir(), Opts { include_attention: true, attn_dark: Some(1.0) });
-        assert!(text.contains("After applying"));
+        let text = summarize_inbox(&rows, &tmpdir(), Opts { include_attention: true, attn_dark: Some(1.0), ..Opts::default() });
+        assert!(text.contains(WAIT_ONCE));
         assert!(text.contains("waited more than a day"));
+    }
+
+    #[test]
+    fn the_wait_is_one_wait_and_never_beside_a_live_watcher() {
+        let rows = vec![row(vec![("session_id", s("s")), ("n_artefact", J::Num(1.0)), ("title", s("Deck"))])];
+        let alone = summarize_inbox(&rows, &tmpdir(), Opts::default());
+        assert!(alone.ends_with(WAIT_ONCE), "{alone}");
+        assert!(!alone.contains("less_stream"), "a stream loop is a turn per keepalive");
+        assert!(WAIT_ONCE.contains("Do not loop"));
+        assert!(!WAIT_ONCE.contains('\u{2014}'));
+        let watched = summarize_inbox(&rows, &tmpdir(), Opts { watcher_live: true, ..Opts::default() });
+        assert!(watched.contains("\"Deck\""));
+        for w in ["wait_seconds", "less_stream", "loop"] {
+            assert!(!watched.contains(w), "{w}: {watched}");
+        }
     }
 
     #[test]

@@ -4,8 +4,8 @@
 //! machine with only the host app installed failed every hook. Here they need
 //! nothing beyond the binary the plugin already ships.
 //!
-//!   designless-mcp-bridge hook <name>          the host's event hooks
-//!   designless-mcp-bridge inbox-watch <id>     the watcher the agent starts
+//!   designless-mcp-bridge hook <name>               the host's event hooks
+//!   designless-mcp-bridge inbox-watch [--once] <id> the watcher the agent starts
 //!
 //! Behaviour is the scripts' own, file for file and line for line: the same
 //! stdin handling, the same text on stdout, the same files under `~` in the
@@ -99,12 +99,13 @@ pub fn run_hook(name: Option<&str>) -> i32 {
     0
 }
 
-/// Run the watcher until it stands down, is stopped, or finds one running.
-pub fn run_watch(session: Option<&str>) -> i32 {
+/// Run the watcher until it has news (with `--once`), stands down, is
+/// stopped, or finds one running. `args` are the words after `inbox-watch`.
+pub fn run_watch(args: &[String]) -> i32 {
     std::panic::catch_unwind(|| {
         let env = Env::detect()?;
         let rt = runtime()?;
-        Some(rt.block_on(watch::run(session, &env)))
+        Some(rt.block_on(watch::run(args, &env)))
     })
     .ok()
     .flatten()

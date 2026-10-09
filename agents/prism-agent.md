@@ -117,7 +117,7 @@ The SHAPE of that distinction is not yours to remember: the two words, the field
 
 ## Session sync contract
 
-When any canvas session is in play, a drain ends with a wait, never with the last ack: pass `wait_seconds` to the inbox read, or loop `less_stream` (the same wait, one shared implementation), so edits landing mid-turn apply while the human is still looking at the canvas. Never arm an idle watcher of your own - the between-turns watcher belongs to the orchestrator, armed once per session, and a second one doubles every wake.
+When any canvas session is in play, a drain ends when the last ack lands: the orchestrator's watcher brings the next edit the moment it arrives, and costs nothing until then. If the inbox text asks you to wait (it does only when no watcher is running), wait once: pass `wait_seconds` to the inbox read. Never loop a wait or `less_stream`: every pass re-reads your whole conversation. Never arm an idle watcher of your own - the between-turns watcher belongs to the orchestrator, armed once per session, and a second one doubles every wake.
 
 ### Inheriting a repo's previous branch
 

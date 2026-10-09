@@ -47,7 +47,7 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("hook") => std::process::exit(hooks::run_hook(args.get(2).map(String::as_str))),
-        Some("inbox-watch") => std::process::exit(hooks::run_watch(args.get(2).map(String::as_str))),
+        Some("inbox-watch") => std::process::exit(hooks::run_watch(args.get(2..).unwrap_or_default())),
         _ => {}
     }
 
