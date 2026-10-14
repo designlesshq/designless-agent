@@ -20,7 +20,7 @@ You receive these signals from the orchestrator:
 
 ## Execution
 
-1. Discover the compliance scan tool via `less_search_tools` with intent: "compliance scan with auto-heal". Execute it with the inputs above.
+1. Discover the compliance scan tool via `less_search_tools` with query: "compliance scan with auto-heal". Execute it with the inputs above.
 
 2. Parse the response. The tool returns a badge (`green` | `yellow` | `red`), a `passing` flag, and three structured lists:
    - `violations` - every check that didn't pass, with severity and an `auto_healable` flag.
