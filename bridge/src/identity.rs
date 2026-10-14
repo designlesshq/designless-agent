@@ -9,6 +9,13 @@
 //! derived once per process, and neither can be set by a tool call.
 //! `DESIGNLESS_HARNESS` overrides the handshake for a harness that announces
 //! itself vaguely (the same variable the launcher may set per host).
+//!
+//! A third header, `x-designless-session`, names the conversation (2026-10-14):
+//! the host session the agent is working in, which outlives a bridge restart
+//! and ends when the conversation does. Each host says it its own way: Claude
+//! Code puts it in its MCP servers' environment, Codex on every tool call.
+//! Only a short hash of it travels (`session_label`), so the id itself never
+//! leaves this machine.
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -21,6 +28,37 @@ pub struct Identity {
     pub version: Option<String>,
     /// Eight hex characters, stable for this process.
     pub actor: String,
+    /// The host session this bridge serves, as `session_label` names it, once the host has said.
+    pub session: Option<String>,
+}
+
+/// The name a host session goes by on the wire: the host, a colon, and the
+/// first eight hex of a SHA-256 of the host's own session id. Hashed rather
+/// than cut, because some hosts begin their ids with a timestamp, so two
+/// sessions started within a minute would share a prefix. The watcher derives
+/// the same name from the id it is given. Anything that does not look like an
+/// id names nothing.
+pub fn session_label(host: &str, session_id: &str) -> Option<String> {
+    let id = session_id.trim();
+    if id.is_empty() || id.len() > 128 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return None;
+    }
+    let digest = Sha256::digest(id.as_bytes());
+    let hash: String = digest.iter().take(4).map(|b| format!("{b:02x}")).collect();
+    Some(format!("{host}:{hash}"))
+}
+
+/// Claude Code sets its session id in the environment of every MCP server it
+/// starts, and a cleared conversation starts a new server with the new id.
+pub fn session_from_env() -> Option<String> {
+    std::env::var("CLAUDE_CODE_SESSION_ID").ok().and_then(|id| session_label("claude", &id))
+}
+
+/// Codex gives its MCP servers no session in the environment, but names it on
+/// every tool call, in the turn metadata.
+pub fn session_from_frame(frame: &Value) -> Option<String> {
+    let id = frame.pointer("/params/_meta/x-codex-turn-metadata/session_id")?.as_str()?;
+    session_label("codex", id)
 }
 
 /// The slug a harness name maps to. Case and punctuation are the harness's
@@ -90,17 +128,26 @@ impl Identity {
             .filter(|v| !v.trim().is_empty())
             .map(|v| harness_slug(&v))
             .unwrap_or_else(|| "unknown".to_string());
-        Self { harness, version: None, actor }
+        Self { harness, version: None, actor, session: session_from_env() }
     }
 
-    /// The handshake names the harness, unless the environment already did.
+    /// The handshake names the harness, unless the environment already did. A
+    /// tool call may name the session. A Claude Code session id this bridge
+    /// inherited is not the session of another host that started it.
     pub fn learn_from(&mut self, frame: &Value) {
-        if std::env::var("DESIGNLESS_HARNESS").ok().filter(|v| !v.trim().is_empty()).is_some() {
-            return;
+        if let Some(session) = session_from_frame(frame) {
+            self.session = Some(session);
         }
-        if let Some((harness, version)) = harness_from_initialize(frame) {
-            self.harness = harness;
-            self.version = version;
+        let pinned = std::env::var("DESIGNLESS_HARNESS").ok().filter(|v| !v.trim().is_empty()).is_some();
+        if !pinned {
+            if let Some((harness, version)) = harness_from_initialize(frame) {
+                self.harness = harness;
+                self.version = version;
+            }
+        }
+        let inherited = self.session.as_deref().is_some_and(|s| s.starts_with("claude:"));
+        if inherited && self.harness != "claude-code" && self.harness != "unknown" {
+            self.session = None;
         }
     }
 
@@ -160,11 +207,65 @@ mod tests {
 
     #[test]
     fn the_identity_learns_the_harness_from_the_handshake_and_says_it_with_its_version() {
-        let mut id = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into() };
+        let mut id = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: None };
         id.learn_from(&json!({ "method": "initialize", "params": { "clientInfo": { "name": "Codex", "version": "0.9.0" } } }));
         assert_eq!(id.harness, "codex");
         assert_eq!(id.harness_header(), "codex/0.9.0");
-        let bare = Identity { harness: "cursor".into(), version: None, actor: "ab12cd34".into() };
+        let bare = Identity { harness: "cursor".into(), version: None, actor: "ab12cd34".into(), session: None };
         assert_eq!(bare.harness_header(), "cursor");
+    }
+
+    #[test]
+    fn a_session_is_named_by_its_host_and_a_short_hash_of_its_id() {
+        let a = session_label("claude", "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f").unwrap();
+        assert!(a.starts_with("claude:"), "{a}");
+        let hash = &a["claude:".len()..];
+        assert_eq!(hash.len(), 8);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert_eq!(Some(a.clone()), session_label("claude", " 3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f "), "the same id always has the same name");
+        assert!(!a.contains("3f2c9a10"), "the id itself does not travel");
+        // Ids that begin with a timestamp still get different names.
+        let one = session_label("codex", "0190abcd-0000-7000-8000-000000000001").unwrap();
+        let two = session_label("codex", "0190abcd-1111-7000-8000-000000000002").unwrap();
+        assert_ne!(one, two);
+        for bad in ["", "   ", "has space", "semi;colon", &"x".repeat(129)] {
+            assert_eq!(session_label("claude", bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn codex_names_the_session_on_every_tool_call_and_nowhere_else() {
+        let call = json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {
+            "name": "less_canvas_ops", "arguments": {},
+            "_meta": { "callId": "exec-1", "x-codex-turn-metadata": { "session_id": "0190abcd-0000-7000-8000-000000000001", "turn_id": "t" } } } });
+        assert_eq!(session_from_frame(&call), session_label("codex", "0190abcd-0000-7000-8000-000000000001"));
+        let claude_call = json!({ "method": "tools/call", "params": { "name": "x", "_meta": { "claudecode/toolUseId": "toolu_1", "progressToken": 2 } } });
+        assert_eq!(session_from_frame(&claude_call), None);
+        assert_eq!(session_from_frame(&json!({ "method": "tools/list" })), None);
+    }
+
+    #[test]
+    fn the_identity_keeps_the_latest_session_a_tool_call_names() {
+        let mut id = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: None };
+        id.learn_from(&json!({ "method": "initialize", "params": { "clientInfo": { "name": "codex-mcp-client", "version": "0.162.0" } } }));
+        assert_eq!(id.session, None, "Codex has said nothing about its session yet");
+        let turn = |sid: &str| json!({ "method": "tools/call", "params": { "_meta": { "x-codex-turn-metadata": { "session_id": sid } } } });
+        id.learn_from(&turn("0190abcd-0000-7000-8000-000000000001"));
+        assert_eq!(id.session, session_label("codex", "0190abcd-0000-7000-8000-000000000001"));
+        id.learn_from(&json!({ "method": "tools/list" }));
+        assert_eq!(id.session, session_label("codex", "0190abcd-0000-7000-8000-000000000001"), "a later frame without one keeps it");
+        id.learn_from(&turn("0190abce-2222-7000-8000-000000000003"));
+        assert_eq!(id.session, session_label("codex", "0190abce-2222-7000-8000-000000000003"));
+    }
+
+    #[test]
+    fn a_claude_session_inherited_by_another_host_is_dropped_and_kept_by_claude_code() {
+        let inherited = session_label("claude", "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f");
+        let mut codex = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: inherited.clone() };
+        codex.learn_from(&json!({ "method": "initialize", "params": { "clientInfo": { "name": "codex-mcp-client" } } }));
+        assert_eq!(codex.session, None, "a Codex run started from a Claude Code shell is not that Claude session");
+        let mut claude = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: inherited.clone() };
+        claude.learn_from(&json!({ "method": "initialize", "params": { "clientInfo": { "name": "claude-code", "version": "2.1.295" } } }));
+        assert_eq!(claude.session, inherited);
     }
 }

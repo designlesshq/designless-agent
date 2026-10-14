@@ -158,6 +158,10 @@ async fn post_once(
         // Who is speaking (identity.rs): the server paints each actor as itself.
         .header("x-designless-harness", identity.harness_header())
         .header("x-designless-actor", identity.actor.as_str());
+    // Which conversation (identity.rs), once the host has said.
+    if let Some(session) = identity.session.as_deref() {
+        req = req.header("x-designless-session", session);
+    }
     if let Some(integrity) = integrity {
         req = req.header("x-designless-plugin-integrity", integrity.header_value());
     }
@@ -379,6 +383,10 @@ mod machine_header_on_the_wire {
     }
 
     async fn sent_headers() -> String {
+        sent_headers_with(&crate::identity::Identity::detect()).await
+    }
+
+    async fn sent_headers_with(identity: &crate::identity::Identity) -> String {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/mcp", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -389,10 +397,20 @@ mod machine_header_on_the_wire {
             String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase()
         });
         let client = Client::new();
-        let identity = crate::identity::Identity::detect();
         let frame = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/list"});
-        let _ = post_once(&client, &url, &Fixed, None, &identity, &frame).await;
+        let _ = post_once(&client, &url, &Fixed, None, identity, &frame).await;
         server.await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_session_travels_once_the_host_has_named_it_and_not_before() {
+        let mut identity = crate::identity::Identity { harness: "codex".into(), version: None, actor: "ab12cd34".into(), session: None };
+        let h = sent_headers_with(&identity).await;
+        assert!(!h.contains("x-designless-session"), "no session named, no header");
+        assert!(h.contains("x-designless-actor: ab12cd34"), "the process still says who it is");
+        identity.session = crate::identity::session_label("codex", "0190abcd-0000-7000-8000-000000000001");
+        let label = identity.session.clone().unwrap();
+        assert!(sent_headers_with(&identity).await.contains(&format!("x-designless-session: {label}")));
     }
 
     // One test, run in order: HOME is process-wide.
