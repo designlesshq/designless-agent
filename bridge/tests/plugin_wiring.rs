@@ -259,12 +259,17 @@ fn desktop(sock: &str, reply: &'static str) {
 }
 
 fn run(args: &[&str], stdin: &str, home: &str, sock: &str) -> (i32, String, String) {
+    run_with(args, stdin, home, sock, &[])
+}
+
+fn run_with(args: &[&str], stdin: &str, home: &str, sock: &str, extra: &[(&str, &str)]) -> (i32, String, String) {
     let mut child = Command::new(BIN)
         .args(args)
         .env_clear()
         .env("HOME", home)
         .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .env("DESIGNLESS_IPC_SOCKET", sock)
+        .envs(extra.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -556,6 +561,164 @@ fn edits_in_an_agents_hands_and_a_blind_desktop_wake_nobody() {
     let (code, err) = w.stop();
     assert_eq!(code, Some(0));
     assert!(err.contains("the quick check did not answer (timeout after 10000ms); still watching"), "{err}");
+}
+
+// ── requests held for a session ─────────────────────────────────────────────
+// A request for a judgment (fit a slide, look the slides over) is offered
+// first to the session that made the deck, for a while, then to anyone. Each
+// session knows itself by the name the bridge sends for it: the host, and the
+// first eight hex of a SHA-256 of the host's own id. The host is the one whose
+// variable carries that id. The ids here are synthetic.
+
+const HOST_SID: &str = "0f0e0d0c-0b0a-4908-8706-050403020100";
+const AS_CLAUDE: &str = "claude:fdd5f4f9";
+const AS_CODEX: &str = "codex:fdd5f4f9";
+const CLAUDE_HOST: (&str, &str) = ("CLAUDE_CODE_SESSION_ID", HOST_SID);
+const CODEX_HOST: (&str, &str) = ("CODEX_SESSION_ID", HOST_SID);
+/// Another Claude Code session's id, as a command started from inside it inherits.
+const PARENT_SID: &str = "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f";
+const CLAIM_LINE: &str = "request(s) on \"Deck\" are for this session: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
+const NEVER_ENDS: &str = "2999-01-01T00:00:00.000Z";
+const LONG_ENDED: &str = "2001-01-01T00:00:00.000Z";
+
+/// One canvas as a server that holds requests sends it: `value` value edits
+/// (newest numbered 5), and requests numbered from 6 up, each offered to
+/// `to` until `until`. The older fields count everything.
+fn held_inbox(value: u32, requests: &[(&str, &str)]) -> &'static str {
+    let list: Vec<String> = requests
+        .iter()
+        .enumerate()
+        .map(|(i, (to, until))| format!(r#"{{"seq":{},"kind":"fit_slide","offered_to":"{to}","offered_until":"{until}"}}"#, 6 + i))
+        .collect();
+    let all = value as usize + requests.len();
+    let value_seq = if value > 0 { "5" } else { "null" };
+    let reply = format!(
+        r#"{{"op":"inbox","sessions":[{{"session_id":"a","title":"Deck","n_artefact":{all},"n_undelivered":{all},"latest_seq":{},"n_value_artefact":{value},"n_value_undelivered":{value},"latest_value_seq":{value_seq},"requests":[{}]}}]}}"#,
+        5 + requests.len(),
+        list.join(",")
+    ) + "\n";
+    Box::leak(reply.into_boxed_str())
+}
+
+fn seen(home: &str, sid: &str) -> String {
+    std::fs::read_to_string(format!("{home}/.designless/watch/{sid}.seen.json")).unwrap_or_default()
+}
+
+#[test]
+fn a_request_held_for_a_session_wakes_that_sessions_watcher_and_no_other() {
+    let s = Scratch::new("heldfor");
+    for (to, host, other) in [(AS_CLAUDE, CLAUDE_HOST, CODEX_HOST), (AS_CODEX, CODEX_HOST, CLAUDE_HOST)] {
+        let sock = s.path(&format!("{}.sock", &to[..to.find(':').unwrap()]));
+        desktop(&sock, held_inbox(0, &[(to, NEVER_ENDS)]));
+        // Another host's session with the same id, and a host that does not say
+        // who it is: the request is not theirs while it is held.
+        let elsewhere = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path(&format!("{to}-other")), &sock, &[other]);
+        let unnamed = Watcher::start(&["inbox-watch", "--once", HOST_SID], &s.path(&format!("{to}-unnamed")), &sock);
+        // The session it is held for.
+        let home = s.path(&format!("{to}-mine"));
+        let mut mine = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &home, &sock, &[host]);
+        let line = mine.line_within(5).unwrap_or_else(|| panic!("{to}: the session a request is held for hears it"));
+        assert!(line.starts_with(&format!("Designless canvas: 1 {CLAIM_LINE}")), "{line}");
+        assert!(line.ends_with(&format!("inbox-watch --once {HOST_SID}")), "{line}");
+        assert!(!line.contains("edit(s) are waiting"), "{line}");
+        assert_eq!(mine.child.wait().unwrap().code(), Some(0));
+        assert!(seen(&home, HOST_SID).contains(r#""sessions":[["a",1,0,6]]"#), "{}", seen(&home, HOST_SID));
+        assert_eq!(elsewhere.line_within(3), None, "{to}: held for another session");
+        assert_eq!(unnamed.line_within(1), None, "{to}: a session with no name waits the window out");
+        assert_eq!(elsewhere.stop().0, Some(0));
+        assert_eq!(unnamed.stop().0, Some(0));
+    }
+}
+
+#[test]
+fn a_codex_session_started_from_claude_code_knows_itself_by_its_own_id() {
+    let s = Scratch::new("nested");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, held_inbox(0, &[(AS_CODEX, NEVER_ENDS)]));
+    // Claude Code's id is inherited and is another session's: on its own it names nothing.
+    let parent_only = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("parent-only"), &sock, &[("CLAUDE_CODE_SESSION_ID", PARENT_SID)]);
+    let nested = [("CLAUDE_CODE_SESSION_ID", PARENT_SID), ("CLAUDECODE", "1"), CODEX_HOST, ("CODEX_THREAD_ID", HOST_SID)];
+    let mut w = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("nested"), &sock, &nested);
+    let line = w.line_within(5).expect("the Codex session the request is held for");
+    assert!(line.starts_with(&format!("Designless canvas: 1 {CLAIM_LINE}")), "{line}");
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert_eq!(parent_only.line_within(3), None, "not that Claude Code session, and no other name");
+    assert_eq!(parent_only.stop().0, Some(0));
+}
+
+#[test]
+fn a_request_whose_window_has_passed_wakes_any_watcher() {
+    let s = Scratch::new("passed");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, held_inbox(0, &[("codex:9f8e7d6c", LONG_ENDED)]));
+    let mut w = Watcher::start(&["inbox-watch", "--once", "passed-1"], &s.path("home"), &sock);
+    let line = w.line_within(5).expect("a request nobody took in its window is anyone's");
+    assert!(line.starts_with(&format!("Designless canvas: 1 {CLAIM_LINE}")), "{line}");
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+}
+
+#[test]
+fn a_value_edit_beside_a_held_request_wakes_for_the_edit_alone() {
+    let s = Scratch::new("beside");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, held_inbox(1, &[("codex:9f8e7d6c", NEVER_ENDS)]));
+    let home = s.path("home");
+    let mut w = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &home, &sock, &[CLAUDE_HOST]);
+    let line = w.line_within(5).expect("the value edit");
+    assert!(line.starts_with("Designless canvas: 1 edit(s) are waiting on the Designless app for \"Deck\"."), "{line}");
+    assert!(!line.contains("request(s)"), "{line}");
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert!(seen(&home, HOST_SID).contains(r#""sessions":[["a",1,0,5]]"#), "{}", seen(&home, HOST_SID));
+}
+
+#[test]
+fn a_newer_request_is_news_at_the_same_count_only_when_it_is_this_sessions() {
+    // Told about one piece of work numbered 5, and that work since done.
+    let s = Scratch::new("newer");
+    let told = |home: &str| {
+        std::fs::create_dir_all(format!("{home}/.designless/watch")).unwrap();
+        std::fs::write(format!("{home}/.designless/watch/{HOST_SID}.seen.json"), r#"{"at":"2026-10-15T00:00:00.000Z","sessions":[["a",1,0,5]]}"#).unwrap();
+    };
+    // A newer request held for this session, nothing else waiting.
+    let mine = s.path("mine.sock");
+    desktop(&mine, held_inbox(0, &[(AS_CLAUDE, NEVER_ENDS)]));
+    told(&s.path("home-mine"));
+    // The value edit still waiting, and a newer request held elsewhere.
+    let held = s.path("held.sock");
+    desktop(&held, held_inbox(1, &[("codex:9f8e7d6c", NEVER_ENDS)]));
+    told(&s.path("home-held"));
+    let quiet = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("home-held"), &held, &[CLAUDE_HOST]);
+    let mut w = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("home-mine"), &mine, &[CLAUDE_HOST]);
+    let line = w.line_within(5).expect("a newer request of its own");
+    assert!(line.contains(CLAIM_LINE), "{line}");
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert_eq!(quiet.line_within(3), None, "a newer request held elsewhere is not news");
+    assert_eq!(quiet.stop().0, Some(0));
+}
+
+#[test]
+fn the_hooks_name_their_session_as_the_watcher_does() {
+    let s = Scratch::new("hookname");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, held_inbox(0, &[(AS_CLAUDE, NEVER_ENDS)]));
+    let input = format!(r#"{{"cwd":"/tmp","session_id":"{HOST_SID}"}}"#);
+    // The session the request is held for hears it at the turn boundary...
+    let home = s.path("home");
+    let (code, out, _) = run_with(&["hook", "canvas-wake"], &input, &home, &sock, &[CLAUDE_HOST]);
+    assert_eq!(code, 0);
+    assert!(context(&out).starts_with(&format!("Designless canvas: 1 {CLAIM_LINE}")), "{out}");
+    assert!(seen(&home, HOST_SID).contains(r#""sessions":[["a",1,0,6]]"#), "{}", seen(&home, HOST_SID));
+    // ...so a watcher started after it waits for more.
+    let w = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &home, &sock, &[CLAUDE_HOST]);
+    assert_eq!(w.line_within(3), None);
+    assert_eq!(w.stop().0, Some(0));
+    // Another host's session, and one with no name, hear nothing of it.
+    for extra in [vec![CODEX_HOST], vec![]] {
+        let (code, out, _) = run_with(&["hook", "canvas-wake"], &input, &s.path("elsewhere"), &sock, &extra);
+        assert_eq!((code, out.as_str()), (0, ""), "{extra:?}");
+        let (_, start, _) = run_with(&["hook", "session-start-inbox"], &input, &s.path("elsewhere"), &sock, &extra);
+        assert!(!context(&start).contains("request(s)"), "{start}");
+    }
 }
 
 /// The launcher with this build beside it, in a scratch plugin tree.

@@ -4,7 +4,7 @@
 
 use super::js::{self, J};
 use super::marker;
-use super::probe::{self, Probe, MISSED_HINT};
+use super::probe::{self, Me, Probe, MISSED_HINT};
 use super::watch;
 use super::Env;
 
@@ -172,11 +172,14 @@ read the real inbox with the canvas-inbox tool (less_canvas_inbox) before treati
             ),
         );
     }
-    note_seen(&env.home, sid, probe);
+    // One reader for both the record and the text, so what is recorded as told
+    // is what was said.
+    let me = Me::session(sid);
+    note_seen(&env.home, sid, probe, &me);
     if probe.count() == 0 {
         return emit("SessionStart", &format!("{reg}{}", want_watch(memory.is_some())));
     }
-    let text = probe::summarize_inbox(&probe.sessions, cwd, probe::Opts { watcher_live: live, ..probe::Opts::default() });
+    let text = probe::summarize_inbox(&probe.sessions, cwd, probe::Opts { watcher_live: live, me, ..probe::Opts::default() });
     if text.is_empty() {
         return emit("SessionStart", &format!("{reg}{}", want_watch(memory.is_some())));
     }
@@ -282,11 +285,12 @@ pub fn arm_asked_this_turn(home: &str, sid: &J) -> bool {
 }
 
 /// What a hook read is what the agent was told: a watcher started after it
-/// wakes the agent only for more.
-fn note_seen(home: &str, sid: Option<&J>, probe: &Probe) {
+/// wakes the agent only for more. Counted as this session's own work, as the
+/// watcher counts it.
+fn note_seen(home: &str, sid: Option<&J>, probe: &Probe, me: &Me) {
     let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
     if probe.unknown.is_none() {
-        marker::write_seen(home, sid, watch::seen_json(&watch::work_of(&probe.sessions)), js::now_ms());
+        marker::write_seen(home, sid, watch::seen_json(&watch::work_of(&probe.sessions, me)), js::now_ms());
     }
 }
 
@@ -318,14 +322,15 @@ read less_canvas_inbox, this turn and every turn while it stays unanswered. {MIS
         return Some(emit("UserPromptSubmit", &context));
     }
     clear_unknown(&env.home, sid);
-    note_seen(&env.home, sid, probe);
+    let me = Me::session(sid);
+    note_seen(&env.home, sid, probe, &me);
     // A dark count beside an empty listing is a real message.
     if probe.count() == 0 && !probe.attn_dark.is_some_and(|d| d != 0.0) {
         return None;
     }
     let include_attention = attention_gate(&env.home, sid, &probe::attention_digest(&probe.sessions, probe.attn_dark));
     let watcher_live = marker::is_armed(&env.home, sid, js::now_ms());
-    let text = probe::summarize_inbox(&probe.sessions, cwd, probe::Opts { include_attention, attn_dark: probe.attn_dark, watcher_live });
+    let text = probe::summarize_inbox(&probe.sessions, cwd, probe::Opts { include_attention, attn_dark: probe.attn_dark, watcher_live, me });
     if text.is_empty() {
         return None;
     }
@@ -914,6 +919,34 @@ mod tests {
         // The state file is the shape the JavaScript wrote, key order included.
         let body = std::fs::read_to_string(format!("{h}/.designless/nudge-state/sess-3.json")).unwrap();
         assert!(body.starts_with(r#"{"attention":"b:1:","at":""#), "{body}");
+    }
+
+    #[test]
+    fn the_turn_boundary_says_and_records_only_requests_this_session_may_take() {
+        // Whatever host runs these tests, no session here is the one this
+        // request is held for, and the request offered to nobody is anyone's.
+        let h = home("wake-req");
+        let e = env(&h);
+        let sid = s("sess-req");
+        let held = r#"{"seq":8,"kind":"look_slides","offered_to":"codex:9f8e7d6c","offered_until":"2999-01-01T00:00:00.000Z"}"#;
+        let open = r#"{"seq":7,"kind":"fit_slide","offered_to":null,"offered_until":null}"#;
+        let probe = |requests: &[&str]| Probe {
+            sessions: vec![js::parse(&format!(
+                r#"{{"session_id":"a","title":"Deck","n_artefact":{n},"n_undelivered":{n},"latest_seq":8,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":null,"requests":[{}]}}"#,
+                requests.join(","),
+                n = requests.len()
+            ))
+            .unwrap()],
+            ..Default::default()
+        };
+        let seen = || std::fs::read_to_string(format!("{h}/.designless/watch/sess-req.seen.json")).unwrap();
+        assert_eq!(wake_text("/tmp", Some(&sid), &probe(&[held]), &e), None, "held for another session: not mentioned");
+        assert!(seen().contains(r#""sessions":[]"#), "and not recorded as told: {}", seen());
+        let out = ctx(&wake_text("/tmp", Some(&sid), &probe(&[open, held]), &e).unwrap());
+        assert!(out.starts_with("Designless canvas: 1 request(s) on \"Deck\" are for this session: take them now"), "{out}");
+        assert!(seen().contains(r#""sessions":[["a",1,0,7]]"#), "what was said is what is recorded: {}", seen());
+        let start = ctx(&session_start_text("/tmp", Some(&sid), None, &probe(&[held]), &e));
+        assert!(!start.contains("request(s)") && !start.contains("waiting edits"), "{start}");
     }
 
     #[test]
