@@ -259,6 +259,23 @@ pub fn left_behind(started_under: i32, now_under: i32) -> bool {
     started_under != 1 && now_under != started_under
 }
 
+/// The host the watcher belongs to, when the host names itself: Claude Code
+/// sets `CLAUDE_PID` for everything it starts. The shell that started a
+/// watcher can outlive the host (re-parented, not killed), so the parent
+/// check alone misses a host that is gone. Other hosts say nothing here.
+pub fn host_pid(value: Option<&str>) -> Option<i32> {
+    value.and_then(|v| v.trim().parse::<i32>().ok()).filter(|pid| *pid > 1)
+}
+
+/// Is that host gone? Only a definite "no such process" counts: a process we
+/// may not signal is still alive, and no host named is never gone.
+pub fn host_gone(pid: Option<i32>) -> bool {
+    let Some(pid) = pid else { return false };
+    // SAFETY: signal 0 checks existence and delivers nothing.
+    let rc = unsafe { libc::kill(pid, 0) };
+    rc != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+}
+
 static MARKER: OnceLock<std::ffi::CString> = OnceLock::new();
 
 extern "C" fn on_signal(_: libc::c_int) {
@@ -310,6 +327,9 @@ pub async fn run(args: &[String], env: &Env) -> i32 {
     // SAFETY: getppid is infallible and thread-safe.
     let parent = unsafe { libc::getppid() };
     let orphaned = || left_behind(parent, unsafe { libc::getppid() });
+    // The host itself, when it names itself: checked before each look, so a
+    // watcher whose host is gone stops without another read of the desktop.
+    let host = host_pid(std::env::var("CLAUDE_PID").ok().as_deref());
     let stop = || {
         marker::disarm(&env.home, &sid);
         0
@@ -322,6 +342,10 @@ pub async fn run(args: &[String], env: &Env) -> i32 {
     let mut quiet_beats: u64 = 0;
     loop {
         let beat_started = std::time::Instant::now();
+        // Nobody is left to wake: leave quietly and free the session.
+        if host_gone(host) {
+            return stop();
+        }
         // Presence is read on every beat, so a return to the machine is
         // answered on the next one.
         let active = marker::host_is_active(&env.home, js::now_ms(), marker::ACTIVE_WINDOW_MS);
@@ -690,6 +714,32 @@ mod tests {
         assert!(!left_behind(4242, 4242));
         assert!(left_behind(4242, 1), "reparented: the session that wanted it has ended");
         assert!(!left_behind(1, 1), "started orphaned, so there is nothing to notice");
+    }
+
+    #[test]
+    fn a_host_that_names_itself_is_watched_and_one_that_does_not_never_ends_the_watch() {
+        assert_eq!(host_pid(Some("4242")), Some(4242));
+        assert_eq!(host_pid(Some(" 4242\n")), Some(4242));
+        for absent in [None, Some(""), Some("abc"), Some("1"), Some("0"), Some("-5")] {
+            assert_eq!(host_pid(absent), None, "{absent:?}");
+        }
+        assert!(!host_gone(None), "no host named (Codex, other hosts): keep watching");
+        assert!(!host_gone(Some(std::process::id() as i32)), "a live host");
+        // A process that has certainly ended: start one, wait for it.
+        let mut child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+        let dead = child.id() as i32;
+        child.wait().unwrap();
+        assert!(host_gone(Some(dead)), "a host that has exited");
+    }
+
+    #[test]
+    fn the_host_check_comes_before_the_look_and_says_nothing() {
+        let src = include_str!("watch.rs");
+        let body = &src[src.find("pub async fn run(").unwrap()..];
+        let check = body.find("if host_gone(host)").unwrap();
+        assert!(check < body.find("probe_inbox_within(").unwrap(), "a gone host costs no desktop read");
+        let leave = &body[check..check + body[check..].find('}').unwrap()];
+        assert!(leave.contains("return stop()") && !leave.contains("say("), "{leave}");
     }
 
     // ── the one-shot ──

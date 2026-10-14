@@ -401,11 +401,15 @@ struct Watcher {
 }
 impl Watcher {
     fn start(args: &[&str], home: &str, sock: &str) -> Watcher {
+        Watcher::start_with(args, home, sock, &[])
+    }
+    fn start_with(args: &[&str], home: &str, sock: &str, extra: &[(&str, &str)]) -> Watcher {
         let mut child = Command::new(BIN)
             .args(args)
             .env_clear()
             .env("HOME", home)
             .env("DESIGNLESS_IPC_SOCKET", sock)
+            .envs(extra.iter().copied())
             .current_dir("/tmp")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -500,6 +504,37 @@ fn a_desktop_slower_than_the_hooks_budget_still_reaches_the_watcher() {
     let line = w.line_within(6).expect("the watcher waits past the hooks' budget");
     assert!(line.contains("\"Deck\""), "{line}");
     assert_eq!(w.child.wait().unwrap().code(), Some(0));
+}
+
+#[test]
+fn a_watcher_whose_host_is_gone_leaves_quietly_and_frees_the_session() {
+    let s = Scratch::new("hostgone");
+    let home = s.path("home");
+    let sock = s.path("ipc.sock");
+    // News is waiting: a watcher that still looked would print it.
+    desktop(&sock, "{\"op\":\"inbox\",\"sessions\":[{\"session_id\":\"a\",\"n_annotation\":1}]}\n");
+    let mut ended = Command::new("/usr/bin/true").spawn().unwrap();
+    let dead = ended.id().to_string();
+    ended.wait().unwrap();
+    let mut w = Watcher::start_with(&["inbox-watch", "--once", "gone-1"], &home, &sock, &[("CLAUDE_PID", dead.as_str())]);
+    let t = std::time::Instant::now();
+    let status = loop {
+        if let Some(st) = w.child.try_wait().unwrap() {
+            break st;
+        }
+        assert!(t.elapsed() < std::time::Duration::from_secs(5), "a watcher with no host must not keep going");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(w.line_within(1), None, "nobody is left to wake, so it says nothing");
+    assert!(!Path::new(&format!("{home}/.designless/watch/gone-1.json")).exists(), "the session is free again");
+
+    // A live host: the same watcher keeps watching and speaks on news.
+    let me = std::process::id().to_string();
+    let w = Watcher::start_with(&["inbox-watch", "--once", "here-1"], &home, &sock, &[("CLAUDE_PID", me.as_str())]);
+    let line = w.line_within(5).expect("a watcher with a live host still speaks");
+    assert!(line.starts_with("Designless canvas: 1 annotation(s) are waiting."), "{line}");
+    let _ = w.stop();
 }
 
 #[test]
