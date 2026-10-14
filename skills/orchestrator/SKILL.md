@@ -150,7 +150,7 @@ Before classifying intent, understand the current state by querying the server:
 - What tier is the user on - and what capabilities does that unlock?
 - What **lane** did the server assign? The server returns the user's plan tier as the lane - the tier set is server-owned, so treat whatever it returns as the truth rather than enumerating tiers yourself - and that determines which capabilities are discoverable. Your tool discovery results are already filtered by lane, so you only see what the user can use.
 
-**Brand selection.** `brand_slug` is resolved ONLY from the user's real brands - the brand-listing tool (intent: "list the user's brands") is the single source of truth for which brands exist. Resolve it from that list; then:
+**Brand selection.** `brand_slug` is resolved ONLY from the user's real brands - the brand-listing tool (query: "list the user's brands") is the single source of truth for which brands exist. Resolve it from that list; then:
 - If **one brand** exists → auto-select it. No question needed.
 - If **multiple brands** exist → ask the user which brand to work with through the host's question UI (in Claude Code that is AskUserQuestion; in another host, ask in plain words). Present the options clearly (brand names/slugs) so the user can pick.
 - If **no brands** exist and the command requires one → redirect to Greenfield (create) or Adopt, depending on context, or offer to create one (the brand-creation tool). A document is always composed on one of the person's own brands.
@@ -206,7 +206,7 @@ The user has no brand yet. They bring keywords, a description, or a mood. You cr
 
 **What you deliver:** A brand with an archetype, a coherence score, a token preview, and an expression brief ready for building. The user should see their intent reflected back as infrastructure.
 
-**How you work:** Search the catalog for the brand-creation tool (intent: "create brand from natural language description"). Provide the user's keywords or description. The DLM resolves natural language into a complete, deterministic token set. Then search for the capsule compile tool to make the brand ready for use. Present the summary and ask: "Ready to start building with this brand?"
+**How you work:** Search the catalog for the brand-creation tool (query: "create brand from natural language description"). Provide the user's keywords or description. The DLM resolves natural language into a complete, deterministic token set. Then search for the capsule compile tool to make the brand ready for use. Present the summary and ask: "Ready to start building with this brand?"
 
 If the user provided a screenshot or a deployed URL instead of words → switch to **Adopt** mode.
 
@@ -217,10 +217,10 @@ The user has a brand and wants to build something - a page, a component, a layou
 **What you deliver:** Production code or visual content that uses the brand's tokens, patterns, and voice. Validated against brand rules. Quality metrics visible.
 
 **How you work:**
-1. Search for the brief tool (intent: "compile expression brief for active brand") and call it to load tokens, patterns, and voice.
-2. **For component-level intents** ("build me a hero with auth form", "make a pricing table"): search for the composer tool (intent: "compose from natural language with cached decisions"). Do not search on the words "component" or "pattern" here: two sibling tools are named for those subjects and they answer a different question, returning a brief ABOUT one component or one pattern rather than resolving your request into decisions. The tool you want is the one that returns decisions or a cache miss. The composer returns either canonical decisions you execute directly, or a cache miss with slot prompts you run on your own quota - commit results back via the composer-backfill tool so the next caller hits the cache.
-3. **For visual documents** (carousel, deck, email template, hero, blog header): search for the template registry (intent: "list visual document templates") and pick a `template_id` filtered by `document_type`. Then route through Express or Build mode.
-4. **For free-form HTML/CSS**: generate UI using `var(--ls-*)` tokens exclusively. Validate every generation - search for the lint and validate tools and run them, then search for the evidence validator (intent: "validate structural quality with evidence") and run it for structural quality.
+1. Search for the brief tool (query: "compile expression brief for active brand") and call it to load tokens, patterns, and voice.
+2. **For component-level intents** ("build me a hero with auth form", "make a pricing table"): search for the composer tool (query: "compose from natural language with cached decisions"). Do not search on the words "component" or "pattern" here: two sibling tools are named for those subjects and they answer a different question, returning a brief ABOUT one component or one pattern rather than resolving your request into decisions. The tool you want is the one that returns decisions or a cache miss. The composer returns either canonical decisions you execute directly, or a cache miss with slot prompts you run on your own quota - commit results back via the composer-backfill tool so the next caller hits the cache.
+3. **For visual documents** (carousel, deck, email template, hero, blog header): search for the template registry (query: "list visual document templates") and pick a `template_id` filtered by `document_type`. Then route through Express or Build mode.
+4. **For free-form HTML/CSS**: generate UI using `var(--ls-*)` tokens exclusively. Validate every generation - search for the lint and validate tools and run them, then search for the evidence validator (query: "validate structural quality with evidence") and run it for structural quality.
 5. Present the result with quality metrics, not just code.
 
 ### Extend - Evolve an existing brand's tokens
@@ -237,7 +237,7 @@ The user has an existing design system (Figma variables, CSS custom properties, 
 
 **What you deliver:** A Brand Capsule resolved from the external system, with compatibility notes flagged where Designless and the source system diverge.
 
-**How you work:** Search for the adopt tool (intent: "adopt external design system from screenshot URL or token file"). The server composes vision extraction (for images) with the resolver to produce a draft capsule. Review the result with the user, push token overrides if needed, then compile and publish.
+**How you work:** Search for the adopt tool (query: "adopt external design system from screenshot URL or token file"). The server composes vision extraction (for images) with the resolver to produce a draft capsule. Review the result with the user, push token overrides if needed, then compile and publish.
 
 ### Express - Visual artifacts via Prism
 
@@ -265,14 +265,12 @@ If a Prism session is already in flight, Prism reads its status first via the ca
 
 **Optional inline compliance gate.** If the user (or the project's brand rules) requires every generated artifact to pass compliance before delivery, hand off to the Arbiter sub-agent in `inline` mode with `strict` strictness after Prism returns. Arbiter blocks delivery on a yellow or red badge until the user approves the auto-heals or regenerates. Default is no gate - Arbiter runs only when explicitly requested or when the brand's policy declares strict enforcement.
 
-**A deck of four slides or more reaches the canvas slide 1 first.** On a registry template, the first compose carries slide 1 filled and every other slide the deck will have laid out empty (a later write cannot add a slide), into the staged session, so the person reads slide 1 while the rest is written. Its answer names the slides still to come, holds them on the canvas, and says how to send them: all of them in one write, never a beat or a write per slide. A shorter deck is one compose. An authored html deck is one write, because its body is the template; its slides arrive together.
-
 **Fill every slot the template asks for, on every slide.** The scaffold from the brief path already lists every slot each slide declares, with its constraints inline; when you compose without it, call `less_list_templates` with `id: <template_id>` and `detail: full` first. Each template declares its slots in `content_slots`, and each slide lists exactly which slots it needs. Read those, then build your payload so every slide you include carries a value for every slot that slide declares. Do not invent slot names and do not guess them; use the ids the template gives you. If a slide is missing one of its declared slots, or carries a slot it does not declare, that content will not appear in the result and compose flags which slide and slot are incomplete or misplaced, so fix them and compose again. Each slot renders only on the slides that declare it; content sent to any other slide is dropped. If you only want some slides (a shorter deck), include just those slides and fill each one completely.
 
 **Open the canvas while you author (stage-and-beat).** Slot authoring is the long pole of a compose - minutes can pass with nothing on screen. The moment a registry template is picked (you know `{brand_slug, template_id}`, and the id is the registry's, not one an authored deck will mint), give the user a first frame:
 
 1. If the session-reuse handshake returned an existing live session, you already have its `session_id` - build the deep link (`designless://canvas?brand=<brand_slug>&session=<session_id>&template=<template_id>`) and open it now. Otherwise call `less_canvas_stage` with `action: 'create'`, the `brand_slug` and the picked `template_id`; it returns `{session_id, open_url}` - open `open_url` now (same launch path as always), and later compose to that `session_id`. A picked template is staged by its id, never by its document type alone: a stage by document type is a blank sheet for a deck you author (below), and it leaves the template's frame and its slots behind.
-2. The desktop shows the template's real frame in a composing state. While you author, send a beat with `less_canvas_stage` `action: 'beat'` only for a step the person would otherwise wait through in silence: `{phase: 'authoring', slide: 1, of: M}` when you start writing, `{phase: 'composing'}` right before you call compose, never one per slide. Beats are honest steps only - there is no percent to send.
+2. The desktop shows the template's real frame in a composing state. Beat only as the stage answer says.
 3. **If authoring or compose fails for any reason, send `{phase: 'failed'}` before you stop.** A staged canvas that never learns of the failure keeps its composing state forever - the one dishonest outcome this flow must never produce.
 
 Staging changes WHEN the app opens, not what may be declared done: the truth gate below still governs the compose result exactly as before (a compose that stores an empty manifest is still a refusal - you report it, and the staged canvas shows the failed state from your beat).
@@ -285,7 +283,7 @@ Staging changes WHEN the app opens, not what may be declared done: the truth gat
 
 Whichever path you compose through, give a deck a `title` that names the piece, not the template.
 
-*Path B, compose-and-cache.* Use this for common document shapes that many users request, where a ready-made version is worth reusing across runs. Pick the template from the registry as in Path A, then search for the slot-content resolver (intent: "resolve ready-made slot content for a document intent") and follow what it returns: a hit is filled slides you compose from; a miss is the prompts for the slots you write yourself and save through the backfill tool (intent: "save the slot content you wrote for reuse on later runs") before resolving again. Before you broadcast, run the deck quality gate (intent: "quality-check a rendered deck before you broadcast it") and act on its verdict; each tool describes its own inputs and what a failing verdict asks of you. Then compose, and follow the truth gate and desktop launch above.
+*Path B, compose-and-cache.* Use this for common document shapes that many users request, where a ready-made version is worth reusing across runs. Pick the template from the registry as in Path A, then search for the slot-content resolver (query: "resolve ready-made slot content for a document intent") and follow what it returns: a hit is filled slides you compose from; a miss is the prompts for the slots you write yourself and save through the backfill tool (query: "save the slot content you wrote for reuse on later runs") before resolving again. Before you broadcast, run the deck quality gate (query: "quality-check a rendered deck before you broadcast it") and act on its verdict; each tool describes its own inputs and what a failing verdict asks of you. Then compose, and follow the truth gate and desktop launch above.
 
 *A deck no template fits is authored.* Templates come first wherever one fits: a deck composed from a registry template keeps its slot contract, and one written as html keeps only its document type's sheet. The registry's answer says which case you are in. When a template fits, it ends by telling you to compose from it and stage on its id; a slot you cannot fill there (a photograph on every slide you do not have) points to the runner-up it names, not to html. Only when the answer opens the authoring door (the brief asks for a shape no template holds: a chart, a slide-sized number, a round piece, an app's screens) do you hand to Prism to author the deck as html, without browsing further at `detail: full` to confirm it. That answer carries the authoring contract and the check before the write, and the Prism brief carries the order.
 
@@ -320,7 +318,7 @@ The user wants to know: is my brand healthy, and is the live deployment still on
 **How you work:**
 1. Search for the brief tool, load the brand's expression brief.
 2. Search for the accessibility tool, run for both light and dark modes.
-3. Search for the evidence validator (intent: "validate structural quality with evidence"), run against the implementation (HTML the user provides or the active capsule).
+3. Search for the evidence validator (query: "validate structural quality with evidence"), run against the implementation (HTML the user provides or the active capsule).
 4. Hand off to the Arbiter sub-agent in `audit` mode if a Prism session is active or the user has provided a structured manifest. Arbiter runs the compliance scan, applies deterministic auto-heals, and returns a structured report with violations + flagged-for-review items.
 5. Search for the inner loop, run if any token escapes were flagged in steps 2–4.
 6. If pages are registered for monitoring, search for the page probe and run it on each.
@@ -364,7 +362,7 @@ The user wants proof that something is on-brand - not a subjective assessment, b
 
 **What you deliver:** Evidence results with scores, pass/fail, domain breakdowns, and specific fix suggestions for any blockers.
 
-**How you work:** Get the brand context. Search for the evidence validator (intent: "validate structural quality with evidence") and run it against the implementation. Present results as structured proof, not opinion.
+**How you work:** Get the brand context. Search for the evidence validator (query: "validate structural quality with evidence") and run it against the implementation. Present results as structured proof, not opinion.
 
 ## Expression Surfaces
 
