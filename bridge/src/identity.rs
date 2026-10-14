@@ -15,7 +15,9 @@
 //! and ends when the conversation does. Each host says it its own way: Claude
 //! Code puts it in its MCP servers' environment, Codex on every tool call.
 //! Only a short hash of it travels (`session_label`), so the id itself never
-//! leaves this machine.
+//! leaves this machine. The canvas watcher and the hooks name their own
+//! session the same way (`own_session_name`), so they can tell a request the
+//! server holds for this session from one it holds for another.
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -59,6 +61,41 @@ pub fn session_from_env() -> Option<String> {
 pub fn session_from_frame(frame: &Value) -> Option<String> {
     let id = frame.pointer("/params/_meta/x-codex-turn-metadata/session_id")?.as_str()?;
     session_label("codex", id)
+}
+
+/// The host a process runs under, read from the variables it was started
+/// with: Claude Code sets its session id for everything it starts, and Codex
+/// marks what it starts with `CODEX_` variables. Claude Code is asked first,
+/// so a Codex setting kept in a shell profile does not rename a Claude Code
+/// session. Any other host names nothing.
+pub fn host_named_by<I, K, V>(vars: I) -> Option<&'static str>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
+    let mut codex = false;
+    for (name, value) in vars {
+        let name = name.as_ref();
+        if name == "CLAUDE_CODE_SESSION_ID" && !value.as_ref().trim().is_empty() {
+            return Some("claude");
+        }
+        codex |= name.starts_with("CODEX_");
+    }
+    codex.then_some("codex")
+}
+
+/// The host this process runs under, from its own environment.
+pub fn host_from_env() -> Option<&'static str> {
+    host_named_by(std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())))
+}
+
+/// The name the server knows this process's session by, given the host's own
+/// id for it: the same name the bridge sends for that session, so a request
+/// the server holds for it can be told apart from one held for another. None
+/// when the host does not say who it is.
+pub fn own_session_name(session_id: &str) -> Option<String> {
+    session_label(host_from_env()?, session_id)
 }
 
 /// The slug a harness name maps to. Case and punctuation are the harness's
@@ -256,6 +293,25 @@ mod tests {
         assert_eq!(id.session, session_label("codex", "0190abcd-0000-7000-8000-000000000001"), "a later frame without one keeps it");
         id.learn_from(&turn("0190abce-2222-7000-8000-000000000003"));
         assert_eq!(id.session, session_label("codex", "0190abce-2222-7000-8000-000000000003"));
+    }
+
+    #[test]
+    fn the_host_is_named_by_what_it_leaves_in_the_environment() {
+        let vars = |v: &[(&'static str, &'static str)]| v.to_vec();
+        assert_eq!(host_named_by(vars(&[("HOME", "/h"), ("CLAUDE_CODE_SESSION_ID", "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f")])), Some("claude"));
+        assert_eq!(host_named_by(vars(&[("HOME", "/h"), ("CODEX_HOME", "/h/.codex")])), Some("codex"));
+        assert_eq!(host_named_by(vars(&[("CODEX_SANDBOX", "seatbelt")])), Some("codex"));
+        // A Codex setting in a shell profile does not rename a Claude Code session, in either order.
+        assert_eq!(host_named_by(vars(&[("CODEX_HOME", "/h/.codex"), ("CLAUDE_CODE_SESSION_ID", "abc")])), Some("claude"));
+        assert_eq!(host_named_by(vars(&[("CLAUDE_CODE_SESSION_ID", "abc"), ("CODEX_HOME", "/h/.codex")])), Some("claude"));
+        // Nothing to go on: no name.
+        for none in [vec![], vars(&[("HOME", "/h")]), vars(&[("CLAUDE_CODE_SESSION_ID", "  ")]), vars(&[("CLAUDE_PID", "4242")]), vars(&[("MY_CODEX_HOME", "/x")]), vars(&[("codex_home", "/x")])] {
+            assert_eq!(host_named_by(none.clone()), None, "{none:?}");
+        }
+        // The name is the one the bridge sends for the same session.
+        let id = "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f";
+        let host = host_named_by(vars(&[("CLAUDE_CODE_SESSION_ID", id)])).unwrap();
+        assert_eq!(session_label(host, id), session_label("claude", id));
     }
 
     #[test]

@@ -623,19 +623,84 @@ fn checkout_path_hint(rows: &[&J], cwd: &str) -> String {
     }
 }
 
+// ── requests for a judgment ─────────────────────────────────────────────────
+// Two kinds of op are not edits but requests for an agent's judgment: fitting
+// a slide, and looking the slides over. The server offers each one first to
+// the session that made the deck, for a while, then to anyone, and refuses a
+// claim from another session inside that window. A newer server says so on
+// every row: value edits counted apart from requests, and each pending
+// request with whom it is offered to and until when. An older server says
+// neither, and its rows are read exactly as before.
+
+/// Who is reading the inbox, and when.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Me {
+    /// The name the server knows this session by (the one the bridge sends
+    /// for it), or None when the host does not say who it is.
+    pub name: Option<String>,
+    /// Now, in milliseconds since the epoch.
+    pub now: f64,
+}
+
+impl Me {
+    /// The session a hook was given, named the way the bridge names it, now.
+    pub fn session(session_id: Option<&J>) -> Me {
+        let name = match session_id {
+            Some(J::Str(id)) => crate::identity::own_session_name(id),
+            _ => None,
+        };
+        Me { name, now: js::now_ms() }
+    }
+}
+
+impl Default for Me {
+    /// Nobody in particular, now.
+    fn default() -> Me {
+        Me { name: None, now: js::now_ms() }
+    }
+}
+
+/// The pending requests on a row from a server that counts them apart from
+/// value edits, or None for a row from an older server.
+pub fn pending_requests(row: &J) -> Option<&[J]> {
+    match (js::get(Some(row), "n_value_undelivered"), js::get(Some(row), "requests")) {
+        (Some(J::Num(_)), Some(J::Arr(requests))) => Some(requests),
+        _ => None,
+    }
+}
+
+/// May this session take this request now? It may when nobody holds it, when
+/// its window has passed, or when it is held for this session. A session with
+/// no name has only the first two. A window this copy cannot read holds
+/// nothing back: the server still refuses a claim made too early, and reading
+/// it as open is what every copy did before requests were held at all.
+pub fn open_to(request: &J, me: &Me) -> bool {
+    let until = js::get(Some(request), "offered_until");
+    if js::nullish(until) {
+        return true;
+    }
+    let t = js::date_value(until);
+    if !t.is_finite() || t <= me.now {
+        return true;
+    }
+    matches!((js::get(Some(request), "offered_to"), me.name.as_deref()), (Some(J::Str(to)), Some(name)) if to == name)
+}
+
 /// Options for `summarize_inbox`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Opts {
     pub include_attention: bool,
     pub attn_dark: Option<f64>,
     /// A watcher is running for this session, so the next edit reaches the
     /// agent without it asking: the text says nothing about waiting.
     pub watcher_live: bool,
+    /// Who is reading: a request held for another session is not theirs to hear about.
+    pub me: Me,
 }
 
 impl Default for Opts {
     fn default() -> Self {
-        Opts { include_attention: true, attn_dark: None, watcher_live: false }
+        Opts { include_attention: true, attn_dark: None, watcher_live: false, me: Me::default() }
     }
 }
 
@@ -645,12 +710,35 @@ impl Default for Opts {
 pub const WAIT_ONCE: &str = "If your turn goes on beside the open canvas after applying them, wait once for the next edit \
 (less_canvas_inbox with wait_seconds). Do not loop the wait: each pass costs a whole turn.";
 
+/// The documents the rows are on, each named once, quoted, in order: the
+/// title, else the brand, else the repo's last segment, else "Untitled".
+fn documents(rows: &[&J]) -> String {
+    let docs: Vec<J> = unique(rows.iter().map(|s| {
+        for k in ["title", "brand_slug"] {
+            let v = js::get(Some(s), k);
+            if js::truthy(v) {
+                return v.cloned().unwrap();
+            }
+        }
+        let r = js::get(Some(s), "repo_remote");
+        if js::truthy(r) {
+            let tail = js::to_string(r).rsplit('/').next().unwrap_or("").to_string();
+            if !tail.is_empty() {
+                return J::Str(tail);
+            }
+        }
+        J::Str("Untitled".into())
+    }));
+    docs.iter().map(|d| format!("\"{}\"", js::to_string(Some(d)))).collect::<Vec<_>>().join(", ")
+}
+
 /// The agent-facing wake text, routed by surface and checkout. Empty when
 /// there is nothing actionable to say.
 pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
     let origin = cwd_git_remote(cwd);
     let (mut here, mut elsewhere, mut artefact, mut annotations, mut attention, mut recoverable) =
         (vec![], vec![], vec![], vec![], vec![], vec![]);
+    let (mut requests, mut n_artefact, mut n_requests) = (vec![], 0.0, 0usize);
     for s in sessions {
         let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
         if n("n_page") > 0.0 {
@@ -660,8 +748,19 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
                 elsewhere.push(s)
             }
         }
-        if n("n_artefact") > 0.0 {
+        // A newer server counts value edits apart from requests, and only the
+        // requests this session may take are said; one held for another
+        // session is not mentioned at all.
+        let pending = pending_requests(s);
+        let open = pending.map_or(0, |r| r.iter().filter(|q| open_to(q, &opts.me)).count());
+        let edits = if pending.is_some() { n("n_value_artefact") } else { n("n_artefact") };
+        if edits > 0.0 {
             artefact.push(s);
+            n_artefact += edits;
+        }
+        if open > 0 {
+            requests.push(s);
+            n_requests += open;
         }
         if n("n_annotation") > 0.0 {
             annotations.push(s);
@@ -669,7 +768,14 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
         if n("n_needs_human") > 0.0 {
             attention.push(s);
         }
-        if js::truthy(js::get(Some(s), "recoverable")) {
+        // An expired canvas holding nothing but requests held for another
+        // session holds nothing for this one.
+        let held_only = pending.is_some_and(|r| !r.is_empty())
+            && open == 0
+            && edits <= 0.0
+            && n("n_page") <= 0.0
+            && n("n_annotation") <= 0.0;
+        if js::truthy(js::get(Some(s), "recoverable")) && !held_only {
             recoverable.push(s);
         }
     }
@@ -706,26 +812,17 @@ and let the canvas re-capture. Apply them now; do not ask first.{}{}",
     }
     if !artefact.is_empty() {
         // The DOCUMENT leads the sentence; the agent names it, never the machinery.
-        let docs: Vec<J> = unique(artefact.iter().map(|s| {
-            for k in ["title", "brand_slug"] {
-                let v = js::get(Some(s), k);
-                if js::truthy(v) {
-                    return v.cloned().unwrap();
-                }
-            }
-            let r = js::get(Some(s), "repo_remote");
-            if js::truthy(r) {
-                let tail = js::to_string(r).rsplit('/').next().unwrap_or("").to_string();
-                if !tail.is_empty() {
-                    return J::Str(tail);
-                }
-            }
-            J::Str("Untitled".into())
-        }));
         lines.push(format!(
             "{} edit(s) are waiting on the Designless app for {}. Name the document, never the machinery, when you tell the user. Apply them now with less_canvas_ops action 'apply_type1' (one call claims, applies and acks; the manifest IS the source, so it applies server-side and needs NO checkout and no branch).",
-            js::num_to_string(sum(&artefact, "n_artefact")),
-            docs.iter().map(|d| format!("\"{}\"", js::to_string(Some(d)))).collect::<Vec<_>>().join(", ")
+            js::num_to_string(n_artefact),
+            documents(&artefact)
+        ));
+    }
+    if !requests.is_empty() {
+        lines.push(format!(
+            "{} request(s) on {} are for this session: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.",
+            js::num_to_string(n_requests as f64),
+            documents(&requests)
         ));
     }
     if !annotations.is_empty() {
@@ -774,7 +871,7 @@ tell the user plainly, once, that an edit of theirs is still waiting there. Do n
     // Only when there is something to drain, and only when no watcher will
     // bring the next edit: "after draining" over nothing is a heading over
     // empty space, and a wait beside a live watcher is paid for twice.
-    if !opts.watcher_live && here.len() + elsewhere.len() + artefact.len() + annotations.len() + recoverable.len() > 0 {
+    if !opts.watcher_live && here.len() + elsewhere.len() + artefact.len() + requests.len() + annotations.len() + recoverable.len() > 0 {
         lines.push(WAIT_ONCE.into());
     }
     lines.join(" ")
@@ -1224,6 +1321,120 @@ mod tests {
         for w in ["if you want", "whenever you", "would you like"] {
             assert!(!lower.contains(w), "{w}");
         }
+    }
+
+    // ── requests held for a session ──
+    const ME: &str = "claude:0a1b2c3d";
+    const OTHER: &str = "codex:9f8e7d6c";
+    const T: f64 = 1_800_000_000_000.0;
+    fn me(name: Option<&str>) -> Me {
+        Me { name: name.map(str::to_string), now: T }
+    }
+    fn request(to: Option<&str>, until: Option<J>) -> J {
+        row(vec![
+            ("seq", J::Num(7.0)),
+            ("kind", s("fit_slide")),
+            ("offered_to", to.map(s).unwrap_or(J::Null)),
+            ("offered_until", until.unwrap_or(J::Null)),
+        ])
+    }
+    fn at(ms: f64) -> Option<J> {
+        Some(s(&js::iso_string(ms)))
+    }
+    /// A row from a server that holds requests, with the older fields counting everything as it sends them.
+    fn held_row(value: f64, requests: Vec<J>, extra: Vec<(&str, J)>) -> J {
+        let all = value + requests.len() as f64;
+        let mut v = vec![
+            ("session_id", s("a")),
+            ("title", s("Deck")),
+            ("n_artefact", J::Num(all)),
+            ("n_undelivered", J::Num(all)),
+            ("n_value_artefact", J::Num(value)),
+            ("n_value_undelivered", J::Num(value)),
+            ("requests", J::Arr(requests)),
+        ];
+        v.extend(extra);
+        row(v)
+    }
+    fn said_to(name: Option<&str>, rows: &[J], watcher_live: bool) -> String {
+        summarize_inbox(rows, &tmpdir(), Opts { watcher_live, me: me(name), ..Opts::default() })
+    }
+    const CLAIM_LINE: &str = "request(s) on \"Deck\" are for this session: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
+
+    #[test]
+    fn a_request_is_open_when_nobody_holds_it_its_window_has_passed_or_it_is_held_for_me() {
+        let soon = at(T + 60_000.0);
+        assert!(open_to(&request(None, None), &me(None)), "no window");
+        assert!(open_to(&request(Some(OTHER), None), &me(None)), "no window, whoever it names");
+        assert!(open_to(&request(Some(OTHER), at(T - 1.0)), &me(None)), "the window has passed");
+        assert!(open_to(&request(Some(OTHER), at(T)), &me(Some(ME))), "a window ending now has passed");
+        assert!(open_to(&request(Some(ME), soon.clone()), &me(Some(ME))), "held for me");
+        assert!(!open_to(&request(Some(OTHER), soon.clone()), &me(Some(ME))), "held for another session");
+        assert!(!open_to(&request(Some(ME), soon.clone()), &me(None)), "with no name, no window is mine");
+        assert!(!open_to(&request(Some("claude:0a1b2c3"), soon.clone()), &me(Some(ME))), "a name is matched whole");
+        assert!(!open_to(&request(None, soon.clone()), &me(Some(ME))), "held for nobody named: wait it out");
+        // The forms a server writes a time in.
+        assert!(!open_to(&request(Some(OTHER), Some(s("2999-01-01T00:00:00.123456+00:00"))), &me(Some(ME))));
+        assert!(open_to(&request(Some(OTHER), Some(s("2001-01-01T00:00:00.123456+00:00"))), &me(Some(ME))));
+        // A window this copy cannot read holds nothing back.
+        for unreadable in [s("soon"), s(""), J::Obj(vec![])] {
+            assert!(open_to(&request(Some(OTHER), Some(unreadable.clone())), &me(Some(ME))), "{unreadable:?}");
+        }
+        assert!(open_to(&J::Num(1.0), &me(None)), "a request that is not an object holds nothing back");
+    }
+
+    #[test]
+    fn only_a_row_that_says_both_counts_requests_apart() {
+        assert!(pending_requests(&held_row(0.0, vec![], vec![])).is_some_and(|r| r.is_empty()));
+        assert!(pending_requests(&row(vec![("n_artefact", J::Num(1.0))])).is_none());
+        assert!(pending_requests(&row(vec![("requests", J::Arr(vec![]))])).is_none());
+        assert!(pending_requests(&row(vec![("n_value_undelivered", J::Num(0.0))])).is_none());
+        assert!(pending_requests(&row(vec![("n_value_undelivered", s("0")), ("requests", J::Arr(vec![]))])).is_none());
+        assert!(pending_requests(&row(vec![("n_value_undelivered", J::Num(0.0)), ("requests", J::Null)])).is_none());
+    }
+
+    #[test]
+    fn a_request_for_this_session_gets_its_own_line_and_one_held_elsewhere_none() {
+        let soon = at(T + 60_000.0);
+        let rows = [held_row(0.0, vec![request(Some(ME), soon.clone()), request(Some(OTHER), soon.clone()), request(None, None)], vec![])];
+        let text = said_to(Some(ME), &rows, true);
+        assert_eq!(text, format!("2 {CLAIM_LINE}"), "two of the three are this session's, and no edit line counts them");
+        assert!(!text.contains('\u{2014}'));
+        // Without a watcher the one wait follows, as after any work.
+        assert_eq!(said_to(Some(ME), &rows, false), format!("2 {CLAIM_LINE} {WAIT_ONCE}"));
+    }
+
+    #[test]
+    fn requests_held_elsewhere_are_not_mentioned_at_all() {
+        let soon = at(T + 60_000.0);
+        let held = || held_row(0.0, vec![request(Some(OTHER), soon.clone())], vec![("recoverable", J::Bool(true))]);
+        for live in [true, false] {
+            assert_eq!(said_to(Some(ME), &[held()], live), "", "no line, no expired-canvas line, no wait");
+            assert_eq!(said_to(None, &[held()], live), "");
+        }
+        // Once the window has passed, they are anyone's.
+        let passed = summarize_inbox(&[held()], &tmpdir(), Opts { me: Me { name: None, now: T + 60_000.0 }, ..Opts::default() });
+        assert!(passed.starts_with(&format!("1 {CLAIM_LINE} 1 expired session(s)")), "{passed}");
+    }
+
+    #[test]
+    fn a_value_edit_beside_a_held_request_is_said_alone() {
+        let rows = [held_row(1.0, vec![request(Some(OTHER), at(T + 60_000.0))], vec![])];
+        let text = said_to(Some(ME), &rows, true);
+        assert!(text.starts_with("1 edit(s) are waiting on the Designless app for \"Deck\"."), "counted from the value edits, not every op: {text}");
+        assert!(!text.contains("request(s)"), "{text}");
+    }
+
+    #[test]
+    fn a_row_from_an_older_server_reads_exactly_as_before() {
+        let artefact = "1 edit(s) are waiting on the Designless app for \"Deck\". Name the document, never the machinery, when you tell the user. Apply them now with less_canvas_ops action 'apply_type1' (one call claims, applies and acks; the manifest IS the source, so it applies server-side and needs NO checkout and no branch).";
+        let old = row(vec![("session_id", s("a")), ("title", s("Deck")), ("n_artefact", J::Num(1.0)), ("n_undelivered", J::Num(1.0)), ("latest_seq", J::Num(4.0))]);
+        let old = [old];
+        assert_eq!(said_to(Some(ME), &old, false), format!("{artefact} {WAIT_ONCE}"));
+        assert_eq!(said_to(None, &old, true), artefact);
+        // A list of requests alone does not make a row a newer one: n_artefact still counts.
+        let half = row(vec![("session_id", s("a")), ("title", s("Deck")), ("n_artefact", J::Num(1.0)), ("requests", J::Arr(vec![request(Some(OTHER), at(T + 60_000.0))]))]);
+        assert_eq!(said_to(Some(ME), &[half], true), artefact);
     }
 
     #[test]

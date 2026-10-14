@@ -2,7 +2,9 @@
 //!
 //! Every line it prints on stdout wakes the agent, and a wake re-reads the
 //! agent's whole conversation, so it prints ONLY when the user has given the
-//! agent more to do than it was last told about. Nothing else reaches stdout:
+//! agent more to do than it was last told about. A request the server holds
+//! for another session is not this agent's to do until its window passes.
+//! Nothing else reaches stdout:
 //! a desktop that cannot answer is written to stderr, where it is kept for
 //! anyone looking and wakes nobody. One per session, enforced by the marker it
 //! claims on start.
@@ -18,7 +20,7 @@
 
 use super::js::{self, J};
 use super::marker::{self, BEAT_MS};
-use super::probe::{self, Probe, MISSED_HINT};
+use super::probe::{self, Me, Probe, MISSED_HINT};
 use super::Env;
 use std::io::Write;
 use std::sync::OnceLock;
@@ -69,14 +71,16 @@ pub fn should_poll(quiet_beats: u64, beat_ms: u64, active: bool) -> bool {
     quiet_beats % poll_every_beats((quiet_beats * beat_ms) as f64, active) == 0
 }
 
-/// What one canvas holds for an agent: edits nobody has taken, and notes.
+/// What one canvas holds for this agent: edits nobody has taken, and notes.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Work {
     /// Edits waiting for an agent to take them. An edit an agent has already
     /// taken is in its hands, often this agent's: counting it woke an agent
     /// for its own progress, and for edits an expired session's agent took and
     /// never finished. This is the count the server's own wait wakes on, so
-    /// the watcher and the inbox agree on what is waiting.
+    /// the watcher and the inbox agree on what is waiting. A request for a
+    /// judgment that the server holds for another session counts once its
+    /// window has passed, and not before.
     pub untaken: f64,
     /// Notes left on the canvas. Reading one does not take it, so a note in
     /// hand looks like a new one; only MORE notes than were seen are news.
@@ -89,20 +93,49 @@ pub struct Work {
     pub seq: Option<f64>,
 }
 
-/// Per canvas, what it holds, as a value that changes only when the work does.
-/// Canvases holding nothing for an agent are absent: items only the user can
-/// act on, and edits already in an agent's hands.
-pub fn work_of(sessions: &[J]) -> Vec<(String, Work)> {
+/// A number the row may or may not say.
+fn said(v: Option<&J>) -> Option<f64> {
+    if js::nullish(v) {
+        None
+    } else {
+        Some(js::to_number(v)).filter(|v| v.is_finite())
+    }
+}
+
+/// Per canvas, what it holds for this session, as a value that changes only
+/// when that work does. Canvases holding nothing for it are absent: items only
+/// the user can act on, edits already in an agent's hands, and requests held
+/// for another session.
+pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
     let mut rows: Vec<(String, Work)> = sessions
         .iter()
         .filter_map(|s| {
             let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
-            let undelivered = js::get(Some(s), "n_undelivered");
-            // A row from an older server does not say, and counts every edit
-            // as untaken, as the server's wait does for the same row.
-            let untaken = if js::nullish(undelivered) { n("n_page") + n("n_artefact") } else { js::num_or_zero(undelivered) };
-            let seq = js::get(Some(s), "latest_seq");
-            let seq = if js::nullish(seq) { None } else { Some(js::to_number(seq)).filter(|v| v.is_finite()) };
+            let (untaken, seq) = match probe::pending_requests(s) {
+                // A newer server counts value edits apart from requests. Only
+                // the requests this session may take are its work, and only
+                // theirs can make the newest number newer: one held for
+                // another session is neither work nor news here until its
+                // window passes, and then it is both.
+                Some(requests) => {
+                    let mine: Vec<&J> = requests.iter().filter(|r| probe::open_to(r, me)).collect();
+                    let seq = mine
+                        .iter()
+                        .map(|r| said(js::get(Some(r), "seq")))
+                        .fold(said(js::get(Some(s), "latest_value_seq")), |a, b| match (a, b) {
+                            (Some(a), Some(b)) => Some(a.max(b)),
+                            (a, b) => a.or(b),
+                        });
+                    (n("n_value_undelivered") + mine.len() as f64, seq)
+                }
+                None => {
+                    let undelivered = js::get(Some(s), "n_undelivered");
+                    // A row from an older server does not say, and counts every edit
+                    // as untaken, as the server's wait does for the same row.
+                    let untaken = if js::nullish(undelivered) { n("n_page") + n("n_artefact") } else { js::num_or_zero(undelivered) };
+                    (untaken, said(js::get(Some(s), "latest_seq")))
+                }
+            };
             let w = Work { untaken, notes: n("n_annotation"), seq };
             // NaN counts as nothing.
             if (w.untaken + w.notes).partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
@@ -168,6 +201,9 @@ pub struct State {
     pub healthy: u64,
     pub blind: bool,
     pub blind_since: Option<f64>,
+    /// This session's own name, when its host says it: whose requests are
+    /// this watcher's work. Fixed for the watcher's life.
+    pub name: Option<String>,
 }
 
 /// What one poll says, and to whom.
@@ -199,13 +235,15 @@ pub fn step(probe: &Probe, prev: &State, cwd: &str, now: f64) -> (Voice, State) 
     }
     let healthy = prev.healthy + 1;
     let recovered = healthy >= HEALTHY_STREAK;
-    let work = work_of(&probe.sessions);
+    let me = Me { name: prev.name.clone(), now };
+    let work = work_of(&probe.sessions, &me);
     let fresh = news(&prev.seen, &work);
     let next = State {
         seen: work,
         healthy,
         blind: if recovered { false } else { prev.blind },
         blind_since: if recovered { None } else { prev.blind_since },
+        name: prev.name.clone(),
     };
     if fresh.is_empty() {
         return (Voice::Silent, next);
@@ -221,7 +259,7 @@ pub fn step(probe: &Probe, prev: &State, cwd: &str, now: f64) -> (Voice, State) 
         })
         .cloned()
         .collect();
-    let opts = probe::Opts { include_attention: false, attn_dark: None, watcher_live: true };
+    let opts = probe::Opts { include_attention: false, attn_dark: None, watcher_live: true, me };
     let text = probe::summarize_inbox(&slice, cwd, opts);
     if text.is_empty() {
         return (Voice::Silent, next);
@@ -336,8 +374,13 @@ pub async fn run(args: &[String], env: &Env) -> i32 {
     };
 
     // Start from what this session was last told, by a hook or by the watcher
-    // before this one, so the same work never wakes the agent twice.
-    let mut state = State { seen: seen_from_json(marker::read_seen(&env.home, &sid).as_ref()), ..Default::default() };
+    // before this one, so the same work never wakes the agent twice. Its own
+    // name says which held requests are its work; with none, only open ones are.
+    let mut state = State {
+        seen: seen_from_json(marker::read_seen(&env.home, &sid).as_ref()),
+        name: crate::identity::own_session_name(sid_text),
+        ..Default::default()
+    };
     // Beats since anything was news. Drives the ladder, and nothing else.
     let mut quiet_beats: u64 = 0;
     loop {
@@ -403,6 +446,137 @@ mod tests {
     }
     fn blind(r: &str) -> Probe {
         Probe { unknown: Some(r.into()), ..Default::default() }
+    }
+    /// The work as a session with no name sees it, now. Every row pinned here
+    /// without requests is from a server that holds none, so anyone reads it
+    /// the same way.
+    fn work_of(s: &[J]) -> Vec<(String, Work)> {
+        super::work_of(s, &Me::default())
+    }
+
+    // ── requests held for a session ──
+    const ME: &str = "claude:0a1b2c3d";
+    const OTHER: &str = "codex:9f8e7d6c";
+    /// A fixed now, and a request window that ends five minutes after it.
+    const T: f64 = 1_800_000_000_000.0;
+    const SOON: Option<f64> = Some(T + 5.0 * MIN);
+
+    /// A row from a server that holds requests: `value` value edits waiting,
+    /// the newest numbered `value_seq`, and the requests as given. The older
+    /// fields count everything, as that server sends them, so a reader that
+    /// fell back to them would count the held requests too.
+    fn held_row(value: u32, value_seq: Option<u32>, requests: &[(u32, Option<&str>, Option<f64>)]) -> Probe {
+        let quoted = |v: Option<String>| v.map(|v| format!("\"{v}\"")).unwrap_or_else(|| "null".into());
+        let list: Vec<String> = requests
+            .iter()
+            .map(|(seq, to, until)| {
+                format!(
+                    r#"{{"seq":{seq},"kind":"fit_slide","offered_to":{},"offered_until":{}}}"#,
+                    quoted(to.map(str::to_string)),
+                    quoted(until.map(js::iso_string))
+                )
+            })
+            .collect();
+        let all = value + requests.len() as u32;
+        let latest = requests.iter().map(|r| r.0).chain(value_seq).max();
+        sessions(&format!(
+            r#"[{{"session_id":"a","title":"Deck","n_artefact":{all},"n_undelivered":{all},"latest_seq":{},"n_value_artefact":{value},"n_value_undelivered":{value},"latest_value_seq":{},"requests":[{}]}}]"#,
+            latest.map_or("null".into(), |v| v.to_string()),
+            value_seq.map_or("null".into(), |v| v.to_string()),
+            list.join(",")
+        ))
+    }
+    fn as_session(name: Option<&str>) -> State {
+        State { name: name.map(str::to_string), ..Default::default() }
+    }
+    const CLAIM_LINE: &str = "1 request(s) on \"Deck\" are for this session: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
+
+    #[test]
+    fn a_request_held_for_this_session_is_its_work_and_wakes_it() {
+        let p = held_row(0, None, &[(7, Some(ME), SOON)]);
+        assert_eq!(super::work_of(&p.sessions, &Me { name: Some(ME.into()), now: T }), vec![("a".into(), Work { untaken: 1.0, notes: 0.0, seq: Some(7.0) })]);
+        let v = step(&p, &as_session(Some(ME)), &cwd(), T).0;
+        let line = wake(&v).unwrap();
+        assert!(line.starts_with(&format!("Designless canvas: {CLAIM_LINE}")), "{line}");
+        assert!(!line.contains("edit(s) are waiting"), "a request is not a value edit: {line}");
+        assert!(!line.contains('\u{2014}'));
+    }
+
+    #[test]
+    fn a_request_held_for_another_session_wakes_nobody_until_its_window_passes() {
+        let p = held_row(0, None, &[(7, Some(OTHER), SOON)]);
+        for name in [Some(ME), None] {
+            let (v, st) = step(&p, &as_session(name), &cwd(), T);
+            assert_eq!(v, Voice::Silent, "{name:?}");
+            assert_eq!(st.seen, vec![], "neither work nor news here: {name:?}");
+            // The same request once its window has passed: anyone's, and news.
+            let (v, st) = step(&p, &st, &cwd(), T + 5.0 * MIN);
+            let line = wake(&v).unwrap_or_else(|| panic!("{name:?}"));
+            assert!(line.contains(CLAIM_LINE), "{line}");
+            assert_eq!(st.seen, vec![("a".into(), Work { untaken: 1.0, notes: 0.0, seq: Some(7.0) })]);
+        }
+    }
+
+    #[test]
+    fn a_request_offered_to_nobody_is_like_one_offered_to_this_session() {
+        let p = held_row(0, None, &[(7, None, None)]);
+        for name in [Some(ME), None] {
+            let line = wake(&step(&p, &as_session(name), &cwd(), T).0).map(str::to_string);
+            assert!(line.as_deref().is_some_and(|l| l.contains(CLAIM_LINE)), "{name:?}: {line:?}");
+        }
+    }
+
+    #[test]
+    fn a_session_with_no_name_waits_out_every_window() {
+        // Its host does not say who it is, so it cannot be the session a request is held for.
+        let p = held_row(0, None, &[(7, Some(ME), SOON)]);
+        assert_eq!(step(&p, &as_session(None), &cwd(), T).0, Voice::Silent);
+        assert!(wake(&step(&p, &as_session(None), &cwd(), T + 6.0 * MIN).0).is_some());
+    }
+
+    #[test]
+    fn a_value_edit_beside_a_held_request_says_only_the_edit() {
+        let p = held_row(1, Some(5), &[(6, Some(OTHER), SOON)]);
+        let (v, st) = step(&p, &as_session(Some(ME)), &cwd(), T);
+        let line = wake(&v).unwrap();
+        assert!(line.starts_with("Designless canvas: 1 edit(s) are waiting on the Designless app for \"Deck\"."), "{line}");
+        assert!(!line.contains("request(s)"), "{line}");
+        assert_eq!(st.seen, vec![("a".into(), Work { untaken: 1.0, notes: 0.0, seq: Some(5.0) })], "the held request is not counted, nor its number");
+    }
+
+    #[test]
+    fn a_newer_request_open_to_this_session_is_news_at_the_same_count_and_one_held_elsewhere_is_not() {
+        // Told about one piece of work numbered 5, and that work since done.
+        let told = State { seen: vec![("a".into(), Work { untaken: 1.0, notes: 0.0, seq: Some(5.0) })], name: Some(ME.into()), ..Default::default() };
+        let mine = held_row(0, Some(5), &[(6, Some(ME), SOON)]);
+        assert!(wake(&step(&mine, &told, &cwd(), T).0).is_some_and(|l| l.contains(CLAIM_LINE)));
+        // One value edit still waiting, numbered 5, and a newer request held elsewhere.
+        let elsewhere = held_row(1, Some(5), &[(6, Some(OTHER), SOON)]);
+        assert_eq!(step(&elsewhere, &told, &cwd(), T).0, Voice::Silent);
+        // Its window passes: now it is this session's too.
+        assert!(wake(&step(&elsewhere, &told, &cwd(), T + 5.0 * MIN).0).is_some_and(|l| l.contains(CLAIM_LINE)));
+    }
+
+    #[test]
+    fn a_row_that_says_only_half_of_it_is_read_as_before() {
+        let me = Me { name: Some(ME.into()), now: T };
+        let held = r#"{"seq":9,"kind":"look_slides","offered_to":"codex:9f8e7d6c","offered_until":"2999-01-01T00:00:00.000Z"}"#;
+        for row in [
+            format!(r#"[{{"session_id":"a","n_artefact":2,"n_undelivered":2,"latest_seq":9,"requests":[{held}]}}]"#),
+            format!(r#"[{{"session_id":"a","n_artefact":2,"n_undelivered":2,"latest_seq":9,"n_value_undelivered":"1","requests":[{held}]}}]"#),
+            r#"[{"session_id":"a","n_artefact":2,"n_undelivered":2,"latest_seq":9,"n_value_undelivered":1,"requests":null}]"#.to_string(),
+        ] {
+            assert_eq!(super::work_of(&sessions(&row).sessions, &me), vec![("a".into(), Work { untaken: 2.0, notes: 0.0, seq: Some(9.0) })], "{row}");
+        }
+    }
+
+    #[test]
+    fn the_seen_record_keeps_its_shape_and_holds_this_sessions_own_work() {
+        let p = held_row(2, Some(4), &[(5, Some(ME), SOON), (6, Some(OTHER), SOON), (3, None, None)]);
+        let w = super::work_of(&p.sessions, &Me { name: Some(ME.into()), now: T });
+        assert_eq!(w, vec![("a".into(), Work { untaken: 4.0, notes: 0.0, seq: Some(5.0) })]);
+        assert_eq!(js::stringify(&seen_json(&w)), r#"[["a",4,0,5]]"#);
+        assert_eq!(seen_from_json(Some(&seen_json(&w))), w);
     }
 
     // ── idle backoff ──
