@@ -66,10 +66,20 @@ pub fn render_in(response: &Value) -> Option<(String, Value)> {
 }
 
 /// The answer with the bridge's key removed: nothing under it is the agent's.
+/// When the key was all the structured part held, the structured part goes
+/// too: a host shows an empty `{}` in place of the answer's words, so the
+/// agent would see the pictures and lose what it was asked to do with them.
 pub fn without_bridge(response: &Value) -> Value {
     let mut out = response.clone();
-    if let Some(sc) = out.pointer_mut("/result/structuredContent").and_then(Value::as_object_mut) {
-        sc.remove("_bridge");
+    let Some(result) = out.get_mut("result").and_then(Value::as_object_mut) else {
+        return out;
+    };
+    let emptied = match result.get_mut("structuredContent").and_then(Value::as_object_mut) {
+        Some(sc) => sc.remove("_bridge").is_some() && sc.is_empty(),
+        None => false,
+    };
+    if emptied {
+        result.remove("structuredContent");
     }
     out
 }
@@ -145,5 +155,18 @@ mod tests {
         assert_eq!(stripped["result"]["content"][0]["text"], json!("Dry run"));
         assert!(render_in(&stripped).is_none());
         assert!(render_in(&json!({"result":{"structuredContent":{"_bridge":{"measure":{"html":"","page":{}}}}}})).is_none());
+    }
+
+    #[test]
+    fn a_structured_part_that_held_only_the_key_is_dropped_and_the_words_stay() {
+        let r = json!({"jsonrpc":"2.0","id":8,"result":{"content":[{"type":"text","text":"Dry run"}],"structuredContent":{"_bridge":{"measure":{"html":"<html/>","page":{}}}}}});
+        let stripped = without_bridge(&r);
+        assert!(stripped["result"].get("structuredContent").is_none(), "an empty {{}} would stand in for the words");
+        assert_eq!(stripped["result"]["content"][0]["text"], json!("Dry run"));
+        // Nothing to strip: untouched, an empty structured part the server sent included.
+        let own = json!({"result":{"content":[],"structuredContent":{}}});
+        assert_eq!(without_bridge(&own), own);
+        let error = json!({"jsonrpc":"2.0","id":9,"error":{"code":-32000,"message":"no"}});
+        assert_eq!(without_bridge(&error), error);
     }
 }

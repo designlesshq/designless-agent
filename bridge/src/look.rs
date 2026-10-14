@@ -105,11 +105,15 @@ pub async fn sheets_from_the_app(request_ids: &[String]) -> Result<Vec<LookSheet
     }
 }
 
-/// The answer as the agent should read it: unchanged when it asks for no
-/// pages, otherwise with the pages from the app added and the key removed.
+/// The answer as the agent should read it: unchanged when it carries no
+/// bridge key, without the key when it asks for no pages, otherwise with the
+/// pages from the app added and the key removed.
 pub async fn shown(response: Value) -> Value {
     let asks = asks_in(&response);
     if asks.is_empty() {
+        if response.pointer("/result/structuredContent/_bridge").is_some() {
+            return crate::measure::without_bridge(&response);
+        }
         return response;
     }
     let ids: Vec<String> = asks.iter().map(|a| a.request_id.clone()).collect();
@@ -178,5 +182,34 @@ mod tests {
         }
         // A bare refusal from an app of another age still reads.
         assert!(matches!(serde_json::from_value::<IpcResponse>(json!({"op":"look_sheets","ok":false})).unwrap(), IpcResponse::LookSheets { ok: false, .. }));
+    }
+
+    #[test]
+    fn a_look_whose_structured_part_was_only_the_key_keeps_its_words_and_drops_the_empty_part() {
+        // A claimed look: everything the agent must do is in the words; the
+        // structured part held nothing but the bridge's key.
+        let r = json!({"jsonrpc":"2.0","id":5,"result":{
+            "content":[{"type":"text","text":"## seq 3 · look_slides · uuid u3\nThen ack this op `applied`."}],
+            "structuredContent":{"_bridge":{"look":[{"request_id":"r1","label":"the deck"}]}}}});
+        let asks = asks_in(&r);
+        let out = with_the_pages(&r, &asks, &Ok(vec![sheet("r1", "AAA")]));
+        assert!(out["result"].get("structuredContent").is_none(), "no empty {{}} stands in for the words");
+        let c = out["result"]["content"].as_array().unwrap();
+        assert_eq!(c[0]["text"], json!("## seq 3 · look_slides · uuid u3\nThen ack this op `applied`."));
+        assert_eq!(c[1]["text"], json!("Pages of the deck:"));
+        assert_eq!(c[2]["data"], json!("AAA"));
+    }
+
+    #[tokio::test]
+    async fn an_answer_that_asks_for_no_pages_never_carries_the_key_to_the_agent() {
+        let plain = json!({"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"ok"}],"structuredContent":{"count":2}}});
+        assert_eq!(shown(plain.clone()).await, plain, "an answer without the key is untouched");
+        let empty_list = json!({"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"ok"}],"structuredContent":{"_bridge":{"look":[]}}}});
+        let out = shown(empty_list).await;
+        assert!(out["result"].get("structuredContent").is_none());
+        assert_eq!(out["result"]["content"][0]["text"], json!("ok"));
+        let kept = json!({"jsonrpc":"2.0","id":3,"result":{"content":[],"structuredContent":{"job_id":"j","_bridge":{"look":[{"request_id":""}]}}}});
+        let out = shown(kept).await;
+        assert_eq!(out["result"]["structuredContent"], json!({"job_id":"j"}));
     }
 }
