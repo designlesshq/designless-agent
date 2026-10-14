@@ -567,13 +567,16 @@ fn edits_in_an_agents_hands_and_a_blind_desktop_wake_nobody() {
 // A request for a judgment (fit a slide, look the slides over) is offered
 // first to the session that made the deck, for a while, then to anyone. Each
 // session knows itself by the name the bridge sends for it: the host, and the
-// first eight hex of a SHA-256 of the host's own id. The id here is synthetic.
+// first eight hex of a SHA-256 of the host's own id. The host is the one whose
+// variable carries that id. The ids here are synthetic.
 
 const HOST_SID: &str = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const AS_CLAUDE: &str = "claude:fdd5f4f9";
 const AS_CODEX: &str = "codex:fdd5f4f9";
 const CLAUDE_HOST: (&str, &str) = ("CLAUDE_CODE_SESSION_ID", HOST_SID);
-const CODEX_HOST: (&str, &str) = ("CODEX_HOME", "/tmp/dlw-codex-home");
+const CODEX_HOST: (&str, &str) = ("CODEX_SESSION_ID", HOST_SID);
+/// Another Claude Code session's id, as a command started from inside it inherits.
+const PARENT_SID: &str = "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f";
 const CLAIM_LINE: &str = "request(s) on \"Deck\" are for this session: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
 const NEVER_ENDS: &str = "2999-01-01T00:00:00.000Z";
 const LONG_ENDED: &str = "2001-01-01T00:00:00.000Z";
@@ -625,6 +628,22 @@ fn a_request_held_for_a_session_wakes_that_sessions_watcher_and_no_other() {
         assert_eq!(elsewhere.stop().0, Some(0));
         assert_eq!(unnamed.stop().0, Some(0));
     }
+}
+
+#[test]
+fn a_codex_session_started_from_claude_code_knows_itself_by_its_own_id() {
+    let s = Scratch::new("nested");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, held_inbox(0, &[(AS_CODEX, NEVER_ENDS)]));
+    // Claude Code's id is inherited and is another session's: on its own it names nothing.
+    let parent_only = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("parent-only"), &sock, &[("CLAUDE_CODE_SESSION_ID", PARENT_SID)]);
+    let nested = [("CLAUDE_CODE_SESSION_ID", PARENT_SID), ("CLAUDECODE", "1"), CODEX_HOST, ("CODEX_THREAD_ID", HOST_SID)];
+    let mut w = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("nested"), &sock, &nested);
+    let line = w.line_within(5).expect("the Codex session the request is held for");
+    assert!(line.starts_with(&format!("Designless canvas: 1 {CLAIM_LINE}")), "{line}");
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert_eq!(parent_only.line_within(3), None, "not that Claude Code session, and no other name");
+    assert_eq!(parent_only.stop().0, Some(0));
 }
 
 #[test]

@@ -17,7 +17,12 @@
 //! Only a short hash of it travels (`session_label`), so the id itself never
 //! leaves this machine. The canvas watcher and the hooks name their own
 //! session the same way (`own_session_name`), so they can tell a request the
-//! server holds for this session from one it holds for another.
+//! server holds for this session from one it holds for another. They are
+//! given the host's id for the session and match it against what each host
+//! sets for the commands it starts: Claude Code sets `CLAUDE_CODE_SESSION_ID`,
+//! Codex sets `CODEX_SESSION_ID` and `CODEX_THREAD_ID`. A Codex run started
+//! from inside Claude Code inherits Claude Code's variables, so a variable
+//! being present is not enough: the id it carries has to be this one.
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -63,31 +68,42 @@ pub fn session_from_frame(frame: &Value) -> Option<String> {
     session_label("codex", id)
 }
 
-/// The host a process runs under, read from the variables it was started
-/// with: Claude Code sets its session id for everything it starts, and Codex
-/// marks what it starts with `CODEX_` variables. Claude Code is asked first,
-/// so a Codex setting kept in a shell profile does not rename a Claude Code
-/// session. Any other host names nothing.
-pub fn host_named_by<I, K, V>(vars: I) -> Option<&'static str>
+/// The host whose session `session_id` is, read from the variables a process
+/// was started with. The id itself decides first: Claude Code's
+/// `CLAUDE_CODE_SESSION_ID` carrying it names Claude Code, and Codex's
+/// `CODEX_SESSION_ID` or `CODEX_THREAD_ID` carrying it names Codex. Failing
+/// that, any `CODEX_` variable names Codex, for a Codex command that has its
+/// markers but not its id; a Claude Code id that is some other session's
+/// does not stand in its way, since a Codex run started from Claude Code
+/// inherits one. With neither, nothing is named: a Claude Code id that is
+/// not this one says only that this is not that session.
+pub fn host_named_by<I, K, V>(vars: I, session_id: &str) -> Option<&'static str>
 where
     I: IntoIterator<Item = (K, V)>,
     K: AsRef<str>,
     V: AsRef<str>,
 {
-    let mut codex = false;
+    let id = session_id.trim();
+    let (mut claude, mut codex) = (false, false);
     for (name, value) in vars {
         let name = name.as_ref();
-        if name == "CLAUDE_CODE_SESSION_ID" && !value.as_ref().trim().is_empty() {
-            return Some("claude");
-        }
+        claude |= name == "CLAUDE_CODE_SESSION_ID" && !id.is_empty() && value.as_ref().trim() == id;
+        // Codex's own id variables are among its CODEX_ variables, so a Codex
+        // id that carries this one names Codex here too.
         codex |= name.starts_with("CODEX_");
     }
-    codex.then_some("codex")
+    if claude {
+        Some("claude")
+    } else if codex {
+        Some("codex")
+    } else {
+        None
+    }
 }
 
-/// The host this process runs under, from its own environment.
-pub fn host_from_env() -> Option<&'static str> {
-    host_named_by(std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())))
+/// The host whose session `session_id` is, from this process's environment.
+pub fn host_from_env(session_id: &str) -> Option<&'static str> {
+    host_named_by(std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())), session_id)
 }
 
 /// The name the server knows this process's session by, given the host's own
@@ -95,7 +111,7 @@ pub fn host_from_env() -> Option<&'static str> {
 /// the server holds for it can be told apart from one held for another. None
 /// when the host does not say who it is.
 pub fn own_session_name(session_id: &str) -> Option<String> {
-    session_label(host_from_env()?, session_id)
+    session_label(host_from_env(session_id)?, session_id)
 }
 
 /// The slug a harness name maps to. Case and punctuation are the harness's
@@ -296,22 +312,36 @@ mod tests {
     }
 
     #[test]
-    fn the_host_is_named_by_what_it_leaves_in_the_environment() {
-        let vars = |v: &[(&'static str, &'static str)]| v.to_vec();
-        assert_eq!(host_named_by(vars(&[("HOME", "/h"), ("CLAUDE_CODE_SESSION_ID", "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f")])), Some("claude"));
-        assert_eq!(host_named_by(vars(&[("HOME", "/h"), ("CODEX_HOME", "/h/.codex")])), Some("codex"));
-        assert_eq!(host_named_by(vars(&[("CODEX_SANDBOX", "seatbelt")])), Some("codex"));
-        // A Codex setting in a shell profile does not rename a Claude Code session, in either order.
-        assert_eq!(host_named_by(vars(&[("CODEX_HOME", "/h/.codex"), ("CLAUDE_CODE_SESSION_ID", "abc")])), Some("claude"));
-        assert_eq!(host_named_by(vars(&[("CLAUDE_CODE_SESSION_ID", "abc"), ("CODEX_HOME", "/h/.codex")])), Some("claude"));
-        // Nothing to go on: no name.
-        for none in [vec![], vars(&[("HOME", "/h")]), vars(&[("CLAUDE_CODE_SESSION_ID", "  ")]), vars(&[("CLAUDE_PID", "4242")]), vars(&[("MY_CODEX_HOME", "/x")]), vars(&[("codex_home", "/x")])] {
-            assert_eq!(host_named_by(none.clone()), None, "{none:?}");
+    fn the_host_is_named_by_the_variable_that_carries_the_session_id() {
+        const ID: &str = "0f0e0d0c-0b0a-4908-8706-050403020100";
+        const PARENT: &str = "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f";
+        let named = |v: &[(&str, &str)]| host_named_by(v.iter().copied(), ID);
+        // Claude Code alone.
+        assert_eq!(named(&[("HOME", "/h"), ("CLAUDE_CODE_SESSION_ID", ID)]), Some("claude"));
+        assert_eq!(named(&[("CLAUDE_CODE_SESSION_ID", format!(" {ID}\n").as_str())]), Some("claude"), "trimmed");
+        // Codex alone, by either of its ids.
+        assert_eq!(named(&[("HOME", "/h"), ("CODEX_SESSION_ID", ID)]), Some("codex"));
+        assert_eq!(named(&[("CODEX_THREAD_ID", ID)]), Some("codex"));
+        // Codex started from inside Claude Code: the inherited Claude Code id is another session's.
+        assert_eq!(named(&[("CLAUDE_CODE_SESSION_ID", PARENT), ("CLAUDECODE", "1"), ("CODEX_SESSION_ID", ID), ("CODEX_THREAD_ID", ID)]), Some("codex"));
+        // Claude Code with a Codex setting left in a shell profile.
+        assert_eq!(named(&[("CODEX_HOME", "/h/.codex"), ("CLAUDE_CODE_SESSION_ID", ID)]), Some("claude"));
+        assert_eq!(named(&[("CLAUDE_CODE_SESSION_ID", ID), ("CODEX_HOME", "/h/.codex")]), Some("claude"));
+        // A Codex command with its markers but not its id, alone or under an inherited Claude Code id.
+        assert_eq!(named(&[("CODEX_SANDBOX", "seatbelt")]), Some("codex"));
+        assert_eq!(named(&[("CLAUDE_CODE_SESSION_ID", PARENT), ("CODEX_SANDBOX", "seatbelt")]), Some("codex"));
+        assert_eq!(named(&[("CLAUDE_CODE_SESSION_ID", "  "), ("CODEX_SANDBOX", "seatbelt")]), Some("codex"));
+        // A Claude Code id that is another session's, and nothing else: not that session, so no name.
+        assert_eq!(named(&[("HOME", "/h"), ("CLAUDE_CODE_SESSION_ID", PARENT)]), None);
+        // Nothing set, or nothing that is a host's.
+        for none in [&[][..], &[("HOME", "/h")], &[("CLAUDE_PID", "4242")], &[("MY_CODEX_HOME", "/x")], &[("codex_home", "/x")], &[("CLAUDE_CODE_SESSION_ID", "")]] {
+            assert_eq!(named(none), None, "{none:?}");
         }
+        // An empty id matches no variable, not even an empty one.
+        assert_eq!(host_named_by([("CLAUDE_CODE_SESSION_ID", "")], ""), None);
         // The name is the one the bridge sends for the same session.
-        let id = "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f";
-        let host = host_named_by(vars(&[("CLAUDE_CODE_SESSION_ID", id)])).unwrap();
-        assert_eq!(session_label(host, id), session_label("claude", id));
+        let host = named(&[("CLAUDE_CODE_SESSION_ID", ID)]).unwrap();
+        assert_eq!(session_label(host, ID), session_label("claude", ID));
     }
 
     #[test]
