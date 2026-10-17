@@ -13,7 +13,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const HOOKS: [&str; 5] = ["session-start-inbox", "canvas-wake", "canvas-drain-check", "canvas-arm-watch", "compose-epilogue"];
+const HOOKS: [&str; 6] = ["session-start-inbox", "canvas-wake", "canvas-drain-check", "canvas-arm-watch", "compose-epilogue", "conversation-end"];
 const BIN: &str = env!("CARGO_BIN_EXE_designless-mcp-bridge");
 
 fn root() -> PathBuf {
@@ -106,6 +106,26 @@ fn the_cursor_hooks_run_from_the_plugin_root() {
     }
     assert_eq!(cfg["hooks"]["stop"][0]["loop_limit"], 3);
     assert!(seen.len() >= 4);
+}
+
+#[test]
+fn the_hooks_hosts_already_trust_are_unchanged_and_a_conversation_end_is_one_more() {
+    // A host that trusts each hook by its own event, matcher and command keeps
+    // trusting these only while they stay exactly as they are. The one new
+    // entry is the conversation end, under SessionEnd and nowhere else.
+    let cmd = |h: &str| format!(r#"/bin/sh "${{CLAUDE_PLUGIN_ROOT}}"/bin/designless hook {h}"#);
+    let entry = |m: &str, h: &str| serde_json::json!({ "matcher": m, "hooks": [{ "type": "command", "command": cmd(h) }] });
+    let expected = serde_json::json!({
+        "SessionStart": [entry("", "session-start-inbox")],
+        "UserPromptSubmit": [entry("", "canvas-wake")],
+        "Stop": [entry("", "canvas-drain-check")],
+        "PostToolUse": [entry(".*less_.*", "canvas-arm-watch"), entry(".*less_canvas_compose$", "compose-epilogue")],
+        "SessionEnd": [entry("", "conversation-end")],
+    });
+    assert_eq!(json("hooks/hooks.json")["hooks"], expected);
+    // Cursor names no conversation a hook could report, so nothing new there.
+    let cursor = read("hooks/cursor.hooks.json");
+    assert!(!cursor.contains("conversation-end") && !cursor.contains("sessionEnd"), "{cursor}");
 }
 
 fn post_entry(fragment: &str) -> Value {
@@ -719,6 +739,177 @@ fn the_hooks_name_their_session_as_the_watcher_does() {
         let (_, start, _) = run_with(&["hook", "session-start-inbox"], &input, &s.path("elsewhere"), &sock, &extra);
         assert!(!context(&start).contains("request(s)"), "{start}");
     }
+}
+
+// ── a conversation's end ───────────────────────────────────────────────────
+// When the host ends a conversation, the hook tells the desktop the name the
+// bridge sends for it, and nothing else. It prints nothing and exits 0 whatever
+// the desktop does, well inside the stricter host's one second.
+
+const ACCEPTED: &str = "{\"op\":\"host_event\",\"accepted\":true}\n";
+const HANG_UP: &str = "hang up";
+
+/// The line a conversation `name` names is told by.
+fn ended(name: &str) -> String {
+    format!("{{\"op\":\"host_event\",\"event\":\"conversation_end\",\"session\":\"{name}\"}}\n")
+}
+
+/// What a host hands its SessionEnd hook.
+fn end_input(sid: &str, reason: &str) -> String {
+    format!(r#"{{"session_id":"{sid}","transcript_path":"/Users/someone/.claude/projects/work/{sid}.jsonl","cwd":"/Users/someone/work","hook_event_name":"SessionEnd","reason":"{reason}"}}"#)
+}
+
+/// A stand-in desktop that keeps the first line of each connection and answers
+/// it with `reply`: never when `reply` is empty, a hang-up for `HANG_UP`.
+fn recording_desktop(sock: &str, reply: &'static str) -> std::sync::Arc<std::sync::Mutex<Vec<String>>> {
+    let heard = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let listener = std::os::unix::net::UnixListener::bind(sock).unwrap();
+    let keep = heard.clone();
+    std::thread::spawn(move || {
+        for conn in listener.incoming().flatten() {
+            let keep = keep.clone();
+            std::thread::spawn(move || {
+                let mut r = BufReader::new(conn.try_clone().unwrap());
+                let mut line = String::new();
+                let _ = r.read_line(&mut line);
+                keep.lock().unwrap().push(line);
+                match reply {
+                    "" => std::thread::sleep(std::time::Duration::from_secs(3)),
+                    HANG_UP => {}
+                    _ => {
+                        let mut w = conn;
+                        let _ = w.write_all(reply.as_bytes());
+                    }
+                }
+            });
+        }
+    });
+    heard
+}
+
+fn end_hook(input: &str, home: &str, sock: &str, extra: &[(&str, &str)]) -> (i32, String, String) {
+    run_with(&["hook", "conversation-end"], input, home, sock, extra)
+}
+
+#[test]
+fn a_conversation_end_tells_the_desktop_its_name_and_nothing_else() {
+    for (tag, host, name) in [("endclaude", CLAUDE_HOST, AS_CLAUDE), ("endcodex", CODEX_HOST, AS_CODEX)] {
+        let s = Scratch::new(tag);
+        let sock = s.path("ipc.sock");
+        let heard = recording_desktop(&sock, ACCEPTED);
+        let got = end_hook(&end_input(HOST_SID, "other"), &s.path("home"), &sock, &[host]);
+        assert_eq!(got, (0, String::new(), String::new()), "{tag}: prints nothing");
+        let heard = heard.lock().unwrap().clone();
+        assert_eq!(heard, [ended(name)], "{tag}");
+        let frame: Value = serde_json::from_str(heard[0].trim_end()).unwrap();
+        let mut keys: Vec<&String> = frame.as_object().unwrap().keys().collect();
+        keys.sort();
+        assert_eq!(keys, ["event", "op", "session"], "{tag}");
+        for kept in [HOST_SID, "someone", "work", "other", "SessionEnd", "jsonl"] {
+            assert!(!heard[0].contains(kept), "{tag}: {kept} stays on this machine");
+        }
+    }
+}
+
+#[test]
+fn a_cleared_conversation_is_named_by_the_id_it_ended_as_any_other_end_is() {
+    // A clear ends the conversation under its old id, which the hook's own
+    // environment still carries, and starts a new one after.
+    let s = Scratch::new("endclear");
+    let sock = s.path("ipc.sock");
+    let heard = recording_desktop(&sock, ACCEPTED);
+    let reasons = ["clear", "prompt_input_exit", "logout", "resume", "other"];
+    for reason in reasons {
+        let got = end_hook(&end_input(HOST_SID, reason), &s.path("home"), &sock, &[CLAUDE_HOST]);
+        assert_eq!(got, (0, String::new(), String::new()), "{reason}");
+    }
+    assert_eq!(*heard.lock().unwrap(), vec![ended(AS_CLAUDE); reasons.len()], "every reason names the same conversation, and no reason travels");
+}
+
+#[test]
+fn a_conversation_with_no_name_tells_the_desktop_nothing() {
+    let s = Scratch::new("endnoname");
+    let sock = s.path("ipc.sock");
+    let heard = recording_desktop(&sock, ACCEPTED);
+    let input = end_input(HOST_SID, "other");
+    type Case<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str)]);
+    let cases: [Case; 7] = [
+        ("a host that does not say who it is", input.as_str(), &[]),
+        ("another session's id, inherited", input.as_str(), &[("CLAUDE_CODE_SESSION_ID", PARENT_SID)]),
+        ("no session in the input", r#"{"reason":"other"}"#, &[CLAUDE_HOST]),
+        ("a session that is no id", r#"{"session_id":"not one"}"#, &[CODEX_HOST]),
+        ("not json", "not json", &[CLAUDE_HOST]),
+        ("nothing at all", "", &[CLAUDE_HOST]),
+        ("null", "null", &[CLAUDE_HOST]),
+    ];
+    for (case, input, extra) in cases {
+        assert_eq!(end_hook(input, &s.path("home"), &sock, extra), (0, String::new(), String::new()), "{case}");
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert!(heard.lock().unwrap().is_empty(), "no name, no frame: {:?}", heard.lock().unwrap());
+}
+
+#[test]
+fn a_conversation_end_is_silent_whatever_the_desktop_does() {
+    let s = Scratch::new("endopen");
+    let home = s.path("home");
+    let input = end_input(HOST_SID, "other");
+    assert_eq!(end_hook(&input, &home, &s.path("absent.sock"), &[CLAUDE_HOST]), (0, String::new(), String::new()), "no desktop");
+    let endless: &'static str = Box::leak("x".repeat(64 * 1024).into_boxed_str());
+    for (tag, reply) in [
+        ("older", "{\"op\":\"error\",\"reason\":\"unknown_op\"}\n"),
+        ("garbled", "not a frame\n"),
+        ("endless", endless),
+        ("hangup", HANG_UP),
+        ("mute", ""),
+    ] {
+        let sock = s.path(&format!("{tag}.sock"));
+        let heard = recording_desktop(&sock, reply);
+        let t = std::time::Instant::now();
+        let got = end_hook(&input, &home, &sock, &[CLAUDE_HOST]);
+        let took = t.elapsed();
+        assert_eq!(got, (0, String::new(), String::new()), "{tag}");
+        assert!(took < std::time::Duration::from_secs(1), "{tag}: {took:?} is not inside a second");
+        assert_eq!(*heard.lock().unwrap(), [ended(AS_CLAUDE)], "{tag}: the frame was sent all the same");
+    }
+}
+
+#[test]
+fn a_conversation_end_through_the_launcher_stays_inside_a_second() {
+    if !(cfg!(target_os = "macos") && cfg!(target_arch = "aarch64")) {
+        return;
+    }
+    let s = Scratch::new("endlaunch");
+    let l = scratch_plugin(&s, None);
+    let sock = s.path("ipc.sock");
+    let heard = recording_desktop(&sock, "");
+    let end = |input: &str| {
+        let t = std::time::Instant::now();
+        let mut child = Command::new("/bin/sh")
+            .arg(&l)
+            .args(["hook", "conversation-end"])
+            .env_clear()
+            .env("HOME", s.path("home"))
+            .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+            .env("DESIGNLESS_IPC_SOCKET", &sock)
+            .env(CLAUDE_HOST.0, CLAUDE_HOST.1)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!((out.status.code(), out.stdout.as_slice(), out.stderr.as_slice()), (Some(0), &b""[..], &b""[..]));
+        t.elapsed()
+    };
+    // The first run of a binary just copied into place pays the system's
+    // first-launch check. A conversation's end is never that run: the session
+    // start ran the same binary. So it runs once with nothing to send first.
+    end("{}");
+    let took = end(&end_input(HOST_SID, "prompt_input_exit"));
+    assert!(took < std::time::Duration::from_secs(1), "{took:?} against a desktop that never answers");
+    assert_eq!(*heard.lock().unwrap(), [ended(AS_CLAUDE)]);
 }
 
 /// The launcher with this build beside it, in a scratch plugin tree.
