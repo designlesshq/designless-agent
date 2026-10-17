@@ -261,6 +261,11 @@ async fn forward(
 /// `error.data.hint` so the orchestrator skill (or any client reading the
 /// frame) can surface actionable text.
 fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
+    // A refusal's own hint, read before the match so every arm stays a &str.
+    let server_hint = match err {
+        BridgeError::UpstreamStatus { status: 428, body } => upstream_hint(body),
+        _ => None,
+    };
     let (code, hint) = match err {
         BridgeError::IpcUnreachable => (
             -32001,
@@ -292,14 +297,13 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
             -32004,
             "Session expired. Open the Designless desktop app and sign in, then retry.",
         ),
-        // 428 Precondition Required = the integrity fence: the server compared
-        // this install's attested tree hash against the released one and
-        // refused. The body's hint names the recovery (reinstall/update).
-        BridgeError::UpstreamStatus { status: 428, body } => (
+        // 428 Precondition Required: the plugin's files no longer match the
+        // release they came from, and the server declined the session. The
+        // server's hint is the one that says what fixes it, so it is the one
+        // the agent reads; this line is only for a refusal that carries none.
+        BridgeError::UpstreamStatus { status: 428, .. } => (
             -32007,
-            upstream_hint(body).unwrap_or(
-                "This plugin's files differ from the released version, so the server declined the session. Update or reinstall the Designless plugin to restore the verified state.",
-            ),
+            server_hint.as_deref().unwrap_or(REFUSAL_WITHOUT_HINT),
         ),
         BridgeError::UpstreamStatus { .. } => (-32005, "Upstream MCP error. Visit https://designless.app/help if persistent."),
         BridgeError::Protocol(_) => (-32700, "MCP protocol error."),
@@ -320,16 +324,18 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
     })
 }
 
-/// Pull the server's `hint` field out of a refusal body, if it parses.
-fn upstream_hint(body: &str) -> Option<&'static str> {
-    // The hint text is server-owned and dynamic; leaking it through a static
-    // return type is not possible, so the mapping above uses its own copy and
-    // this helper only confirms the body carried one (logged for diagnosis).
-    let parsed: Option<Value> = serde_json::from_str(body).ok();
-    if let Some(hint) = parsed.as_ref().and_then(|v| v.get("hint")).and_then(|h| h.as_str()) {
-        tracing::warn!(server_hint = %hint, "integrity refusal from server");
+/// What the agent reads when a refusal arrives with no hint of its own.
+const REFUSAL_WITHOUT_HINT: &str = "The Designless plugin files on this computer were changed after they were installed, so the session was declined. Open the Designless app and choose Update on the plugin card to put the released files back, then restart this app or start a new conversation.";
+
+/// The server's `hint` from a refusal body, when it carries one.
+fn upstream_hint(body: &str) -> Option<String> {
+    let parsed: Value = serde_json::from_str(body).ok()?;
+    let hint = parsed.get("hint")?.as_str()?.trim();
+    if hint.is_empty() {
+        return None;
     }
-    None
+    tracing::warn!(server_hint = %hint, "refusal from server");
+    Some(hint.to_string())
 }
 
 /// A `less_canvas_set_image` call with a local file and a session: the
@@ -437,5 +443,52 @@ mod machine_header_on_the_wire {
         assert!(h.contains("x-designless-harness"), "the other facts still travel");
 
         let _ = std::fs::remove_dir_all(&home);
+    }
+}
+
+#[cfg(test)]
+mod refusal_hint {
+    //! The agent reads `error.data.hint`. For a refusal that is the server's
+    //! own hint, the one that knows what fixes it; the bridge's line stands in
+    //! only when the server sent none.
+    use super::*;
+
+    fn refusal(body: &str) -> Value {
+        error_response(
+            Some(json!(7)),
+            &BridgeError::UpstreamStatus { status: 428, body: body.to_string() },
+        )
+    }
+
+    #[test]
+    fn the_servers_hint_is_the_one_the_agent_reads() {
+        let body = r#"{"error":"Plugin integrity check failed","hint":"Open the Designless app and choose Update."}"#;
+        let frame = refusal(body);
+        assert_eq!(frame["error"]["code"], -32007);
+        assert_eq!(frame["error"]["data"]["hint"], "Open the Designless app and choose Update.");
+        assert_eq!(frame["id"], 7);
+    }
+
+    #[test]
+    fn a_refusal_without_a_hint_gets_the_bridges_line() {
+        for body in [r#"{"error":"Plugin integrity check failed"}"#, r#"{"hint":"   "}"#, "not json", ""] {
+            let frame = refusal(body);
+            assert_eq!(frame["error"]["data"]["hint"], REFUSAL_WITHOUT_HINT, "body: {body:?}");
+        }
+    }
+
+    #[test]
+    fn the_bridges_line_names_the_card_and_no_command() {
+        assert!(REFUSAL_WITHOUT_HINT.contains("choose Update on the plugin card"));
+        for gone in ["plugin update", "plugin add", "reinstall", "verified state"] {
+            assert!(!REFUSAL_WITHOUT_HINT.contains(gone), "{gone}");
+        }
+    }
+
+    #[test]
+    fn other_errors_keep_their_own_hint() {
+        let frame = error_response(None, &BridgeError::UpstreamStatus { status: 500, body: r#"{"hint":"x"}"#.into() });
+        assert_eq!(frame["error"]["code"], -32005);
+        assert_ne!(frame["error"]["data"]["hint"], "x");
     }
 }
