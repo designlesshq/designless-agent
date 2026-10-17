@@ -26,7 +26,7 @@ claude plugin install designless@designless-plugins
 codex plugin marketplace add designlesshq/designless-agent
 codex plugin add designless@designless-plugins
 ```
-The app asks you to review the plugin's hooks before they run: approve them so live canvas sync works. When an update adds a hook, that one hook waits for the same review under **Settings → Hooks**. Approve it, then quit and reopen the ChatGPT app: until it restarts, the app keeps running the hooks it started with.
+The app asks you to review the plugin's hooks before they run: approve them so live canvas sync works. When an update adds a hook, the app asks you to approve that one hook in the conversation (it is also listed under **Settings → Hooks**). Approve it, then quit and reopen the ChatGPT app: until it restarts, the app keeps running the hooks it started with.
 
 **Cursor:** the Designless desktop app installs and updates the plugin for you, so there is no manual step here. Step 2 covers getting the app.
 
