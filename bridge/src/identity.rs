@@ -14,6 +14,10 @@
 //! the host session the agent is working in, which outlives a bridge restart
 //! and ends when the conversation does. Each host says it its own way: Claude
 //! Code puts it in its MCP servers' environment, Codex on every tool call.
+//! Claude Code's terminal app can move on to another conversation without
+//! restarting this server (a clear, a resume), and then its session-start
+//! hook leaves the new conversation's name for this bridge
+//! (`host_session.rs`), which `wire_session` prefers to the environment's.
 //! Only a short hash of it travels (`session_label`), so the id itself never
 //! leaves this machine. The canvas watcher and the hooks name their own
 //! session the same way (`own_session_name`), so they can tell a request the
@@ -24,8 +28,10 @@
 //! from inside Claude Code inherits Claude Code's variables, so a variable
 //! being present is not enough: the id it carries has to be this one.
 
+use crate::host_session::{self, Host};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identity {
@@ -37,6 +43,9 @@ pub struct Identity {
     pub actor: String,
     /// The host session this bridge serves, as `session_label` names it, once the host has said.
     pub session: Option<String>,
+    /// The process that started this bridge, for a session named by Claude
+    /// Code's environment: where a later conversation's name is looked up.
+    pub host: Option<Host>,
 }
 
 /// The name a host session goes by on the wire: the host, a colon, and the
@@ -56,7 +65,10 @@ pub fn session_label(host: &str, session_id: &str) -> Option<String> {
 }
 
 /// Claude Code sets its session id in the environment of every MCP server it
-/// starts, and a cleared conversation starts a new server with the new id.
+/// starts. In the desktop app a cleared conversation starts a new server with
+/// the new id. The terminal app keeps this server across a clear, so this is
+/// the conversation the server started in, and `Identity::wire_session` says
+/// which one is open now.
 pub fn session_from_env() -> Option<String> {
     std::env::var("CLAUDE_CODE_SESSION_ID").ok().and_then(|id| session_label("claude", &id))
 }
@@ -181,7 +193,29 @@ impl Identity {
             .filter(|v| !v.trim().is_empty())
             .map(|v| harness_slug(&v))
             .unwrap_or_else(|| "unknown".to_string());
-        Self { harness, version: None, actor, session: session_from_env() }
+        let session = session_from_env();
+        let host = session.as_ref().and_then(|_| host_session::bridge_host());
+        Self { harness, version: None, actor, session, host }
+    }
+
+    /// The conversation to name on the wire now. A Claude Code session can
+    /// move on inside the same host (a clear, a resume): the name that host's
+    /// session-start hook left for it wins over the one this bridge started
+    /// with. Any other session, or no name left, is sent as it is.
+    pub fn wire_session(&self) -> Option<String> {
+        self.wire_session_in(host_session::home().as_deref())
+    }
+
+    pub fn wire_session_in(&self, home: Option<&Path>) -> Option<String> {
+        let session = self.session.as_deref()?;
+        if session.starts_with("claude:") {
+            if let (Some(home), Some(host)) = (home, self.host) {
+                if let Some(now) = host_session::read(home, host) {
+                    return Some(now);
+                }
+            }
+        }
+        Some(session.to_string())
     }
 
     /// The handshake names the harness, unless the environment already did. A
@@ -201,6 +235,7 @@ impl Identity {
         let inherited = self.session.as_deref().is_some_and(|s| s.starts_with("claude:"));
         if inherited && self.harness != "claude-code" && self.harness != "unknown" {
             self.session = None;
+            self.host = None;
         }
     }
 
@@ -260,11 +295,11 @@ mod tests {
 
     #[test]
     fn the_identity_learns_the_harness_from_the_handshake_and_says_it_with_its_version() {
-        let mut id = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: None };
+        let mut id = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: None, host: None };
         id.learn_from(&json!({ "method": "initialize", "params": { "clientInfo": { "name": "Codex", "version": "0.9.0" } } }));
         assert_eq!(id.harness, "codex");
         assert_eq!(id.harness_header(), "codex/0.9.0");
-        let bare = Identity { harness: "cursor".into(), version: None, actor: "ab12cd34".into(), session: None };
+        let bare = Identity { harness: "cursor".into(), version: None, actor: "ab12cd34".into(), session: None, host: None };
         assert_eq!(bare.harness_header(), "cursor");
     }
 
@@ -299,7 +334,7 @@ mod tests {
 
     #[test]
     fn the_identity_keeps_the_latest_session_a_tool_call_names() {
-        let mut id = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: None };
+        let mut id = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: None, host: None };
         id.learn_from(&json!({ "method": "initialize", "params": { "clientInfo": { "name": "codex-mcp-client", "version": "0.162.0" } } }));
         assert_eq!(id.session, None, "Codex has said nothing about its session yet");
         let turn = |sid: &str| json!({ "method": "tools/call", "params": { "_meta": { "x-codex-turn-metadata": { "session_id": sid } } } });
@@ -347,11 +382,39 @@ mod tests {
     #[test]
     fn a_claude_session_inherited_by_another_host_is_dropped_and_kept_by_claude_code() {
         let inherited = session_label("claude", "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f");
-        let mut codex = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: inherited.clone() };
+        let mut codex = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: inherited.clone(), host: None };
         codex.learn_from(&json!({ "method": "initialize", "params": { "clientInfo": { "name": "codex-mcp-client" } } }));
         assert_eq!(codex.session, None, "a Codex run started from a Claude Code shell is not that Claude session");
-        let mut claude = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: inherited.clone() };
+        let mut claude = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: inherited.clone(), host: None };
         claude.learn_from(&json!({ "method": "initialize", "params": { "clientInfo": { "name": "claude-code", "version": "2.1.295" } } }));
         assert_eq!(claude.session, inherited);
+    }
+
+    #[test]
+    fn a_claude_session_names_the_conversation_its_host_moved_on_to() {
+        let home = std::env::temp_dir().join(format!("identity-wire-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let host = Host { pid: 4242, started: (1_700_000_000, 5) };
+        let started_in = session_label("claude", "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f");
+        let now_in = session_label("claude", "0f0e0d0c-0b0a-4908-8706-050403020100").unwrap();
+        let mut id = Identity { harness: "claude-code".into(), version: None, actor: "ab12cd34".into(), session: started_in.clone(), host: Some(host) };
+        assert_eq!(id.wire_session_in(Some(&home)), started_in, "nothing left: the name it started with");
+        host_session::write(&home, host, &now_in, 1).unwrap();
+        assert_eq!(id.wire_session_in(Some(&home)), Some(now_in.clone()), "after a clear: the conversation now open");
+        assert_eq!(id.wire_session_in(None), started_in, "no home, nothing to read");
+        // A name left for another process with the same id is not this host's.
+        id.host = Some(Host { pid: 4242, started: (1_700_000_000, 6) });
+        assert_eq!(id.wire_session_in(Some(&home)), started_in);
+        id.host = Some(host);
+        // A Codex session is named on every call; a file never overrides it.
+        let codex = session_label("codex", "0190abcd-0000-7000-8000-000000000001");
+        let c = Identity { harness: "codex".into(), version: None, actor: "ab12cd34".into(), session: codex.clone(), host: Some(host) };
+        assert_eq!(c.wire_session_in(Some(&home)), codex);
+        // A Claude session dropped because another host started this bridge stays unnamed.
+        let mut inherited = Identity { harness: "unknown".into(), version: None, actor: "ab12cd34".into(), session: started_in.clone(), host: Some(host) };
+        inherited.learn_from(&json!({ "method": "initialize", "params": { "clientInfo": { "name": "codex-mcp-client" } } }));
+        assert_eq!(inherited.wire_session_in(Some(&home)), None);
+        assert_eq!(inherited.host, None);
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

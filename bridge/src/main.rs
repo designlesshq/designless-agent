@@ -29,6 +29,7 @@ mod anchored;
 mod auth;
 mod error;
 mod hooks;
+mod host_session;
 mod identity;
 mod integrity;
 mod launch;
