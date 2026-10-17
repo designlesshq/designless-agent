@@ -52,6 +52,17 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh \"${CLAUDE_PLUGIN_ROOT}\"/bin/designless hook conversation-end"
+          }
+        ]
+      }
     ]
   }
 }

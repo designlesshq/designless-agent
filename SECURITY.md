@@ -16,6 +16,8 @@ This plugin is a thin client. The agent prose, hooks, and a small local bridge r
 
 Only what a request needs: your prompt and intent, content you ask to have composed, and references to your brands. When you bring your own app onto the canvas, captured pages travel to your workspace, and edits land only on a dedicated containment branch in your checkout. Designless never holds a GitHub token and never pushes to your default branch.
 
+When a conversation with the agent ends, the plugin says so through the Designless desktop app, naming the conversation by a short hash. The conversation's own id stays on your machine, and nothing else about the conversation is sent with it.
+
 ## What never leaves
 
 Credentials. Authentication is held by the Designless desktop app (or a browser OAuth flow); this plugin's files contain no keys, and the bridge never logs or returns tokens.

@@ -13,6 +13,7 @@
 //! fail-open rule: any error is silence and exit 0.
 
 mod events;
+mod host_event;
 mod js;
 mod marker;
 mod probe;
@@ -21,12 +22,13 @@ mod watch;
 use std::io::{Read, Write};
 
 /// The event hooks, by the names the host configuration uses.
-pub const HOOKS: [&str; 5] = [
+pub const HOOKS: [&str; 6] = [
     "session-start-inbox",
     "canvas-wake",
     "canvas-drain-check",
     "canvas-arm-watch",
     "compose-epilogue",
+    "conversation-end",
 ];
 
 /// What every hook and the watcher read from the machine.
@@ -87,6 +89,7 @@ pub fn run_hook(name: Option<&str>) -> i32 {
                 "canvas-drain-check" => events::drain_check(&raw, &env).await,
                 "canvas-arm-watch" => events::arm_watch(&raw, &env).await,
                 "compose-epilogue" => events::compose_epilogue(&raw, &env).await,
+                "conversation-end" => host_event::conversation_end(&raw).await,
                 _ => None,
             }
         })

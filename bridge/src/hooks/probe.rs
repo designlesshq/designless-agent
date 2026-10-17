@@ -181,7 +181,7 @@ pub fn socket_path_from(explicit: Option<&str>, xdg: Option<&str>) -> Option<Soc
 }
 
 /// Refuse a socket dir that is not owner-only (a same-uid-malware guard).
-fn dir_is_safe(dir: &str) -> bool {
+pub fn dir_is_safe(dir: &str) -> bool {
     use std::os::unix::fs::MetadataExt;
     match std::fs::metadata(dir) {
         Ok(md) => md.is_dir() && md.uid() == unsafe { libc::getuid() } && (md.mode() & 0o077) == 0,
