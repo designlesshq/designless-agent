@@ -158,8 +158,9 @@ async fn post_once(
         // Who is speaking (identity.rs): the server paints each actor as itself.
         .header("x-designless-harness", identity.harness_header())
         .header("x-designless-actor", identity.actor.as_str());
-    // Which conversation (identity.rs), once the host has said.
-    if let Some(session) = identity.session.as_deref() {
+    // Which conversation (identity.rs), once the host has said, as it stands
+    // now: a clear in the host may have moved it on (host_session.rs).
+    if let Some(session) = identity.wire_session() {
         req = req.header("x-designless-session", session);
     }
     if let Some(integrity) = integrity {
@@ -404,7 +405,7 @@ mod machine_header_on_the_wire {
 
     #[tokio::test]
     async fn the_session_travels_once_the_host_has_named_it_and_not_before() {
-        let mut identity = crate::identity::Identity { harness: "codex".into(), version: None, actor: "ab12cd34".into(), session: None };
+        let mut identity = crate::identity::Identity { harness: "codex".into(), version: None, actor: "ab12cd34".into(), session: None, host: None };
         let h = sent_headers_with(&identity).await;
         assert!(!h.contains("x-designless-session"), "no session named, no header");
         assert!(h.contains("x-designless-actor: ab12cd34"), "the process still says who it is");

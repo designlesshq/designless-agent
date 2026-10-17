@@ -137,8 +137,22 @@ fn session_start_input(raw: &str) -> (Option<String>, Option<J>) {
     (cwd, sid)
 }
 
+/// Why the host started this session: `startup`, `resume`, `clear` or `compact`.
+fn session_start_source(raw: &str) -> Option<String> {
+    let input = js::parse(raw)?;
+    js::nonempty_str(js::get(Some(&input), "source")).map(str::to_string)
+}
+
 pub async fn session_start(raw: &str, env: &Env) -> Option<String> {
     let (cwd, sid) = session_start_input(raw);
+    // First, before anything that can wait: a conversation that moved on
+    // inside its host (a clear, a resume) leaves its name for that host's
+    // bridge, which keeps running across it (host_session.rs).
+    let id = match &sid {
+        Some(J::Str(s)) => Some(s.as_str()),
+        _ => None,
+    };
+    crate::host_session::on_session_start(std::path::Path::new(&env.home), session_start_source(raw).as_deref(), id);
     let cwd = cwd.or_else(js::process_cwd)?;
     let memory = epilogue_line(&cwd, js::now_ms());
     let probe = probe::probe_inbox().await;
