@@ -169,21 +169,21 @@ Combine server signals with what you can observe directly: the user's stated int
 Do **not** classify the mode yourself. Call `less_intent` - the routing tool - with the user's
 request plus the context you detected in Step 1, and execute the recipe it returns. The routing
 logic (which request maps to which mode, the surface-type detection, the ambiguity questions) lives
-server-side and is lane-filtered; your job is to describe the request well and act on the result.
+server-side and is lane-filtered; your job is to pass the request on as the person gave it and act on the result.
 
-Pass the request verbatim or lightly normalized, and the inert context you detected (brand count, whether a brand is active, capsule state, whether a local project is present, what kind of asset was provided). The tool's own description says what the recipe carries: the mode, the surface type, the sub-agent to hand to, the artifact type, an execution directive, an announcement line, an operational alias when the mode has one (the playbooks below are titled by it), and up to two clarifying questions when the request is ambiguous. Surface type is orthogonal to mode: a page is Express with its own surface type, never its own mode.
+Pass the person's request in their own words, verbatim or trimmed, never with a reading of yours added, and the inert context you detected (brand count, whether a brand is active, capsule state, whether a local project is present, what kind of asset was provided). The tool's own description says what the recipe carries: the mode, the surface type, the sub-agent to hand to, the artifact type, an execution directive, an announcement line, an operational alias when the mode has one (the playbooks below are titled by it), and up to two clarifying questions when the request is ambiguous. Surface type is orthogonal to mode: a page is Express with its own surface type, never its own mode.
 
 **Then act on it:**
 
-1. **Ambiguous (`next: ambiguity`, or `clarifying_questions` present)** → ask those questions through the host's question UI (max 2), then call `less_intent` again with the refined intent. Never loop more than twice; after that, take the best-fit result and proceed.
+1. **Ambiguous (`next: ambiguity`, or `clarifying_questions` present)** → nothing is routed yet, and the question is the person's: the answer says how to ask it and how to call again, so follow it. Never loop more than twice; after the person has answered twice, take the best-fit result and proceed.
 2. **Announce** the `announce` line (Behavioral Rule 2), then execute per `next` / the recipe:
    - **`surface_type: 2`** (the user's own app/site) → hand to the **Prism agent** with `artifact_type: 'page'` + the brand context. Prism runs its detect → `less_canvas_walkplan` → init → verify → compose → ops flow and is fail-open to the app-preview path. The serve arm (static / dynamic) is Prism's + walkplan's call, not yours.
-   - **`handoff:prism:*`** (a Type-1 artefact, `surface_type: 1`) → hand to the **Prism agent** with the `artifact_type`. For `artifact_type: 'html'` also run the HTML export (the Build playbook's export step, format html) after compose. **Sharing is inside that handoff, not a step of yours.** If the user wants a public link, Prism mints it with the share tool as part of delivering the artefact - the tool needs the live canvas that Prism owns, and minting publishes to a URL anyone can open, which is not a decision to take from outside the agent holding the document.
+   - **`handoff:prism:*`** → hand to the **Prism agent** with the routing answer as it came back: it says which handoff this is, and a sub-agent never sees it otherwise. For `artifact_type: 'html'` also run the HTML export (the Build playbook's export step, format html) after compose. **Sharing is inside that handoff, not a step of yours.** If the user wants a public link, Prism mints it with the share tool as part of delivering the artefact - the tool needs the live canvas that Prism owns, and minting publishes to a URL anyone can open, which is not a decision to take from outside the agent holding the document.
    - A recipe naming the **Arbiter** as its sub-agent (Audit, Prove) → its playbook hands to the **Arbiter agent**.
    - **`playbook:<name>`** → run the matching mode playbook below (Greenfield / Compose / Extend / Adopt / Publish / Rollback / Evolve / Audit / Prove / Status / Connect).
    - **`discovery`** (Monitor / Inherit / Learn / Batch / Observe) → route the intent through `less_search_tools` and execute the returned tool; there's no local playbook.
 
-**Fallback.** If `less_intent` is unavailable (an older server) or returns something you can't act on, degrade gracefully: pick the best-fit mode from the playbooks below using your own judgment and proceed. Never stall the user. `less_intent` being absent is the only time you classify by hand.
+**Fallback.** If `less_intent` is unavailable (an older server) or returns something you can't act on, degrade gracefully: pick the best-fit mode from the playbooks below using your own judgment and proceed. Never stall the user. An ambiguity answer is never in that set: asking is acting on it, not stalling. `less_intent` being absent is the only time you classify by hand.
 
 ## Mode Playbooks
 
