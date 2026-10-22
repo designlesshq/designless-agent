@@ -522,6 +522,84 @@ fn a_watcher_that_outlived_the_turn_it_was_asked_in_still_asks_for_the_next() {
     assert_eq!(run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1, "", "the watcher's line asked for the next one");
 }
 
+/// Wait, up to five seconds, for a watcher to hold the session.
+fn held(home: &str) {
+    let marker = format!("{home}/.designless/watch/{PARENT}.json");
+    for _ in 0..50 {
+        if Path::new(&marker).exists() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    panic!("no watcher took the session");
+}
+
+#[test]
+fn a_watcher_stopped_before_any_line_leaves_the_next_one_asked_for() {
+    let s = Scratch::new("quietend");
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    let inbox = changing_desktop(&sock, NOTHING);
+    assert_eq!(run(&["hook", "canvas-wake"], &typed(), &home, &sock).1, "");
+    assert!(context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"));
+    // The watcher starts, hears nothing, and is stopped: by the person, or the host.
+    let mut w = Watcher::start(&["inbox-watch", "--once", PARENT], &home, &sock);
+    held(&home);
+    unsafe { libc::kill(w.child.id() as i32, libc::SIGTERM) };
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert_eq!(w.line_within(1), None, "it said nothing");
+    // An edit arrives, and the stopped watcher's notification starts a turn.
+    *inbox.lock().unwrap() = ONE_EDIT;
+    let (_, out, _) = run(&["hook", "canvas-wake"], &notified("bq2w3e4r5"), &home, &sock);
+    assert!(context(&out).contains("\"Deck\""), "{out}");
+    // Nothing watches, and nothing said how to: the next call asks again.
+    assert!(context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"));
+}
+
+#[test]
+fn only_the_turn_a_watchers_line_starts_takes_that_line_as_its_ask() {
+    let s = Scratch::new("lineonce");
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    let inbox = changing_desktop(&sock, NOTHING);
+    assert_eq!(run(&["hook", "canvas-wake"], &typed(), &home, &sock).1, "");
+    assert!(context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"));
+    *inbox.lock().unwrap() = ONE_EDIT;
+    let mut w = Watcher::start(&["inbox-watch", "--once", PARENT], &home, &sock);
+    assert!(w.line_within(5).expect("the watcher's line").ends_with(&format!("--once {PARENT}")));
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert_eq!(run(&["hook", "canvas-wake"], &notified("bwbd6v50l"), &home, &sock).1, "");
+    assert_eq!(run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1, "", "its line asked for the next one");
+    // The agent starts the next one, as the line says; it is stopped before a line.
+    *inbox.lock().unwrap() = NOTHING;
+    let mut w = Watcher::start(&["inbox-watch", "--once", PARENT], &home, &sock);
+    held(&home);
+    unsafe { libc::kill(w.child.id() as i32, libc::SIGTERM) };
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert_eq!(run(&["hook", "canvas-wake"], &notified("bx9y8z7w6"), &home, &sock).1, "");
+    assert!(context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"), "the first line asked once");
+}
+
+#[test]
+fn a_codex_sub_agents_prompt_hears_nothing_and_records_nothing() {
+    // Codex runs the prompt hook inside a sub-agent too, with the root
+    // session's id. The prompt is the parent's message, not a person's: the
+    // parent's own turn hears what waits, as Claude Code's sub-agents, which
+    // run no prompt hook, leave it to.
+    let s = Scratch::new("subprompt");
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    desktop(&sock, ONE_EDIT);
+    let sub = format!(
+        r#"{{"session_id":"{PARENT}","turn_id":"019a0b1c-2d3e-7f40-8a5b-6c7d8e9f0a1c","transcript_path":null,"cwd":"/tmp","hook_event_name":"UserPromptSubmit","model":"gpt-5.5-codex","permission_mode":"default","prompt":"Map the store's routes and report back.","agent_id":"019a0b1c-2d3e-7f40-8a5b-6c7d8e9f0a2c","agent_type":"explorer"}}"#
+    );
+    let (code, out, _) = run(&["hook", "canvas-wake"], &sub, &home, &sock);
+    assert_eq!((code, out.as_str()), (0, ""));
+    assert_eq!(nudge_state(&home), "", "nothing recorded under the session's id");
+    assert_eq!(seen(&home, PARENT), "", "what a sub-agent heard is not what the session was told");
+    assert!(!Path::new(&format!("{home}/.designless/watch/host-activity.json")).exists(), "nor is it a person at the keyboard");
+    // The session's own turn hears it, and its first call is asked.
+    assert!(context(&run(&["hook", "canvas-wake"], &typed(), &home, &sock).1).contains("\"Deck\""));
+    assert!(context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"));
+}
+
 #[test]
 fn a_turn_another_task_starts_still_hears_what_the_session_was_never_told() {
     let s = Scratch::new("notifynews");
