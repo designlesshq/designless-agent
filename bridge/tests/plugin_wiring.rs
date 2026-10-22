@@ -579,6 +579,34 @@ fn only_the_turn_a_watchers_line_starts_takes_that_line_as_its_ask() {
 }
 
 #[test]
+fn a_line_no_turn_took_is_not_the_ask_once_the_session_is_asked_again() {
+    let s = Scratch::new("staleline");
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    let inbox = changing_desktop(&sock, NOTHING);
+    assert_eq!(run(&["hook", "canvas-wake"], &typed(), &home, &sock).1, "");
+    assert!(context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"));
+    *inbox.lock().unwrap() = ONE_EDIT;
+    let mut w = Watcher::start(&["inbox-watch", "--once", PARENT], &home, &sock);
+    assert!(w.line_within(5).expect("the watcher's line").ends_with(&format!("--once {PARENT}")));
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    // Its notification never starts a turn of the session's own: the person
+    // types first, hears the edit, and is asked again.
+    assert!(context(&run(&["hook", "canvas-wake"], &typed(), &home, &sock).1).contains("\"Deck\""));
+    assert!(context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"));
+    // The watcher that ask started is stopped before a line.
+    *inbox.lock().unwrap() = NOTHING;
+    let mut w = Watcher::start(&["inbox-watch", "--once", PARENT], &home, &sock);
+    held(&home);
+    unsafe { libc::kill(w.child.id() as i32, libc::SIGTERM) };
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert_eq!(run(&["hook", "canvas-wake"], &notified("bm4n5b6v7"), &home, &sock).1, "");
+    assert!(
+        context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"),
+        "the old line asked before the session was asked again"
+    );
+}
+
+#[test]
 fn a_codex_sub_agents_prompt_hears_nothing_and_records_nothing() {
     // Codex runs the prompt hook inside a sub-agent too, with the root
     // session's id. The prompt is the parent's message, not a person's: the
