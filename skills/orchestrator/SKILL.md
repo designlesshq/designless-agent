@@ -236,11 +236,11 @@ The user wants to modify their brand - change colors, adjust typography, add new
 
 ### Adopt - A brand from what the person already has
 
-The user brings a source for their brand instead of words: an image, a link, a design file, or an app or repo that already styles itself. Adopt makes a Brand Capsule from that source before anything is rendered. Their code is never brought under a brand straight from a picture, a link or a design file: the brand comes first, and the code is linted against it once the brand exists.
+The user brings a source for their brand instead of words: an image, a link, a design file, or an app or repo that already styles itself. Adopt makes a Brand Capsule from that source before anything is rendered. Their code is never brought under a brand straight from a picture, a link or a design file: the brand comes first, and their code is brought under it only once it exists.
 
 **What you deliver:** A Brand Capsule made from their source, with notes wherever the source and the brand diverge.
 
-**How you work:** Describe what the person brought to the tool search (for an app or repo, query: "adopt an existing repo's styles under a brand") and follow what the tools say; the routing guide answers for the order of the whole flow. When no tool reads what they brought, say so plainly and offer to make the brand from a description of the look instead (Greenfield), never an approximation presented as an import. Review the brand with the user, push token overrides if needed, then compile and publish. Only then lint their code against it.
+**How you work:** Describe what the person brought to the tool search (for an app or repo, query: "adopt an existing repo's styles under a brand") and follow what the tools say; the routing guide answers for the order of the whole flow. When no tool reads what they brought, say so plainly and offer to make the brand from a description of the look instead (Greenfield), never an approximation presented as an import. Review the brand with the user; compiling and publishing it are theirs to confirm.
 
 ### Express - Visual artifacts via Prism
 
