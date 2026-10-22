@@ -353,7 +353,8 @@ pub async fn run(args: &[String], env: &Env) -> i32 {
         say("Designless watcher: one is already running for this session.\n");
         return 0;
     }
-    super::events::note_watcher_started(&env.home, Some(&sid));
+    // Whatever line came before this watcher, it answers.
+    marker::take_line(&env.home, &sid);
     let cwd = js::process_cwd().unwrap_or_default();
     if let Ok(c) = std::ffi::CString::new(marker::marker_path(&env.home, &sid)) {
         let _ = MARKER.set(c);

@@ -16,6 +16,11 @@
 //! already told about, by a hook or by the watcher before it, never wakes it
 //! twice. Written by the watcher and by the hooks that read the inbox.
 //!
+//! **A watcher's line** (`<session>.line`): a one-shot watcher said its line,
+//! which asks for the next watcher, and exited. The turn its exit starts takes
+//! it by removing it, which exactly one caller can do; a watcher that starts
+//! removes it too, since it answers the line.
+//!
 //! Never fails: an unreadable file reads as "not armed" or "nobody there".
 
 use super::js::{self, J};
@@ -94,6 +99,20 @@ pub fn beat(home: &str, session: &J, now: f64) -> bool {
 
 pub fn disarm(home: &str, session: &J) -> bool {
     std::fs::remove_file(marker_path(home, session)).is_ok()
+}
+
+pub fn line_path(home: &str, session: &J) -> String {
+    js::join(&[&watch_dir(home), &format!("{}.line", sanitize_id(&js::to_string(Some(session))))])
+}
+
+/// A one-shot watcher said its line.
+pub fn note_line(home: &str, session: &J) -> bool {
+    js::truthy(Some(session)) && std::fs::create_dir_all(watch_dir(home)).is_ok() && std::fs::write(line_path(home, session), "").is_ok()
+}
+
+/// Take the line, if one is waiting. True for exactly one caller.
+pub fn take_line(home: &str, session: &J) -> bool {
+    js::truthy(Some(session)) && std::fs::remove_file(line_path(home, session)).is_ok()
 }
 
 pub fn seen_path(home: &str, session: &J) -> String {

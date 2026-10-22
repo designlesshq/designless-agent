@@ -310,31 +310,17 @@ fn note_arm_ask(home: &str, sid: Option<&J>) {
 /// the ask, and the turn its exit starts is told so.
 pub fn note_watchers_line(home: &str, sid: Option<&J>) {
     let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
-    let now = J::Num(js::now_ms());
-    let _ = write_state(home, sid, vec![("arm_asked_at", Some(now.clone())), ("line_at", Some(now))]);
-}
-
-/// A watcher started: whatever line came before it has been answered, so the
-/// turn that line's exit starts, if it comes, opens the ask again.
-pub fn note_watcher_started(home: &str, sid: Option<&J>) {
-    let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
-    if read_state(home, sid).iter().any(|(k, _)| k == "line_at") {
-        let _ = write_state(home, sid, vec![("line_at", None)]);
-    }
+    marker::note_line(home, sid);
+    let _ = write_state(home, sid, vec![("arm_asked_at", Some(J::Num(js::now_ms())))]);
 }
 
 /// Did a watcher's line come in that no turn has taken, and that no watcher
 /// since has answered? Taking it means the next notification turn, one some
 /// other command's exit starts, or a later watcher's that ended without a
-/// line, opens the ask again.
+/// line, opens the ask again. It is kept apart from the state the hooks
+/// rewrite, so no hook's write can bring it back or lose it.
 fn took_watchers_line(home: &str, sid: Option<&J>) -> bool {
-    let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return false };
-    let st = J::Obj(read_state(home, sid));
-    if !js::to_number(js::get(Some(&st), "line_at")).is_finite() {
-        return false;
-    }
-    let _ = write_state(home, sid, vec![("line_at", None)]);
-    true
+    sid.filter(|s| js::truthy(Some(s))).is_some_and(|sid| marker::take_line(home, sid))
 }
 
 /// Was the watcher already asked for since the user last typed? The ask is
