@@ -572,6 +572,26 @@ fn sum(rows: &[&J], key: &str) -> f64 {
     rows.iter().fold(0.0, |a, s| a + js::num_or_zero(js::get(Some(s), key)))
 }
 
+/// The server's own count of the page edits on a row that an agent could take
+/// now, or None from a server that predates it. `n_page` also counts an edit
+/// an agent has claimed and still holds under its lease, which nobody else may
+/// take: read alone, it told a session edits were waiting seconds after its
+/// own agent had taken them.
+pub fn untaken_page_counted(row: &J) -> Option<f64> {
+    match js::get(Some(row), "n_page_undelivered") {
+        Some(J::Num(n)) if n.is_finite() => Some(n.max(0.0)),
+        _ => None,
+    }
+}
+
+/// The page edits on a row to tell an agent about: the ones it could take
+/// now, when the server counts them, and otherwise `n_page`, read as before.
+/// `n_undelivered` is no stand-in: it spans every surface, so a taken page
+/// edit beside a deck edit nobody has taken still counts there.
+pub fn untaken_page(row: &J) -> f64 {
+    untaken_page_counted(row).unwrap_or_else(|| js::num_or_zero(js::get(Some(row), "n_page")))
+}
+
 /// Insertion-ordered de-duplication, as a `Set` does it.
 fn unique<T: PartialEq + Clone>(items: impl IntoIterator<Item = T>) -> Vec<T> {
     let mut out: Vec<T> = Vec::new();
@@ -712,7 +732,7 @@ pub const WAIT_ONCE: &str = "If your turn goes on beside the open canvas after a
 
 /// The documents the rows are on, each named once, quoted, in order: the
 /// title, else the brand, else the repo's last segment, else "Untitled".
-fn documents(rows: &[&J]) -> String {
+pub fn documents(rows: &[&J]) -> String {
     let docs: Vec<J> = unique(rows.iter().map(|s| {
         for k in ["title", "brand_slug"] {
             let v = js::get(Some(s), k);
@@ -741,7 +761,10 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
     let (mut requests, mut n_artefact, mut n_requests) = (vec![], 0.0, 0usize);
     for s in sessions {
         let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
-        if n("n_page") > 0.0 {
+        // Only page edits an agent could take now: one already in an agent's
+        // hands is not this session's to drain, nor the user's to re-route.
+        let page = untaken_page(s);
+        if page > 0.0 {
             if page_drainable_here(s, &origin, cwd) {
                 here.push(s)
             } else {
@@ -773,7 +796,7 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
         let held_only = pending.is_some_and(|r| !r.is_empty())
             && open == 0
             && edits <= 0.0
-            && n("n_page") <= 0.0
+            && page <= 0.0
             && n("n_annotation") <= 0.0;
         if js::truthy(js::get(Some(s), "recoverable")) && !held_only {
             recoverable.push(s);
@@ -789,7 +812,7 @@ withholds every source op unless you are on that safety branch. If a session's s
 On EVERY source claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). \
 Then apply with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), \
 and let the canvas re-capture. Apply them now; do not ask first.{}{}",
-            js::num_to_string(sum(&here, "n_page")),
+            js::num_to_string(here.iter().map(|s| untaken_page(s)).sum()),
             required_branch_hint(&here),
             checkout_path_hint(&here, cwd)
         ));
@@ -806,7 +829,7 @@ and let the canvas re-capture. Apply them now; do not ask first.{}{}",
         };
         lines.push(format!(
             "{} page edit(s) target {}; this session is rooted elsewhere - tell the user to run /designless from that repo (do NOT claim here).",
-            js::num_to_string(js::num_or_zero(js::get(Some(s), "n_page"))),
+            js::num_to_string(untaken_page(s)),
             target
         ));
     }
@@ -1227,6 +1250,56 @@ mod tests {
         let other = row(vec![("title", s("x")), ("n_page", J::Num(1.0)), ("repo_remote", s("https://github.com/org/DIFFERENT")), ("safety_branch", s("designless/abc"))]);
         assert!(!page_drainable_here(&other, &cwd_git_remote(&repo), &repo));
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    // ── page edits an agent already holds ──
+    #[test]
+    fn the_untaken_page_count_is_the_servers_when_it_says_and_n_page_when_it_does_not() {
+        let r = |pairs: Vec<(&str, J)>| row(pairs);
+        assert_eq!(untaken_page_counted(&r(vec![("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0))])), Some(0.0));
+        assert_eq!(untaken_page(&r(vec![("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0))])), 0.0);
+        assert_eq!(untaken_page(&r(vec![("n_page", J::Num(3.0)), ("n_page_undelivered", J::Num(2.0))])), 2.0);
+        // A server that predates the count: n_page, read as before, whatever
+        // n_undelivered says, since it spans every surface.
+        for absent in [None, Some(J::Null), Some(s("1")), Some(J::Bool(true))] {
+            let mut pairs = vec![("n_page", J::Num(1.0)), ("n_undelivered", J::Num(0.0))];
+            if let Some(a) = absent.clone() {
+                pairs.push(("n_page_undelivered", a));
+            }
+            assert_eq!(untaken_page_counted(&r(pairs.clone())), None, "{absent:?}");
+            assert_eq!(untaken_page(&r(pairs)), 1.0, "{absent:?}");
+        }
+        assert_eq!(untaken_page_counted(&r(vec![("n_page_undelivered", J::Num(-1.0))])), Some(0.0), "never below nothing");
+        assert_eq!(untaken_page(&r(vec![])), 0.0);
+    }
+
+    #[test]
+    fn a_page_edit_an_agent_holds_gets_no_line_here_or_elsewhere() {
+        let root = tmp("dl-taken-");
+        let repo = mk_repo(&format!("{root}/site"));
+        let taken = |remote: &str| row(vec![("title", s("Skyway")), ("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0)), ("repo_remote", s(remote)), ("safety_branch", s("designless/abc"))]);
+        assert_eq!(summarize_inbox(&[taken(&format!("file://{repo}"))], &root, Opts::default()), "", "here");
+        assert_eq!(summarize_inbox(&[taken("https://github.com/o/elsewhere")], &root, Opts::default()), "", "elsewhere: nothing to send the user there for");
+        // Of three page edits, the one nobody has taken is the one said.
+        let some = row(vec![("title", s("Skyway")), ("n_page", J::Num(3.0)), ("n_page_undelivered", J::Num(1.0)), ("repo_remote", s(&format!("file://{repo}")))]);
+        assert!(summarize_inbox(&[some], &root, Opts::default()).starts_with("1 page edit(s) are drainable from this checkout."));
+        let away = row(vec![("n_page", J::Num(3.0)), ("n_page_undelivered", J::Num(2.0)), ("repo_remote", s("https://github.com/o/elsewhere"))]);
+        assert!(summarize_inbox(&[away], &root, Opts::default()).starts_with("2 page edit(s) target https://github.com/o/elsewhere;"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_expired_canvas_whose_page_edits_an_agent_holds_says_nothing_of_requests_held_elsewhere() {
+        let held = row(vec![
+            ("session_id", s("a")),
+            ("recoverable", J::Bool(true)),
+            ("n_page", J::Num(1.0)),
+            ("n_page_undelivered", J::Num(0.0)),
+            ("n_value_artefact", J::Num(0.0)),
+            ("n_value_undelivered", J::Num(0.0)),
+            ("requests", J::Arr(vec![row(vec![("seq", J::Num(7.0)), ("offered_to", s("codex:9f8e7d6c")), ("offered_until", s("2999-01-01T00:00:00.000Z"))])])),
+        ]);
+        assert_eq!(summarize_inbox(&[held], &tmpdir(), Opts { me: Me { name: Some("claude:0a1b2c3d".into()), now: 0.0 }, ..Opts::default() }), "");
     }
 
     // ── the dark count ──
