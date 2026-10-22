@@ -464,6 +464,22 @@ mod tests {
         super::work_of(s, &Me::default())
     }
 
+    #[test]
+    fn a_note_held_for_another_session_is_no_newer_edit_here() {
+        // The row's newest value number counts every note's too, whoever the
+        // note is offered to.
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let told = vec![("a".to_string(), Work { untaken: 1.0, notes: 0.0, seq: Some(7.0) })];
+        let row = |latest: u32, to: &str| {
+            sessions(&format!(
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":{latest},"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":{latest},"requests":[],"n_annotation":1,"notes":[{{"seq":9,"offered_to":"{to}","offered_until":"2999-01-01T00:00:00.000Z"}}]}}]"#
+            ))
+        };
+        assert_eq!(news(&told, &super::work_of(&row(9, "codex:9f8e7d6c").sessions, &me)), Vec::<String>::new());
+        assert_eq!(news(&told, &super::work_of(&row(9, "claude:fdd5f4f9").sessions, &me)), vec!["a".to_string()], "a note offered to it");
+        assert_eq!(news(&told, &super::work_of(&row(10, "codex:9f8e7d6c").sessions, &me)), vec!["a".to_string()], "a newer edit beside it");
+    }
+
     // ── requests held for a session ──
     const ME: &str = "claude:0a1b2c3d";
     const OTHER: &str = "codex:9f8e7d6c";

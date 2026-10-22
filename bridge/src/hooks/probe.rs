@@ -708,6 +708,11 @@ pub fn open_to(request: &J, me: &Me) -> bool {
     matches!((js::get(Some(request), "offered_to"), me.name.as_deref()), (Some(J::Str(to)), Some(name)) if to == name)
 }
 
+/// May this session take this note now? As a request.
+pub fn note_open_to(note: &J, me: &Me) -> bool {
+    open_to(note, me)
+}
+
 /// The notes an agent could take now, each with its offer, on a row from a
 /// server that offers a note to one session at a time; None for a row from a
 /// server that predates it. A note an agent has taken is not among them.
@@ -1027,6 +1032,49 @@ mod tests {
             assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(2.0)), ("notes", older.clone())]), &me), 2.0, "{older:?}");
         }
         assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(2.0))]), &me), 2.0);
+    }
+
+    #[test]
+    fn a_note_whose_window_just_passed_waits_for_the_next_offer() {
+        // The server walks an untaken note on to the next session as each
+        // window passes, and the desktop's copy of the inbox shows the next
+        // offer only at its next refresh. Read as open at once, every session
+        // woke on the same note.
+        let now = js::now_ms();
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now };
+        let unnamed = Me { name: None, now };
+        let note = |to: &str, until: f64| row(vec![("seq", J::Num(8.0)), ("offered_to", s(to)), ("offered_until", s(&js::iso_string(until)))]);
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now - 5_000.0), &me), "just passed, offered elsewhere");
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now - 5_000.0), &unnamed));
+        assert!(!note_open_to(&note("claude:fdd5f4f9", now - 5_000.0), &me), "its own window has passed too");
+        assert!(note_open_to(&note("codex:9f8e7d6c", now - 120_000.0), &me), "a walk that never comes holds it no longer");
+        assert!(note_open_to(&note("claude:fdd5f4f9", now + 30_000.0), &me));
+        assert!(note_open_to(&row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null)]), &unnamed), "the server opened it");
+        // A request is offered once, then to anyone, as before.
+        assert!(open_to(&note("codex:9f8e7d6c", now - 5_000.0), &me));
+        let notes = J::Arr(vec![note("codex:9f8e7d6c", now - 5_000.0)]);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(1.0)), ("notes", notes)]), &me), 0.0);
+    }
+
+    #[test]
+    fn only_a_well_formed_note_counts() {
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let notes = J::Arr(vec![J::Null, J::Num(1.0), s("x"), J::Arr(vec![]), row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null)])]);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(1.0)), ("notes", notes)]), &me), 1.0);
+    }
+
+    #[test]
+    fn an_expired_canvas_whose_notes_are_held_elsewhere_or_taken_says_nothing() {
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let expired = |notes: J| {
+            row(vec![("session_id", s("a")), ("title", s("Deck")), ("session_status", s("expired")), ("recoverable", J::Bool(true)), ("n_annotation", J::Num(1.0)), ("notes", notes)])
+        };
+        let said = |notes: J| summarize_inbox(&[expired(notes)], "/tmp", Opts { me: me.clone(), ..Opts::default() });
+        let elsewhere = row(vec![("seq", J::Num(8.0)), ("offered_to", s("codex:9f8e7d6c")), ("offered_until", s("2999-01-01T00:00:00.000Z"))]);
+        assert_eq!(said(J::Arr(vec![elsewhere])), "", "offered to another session");
+        assert_eq!(said(J::Arr(vec![])), "", "taken by an agent");
+        let open = row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null)]);
+        assert!(said(J::Arr(vec![open])).contains("1 expired session(s) still hold un-applied edits"));
     }
 
     // ── where the desktop is ──
