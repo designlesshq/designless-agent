@@ -1088,6 +1088,8 @@ mod tests {
         assert!(note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, at(now - 1_000.0)), &unnamed), "the walk has ended");
         assert!(note_open_to(&note("claude:fdd5f4f9", now + 30_000.0, at(now + 150_000.0)), &me), "offered to it now");
         assert!(!note_open_to(&note("codex:9f8e7d6c", now + 30_000.0, at(now + 150_000.0)), &me));
+        let opened = row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null), ("open_at", at(now + 150_000.0))]);
+        assert!(note_open_to(&opened, &unnamed), "a note offered to nobody is open, whenever the walk would have ended");
         // A time this copy cannot read leaves the grace in place.
         for open_at in [J::Null, s("x")] {
             assert!(!note_open_to(&note("codex:9f8e7d6c", now - 5_000.0, open_at.clone()), &me), "{open_at:?}");
