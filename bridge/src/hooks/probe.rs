@@ -708,6 +708,26 @@ pub fn open_to(request: &J, me: &Me) -> bool {
     matches!((js::get(Some(request), "offered_to"), me.name.as_deref()), (Some(J::Str(to)), Some(name)) if to == name)
 }
 
+/// The notes an agent could take now, each with its offer, on a row from a
+/// server that offers a note to one session at a time; None for a row from a
+/// server that predates it. A note an agent has taken is not among them.
+pub fn takeable_notes(row: &J) -> Option<&[J]> {
+    match js::get(Some(row), "notes") {
+        Some(J::Arr(notes)) => Some(notes),
+        _ => None,
+    }
+}
+
+/// The notes this session may take now: those open to it, as a request is.
+/// A row from an older server says only how many notes there are, taken or
+/// not, and every one is counted, as before.
+pub fn notes_for(row: &J, me: &Me) -> f64 {
+    match takeable_notes(row) {
+        Some(notes) => notes.iter().filter(|n| open_to(n, me)).count() as f64,
+        None => js::num_or_zero(js::get(Some(row), "n_annotation")),
+    }
+}
+
 /// Options for `summarize_inbox`.
 #[derive(Clone, Debug)]
 pub struct Opts {
@@ -791,7 +811,7 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
     let origin = cwd_git_remote(cwd);
     let (mut here, mut elsewhere, mut artefact, mut annotations, mut attention, mut recoverable) =
         (vec![], vec![], vec![], vec![], vec![], vec![]);
-    let (mut requests, mut n_artefact, mut n_requests) = (vec![], 0.0, 0usize);
+    let (mut requests, mut n_artefact, mut n_requests, mut n_notes) = (vec![], 0.0, 0usize, 0.0);
     for s in sessions {
         let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
         // Only page edits an agent could take now: one already in an agent's
@@ -818,21 +838,21 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
             requests.push(s);
             n_requests += open;
         }
-        if n("n_annotation") > 0.0 {
+        // Likewise a note offered to another session for now, or one an agent
+        // has taken, is not mentioned.
+        let notes = notes_for(s, &opts.me);
+        if notes > 0.0 {
             annotations.push(s);
+            n_notes += notes;
         }
         if n("n_needs_human") > 0.0 {
             attention.push(s);
         }
         // An expired canvas holding nothing but work held elsewhere, requests
-        // held for another session or page edits an agent has taken, holds
-        // nothing for this one.
-        let held = pending.is_some_and(|r| !r.is_empty()) || n("n_page") > page;
-        let held_only = held
-            && open == 0
-            && edits <= 0.0
-            && page <= 0.0
-            && n("n_annotation") <= 0.0;
+        // or notes offered to another session or page edits an agent has
+        // taken, holds nothing for this one.
+        let held = pending.is_some_and(|r| !r.is_empty()) || n("n_page") > page || takeable_notes(s).is_some_and(|n| !n.is_empty());
+        let held_only = held && open == 0 && edits <= 0.0 && page <= 0.0 && notes <= 0.0;
         if js::truthy(js::get(Some(s), "recoverable")) && !held_only {
             recoverable.push(s);
         }
@@ -885,8 +905,9 @@ and let the canvas re-capture. Apply them now; do not ask first.{}{}",
     }
     if !annotations.is_empty() {
         lines.push(format!(
-            "{} annotation(s) are waiting. They are not mechanical edits: read them as context with less_canvas_ops action=peek, form your judgment, then ack them applied. Do this now; do not ask first.",
-            js::num_to_string(sum(&annotations, "n_annotation"))
+            "{} annotation(s) on {} are waiting. They are not mechanical edits: read them as context with less_canvas_ops action=peek, form your judgment, then ack them applied. Do this now; do not ask first.",
+            js::num_to_string(n_notes),
+            documents(&annotations)
         ));
     }
     if !attention.is_empty() && opts.include_attention {
@@ -992,6 +1013,20 @@ mod tests {
     }
     fn page_row(repo: &str) -> J {
         row(vec![("title", s("Skyway")), ("n_page", J::Num(1.0)), ("repo_remote", s(&format!("file://{repo}"))), ("safety_branch", s("designless/abc"))])
+    }
+
+    #[test]
+    fn the_notes_a_session_may_take_are_those_open_to_it_or_on_an_older_server_every_one() {
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let note = |to: J, until: J| row(vec![("seq", J::Num(8.0)), ("offered_to", to), ("offered_until", until)]);
+        let held = |to: &str| note(s(to), s("2999-01-01T00:00:00.000Z"));
+        let notes = J::Arr(vec![held("claude:fdd5f4f9"), held("codex:9f8e7d6c"), note(J::Null, J::Null), note(s("codex:9f8e7d6c"), s("2001-01-01T00:00:00.000Z"))]);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(5.0)), ("notes", notes)]), &me), 3.0, "its own, the open one, the passed one");
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(1.0)), ("notes", J::Arr(vec![]))]), &me), 0.0, "one an agent has taken");
+        for older in [J::Null, s("[]"), row(vec![])] {
+            assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(2.0)), ("notes", older.clone())]), &me), 2.0, "{older:?}");
+        }
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(2.0))]), &me), 2.0);
     }
 
     // ── where the desktop is ──

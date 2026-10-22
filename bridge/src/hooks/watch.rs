@@ -102,10 +102,18 @@ fn said(v: Option<&J>) -> Option<f64> {
     }
 }
 
+/// The newer of two numbers either of which may be unsaid.
+fn newest(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    }
+}
+
 /// Per canvas, what it holds for this session, as a value that changes only
 /// when that work does. Canvases holding nothing for it are absent: items only
-/// the user can act on, edits already in an agent's hands, and requests held
-/// for another session.
+/// the user can act on, edits already in an agent's hands, and requests and
+/// notes offered to another session.
 pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
     let mut rows: Vec<(String, Work)> = sessions
         .iter()
@@ -119,13 +127,7 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
                 // window passes, and then it is both.
                 Some(requests) => {
                     let mine: Vec<&J> = requests.iter().filter(|r| probe::open_to(r, me)).collect();
-                    let seq = mine
-                        .iter()
-                        .map(|r| said(js::get(Some(r), "seq")))
-                        .fold(said(js::get(Some(s), "latest_value_seq")), |a, b| match (a, b) {
-                            (Some(a), Some(b)) => Some(a.max(b)),
-                            (a, b) => a.or(b),
-                        });
+                    let seq = mine.iter().map(|r| said(js::get(Some(r), "seq"))).fold(said(js::get(Some(s), "latest_value_seq")), newest);
                     (n("n_value_undelivered") + mine.len() as f64, seq)
                 }
                 None => {
@@ -136,7 +138,15 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
                     (untaken, said(js::get(Some(s), "latest_seq")))
                 }
             };
-            let w = Work { untaken, notes: n("n_annotation"), seq };
+            // Notes are offered the same way: only those open to this session
+            // are its work, and a newer one is news at the same count, after
+            // an agent took the one before it. An older server's row counts
+            // every note, taken or not.
+            let seq = match probe::takeable_notes(s) {
+                Some(notes) => notes.iter().filter(|x| probe::open_to(x, me)).map(|x| said(js::get(Some(x), "seq"))).fold(seq, newest),
+                None => seq,
+            };
+            let w = Work { untaken, notes: probe::notes_for(s, me), seq };
             // NaN counts as nothing.
             if (w.untaken + w.notes).partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
                 return None;

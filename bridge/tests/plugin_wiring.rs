@@ -410,7 +410,7 @@ fn the_watcher_speaks_on_news_and_frees_the_session_when_stopped() {
         .unwrap();
     let mut line = String::new();
     BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
-    assert!(line.starts_with("Designless canvas: 1 annotation(s) are waiting."), "{line}");
+    assert!(line.starts_with("Designless canvas: 1 annotation(s) on \"Untitled\" are waiting."), "{line}");
     let marker = format!("{home}/.designless/watch/live-1.json");
     assert!(Path::new(&marker).exists(), "the watcher holds the session");
     unsafe { libc::kill(child.id() as i32, libc::SIGTERM) };
@@ -558,7 +558,7 @@ fn a_watcher_whose_host_is_gone_leaves_quietly_and_frees_the_session() {
     let me = std::process::id().to_string();
     let w = Watcher::start_with(&["inbox-watch", "--once", "here-1"], &home, &sock, &[("CLAUDE_PID", me.as_str())]);
     let line = w.line_within(5).expect("a watcher with a live host still speaks");
-    assert!(line.starts_with("Designless canvas: 1 annotation(s) are waiting."), "{line}");
+    assert!(line.starts_with("Designless canvas: 1 annotation(s) on \"Untitled\" are waiting."), "{line}");
     let _ = w.stop();
 }
 
