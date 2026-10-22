@@ -128,16 +128,13 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
                 // window passes, and then it is both.
                 Some(requests) => {
                     let mine: Vec<&J> = requests.iter().filter(|r| probe::open_to(r, me)).collect();
-                    // The newest value number counts notes too, whoever they
-                    // are offered to: one that is a note held for another
-                    // session says nothing of an edit.
-                    let held: Vec<Option<f64>> = probe::takeable_notes(s)
-                        .unwrap_or_default()
-                        .iter()
-                        .filter(|x| !probe::note_open_to(x, me))
-                        .map(|x| said(js::get(Some(x), "seq")))
-                        .collect();
-                    let value = said(js::get(Some(s), "latest_value_seq")).filter(|v| !held.contains(&Some(*v)));
+                    // The newest value number counts every note too, whoever
+                    // holds it. A server that offers notes says the newest
+                    // edit apart from them, null when there is none; one that
+                    // does not is read whole, so a note may repeat what was
+                    // told, and no edit is lost.
+                    let edit = js::get(Some(s), "latest_edit_seq");
+                    let value = if edit.is_some() && probe::takeable_notes(s).is_some() { said(edit) } else { said(js::get(Some(s), "latest_value_seq")) };
                     let seq = mine.iter().map(|r| said(js::get(Some(r), "seq"))).fold(value, newest);
                     (n("n_value_undelivered") + mine.len() as f64, seq)
                 }

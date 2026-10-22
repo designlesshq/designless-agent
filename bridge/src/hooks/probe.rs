@@ -708,21 +708,29 @@ pub fn open_to(request: &J, me: &Me) -> bool {
     matches!((js::get(Some(request), "offered_to"), me.name.as_deref()), (Some(J::Str(to)), Some(name)) if to == name)
 }
 
-/// How long a note's passed window still holds it: one refresh of the
-/// desktop's copy of the inbox, and a watcher's beat after it. The server
-/// walks an untaken note on to the next session as each window passes, and
-/// opens it to everyone when the walk ends, but the desktop's copy shows the
-/// next offer only at its next refresh. Read as open at once, every session
-/// woke on the same note, the wake the offer is there to spare.
+/// How long a note's passed window still holds it when the server does not
+/// say when its walk ends: one refresh of the desktop's copy of the inbox,
+/// and a watcher's beat after it. The server walks an untaken note on to the
+/// next session as each window passes, and opens it to everyone when the
+/// walk ends, but the desktop's copy shows the next offer only at its next
+/// refresh. Read as open at once, every session woke on the same note, the
+/// wake the offer is there to spare.
 const NOTE_WALK_GRACE_MS: f64 = 45_000.0;
 
 /// May this session take this note now? As a request may, except that a
-/// window that has just passed holds the note, for everyone, until the
-/// server's next offer can show; a walk that never comes holds it no longer.
+/// window that has passed holds the note, for everyone, until the server's
+/// next offer can show: until the time the server says the note opens to
+/// all, or, when it does not say, a grace after the window.
 pub fn note_open_to(note: &J, me: &Me) -> bool {
-    let t = js::date_value(js::get(Some(note), "offered_until"));
-    if t.is_finite() && t <= me.now && me.now < t + NOTE_WALK_GRACE_MS {
-        return false;
+    let until = js::get(Some(note), "offered_until");
+    let t = if js::nullish(until) { f64::NAN } else { js::date_value(until) };
+    if t.is_finite() && t <= me.now {
+        let open_at = js::get(Some(note), "open_at");
+        let open_at = if js::nullish(open_at) { f64::NAN } else { js::date_value(open_at) };
+        let held_until = if open_at.is_finite() { open_at } else { t + NOTE_WALK_GRACE_MS };
+        if me.now < held_until {
+            return false;
+        }
     }
     open_to(note, me)
 }
