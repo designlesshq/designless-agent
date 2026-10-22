@@ -410,7 +410,7 @@ fn the_watcher_speaks_on_news_and_frees_the_session_when_stopped() {
         .unwrap();
     let mut line = String::new();
     BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
-    assert!(line.starts_with("Designless canvas: 1 annotation(s) are waiting."), "{line}");
+    assert!(line.starts_with("Designless canvas: 1 annotation(s) on \"Untitled\" are waiting."), "{line}");
     let marker = format!("{home}/.designless/watch/live-1.json");
     assert!(Path::new(&marker).exists(), "the watcher holds the session");
     unsafe { libc::kill(child.id() as i32, libc::SIGTERM) };
@@ -558,7 +558,7 @@ fn a_watcher_whose_host_is_gone_leaves_quietly_and_frees_the_session() {
     let me = std::process::id().to_string();
     let w = Watcher::start_with(&["inbox-watch", "--once", "here-1"], &home, &sock, &[("CLAUDE_PID", me.as_str())]);
     let line = w.line_within(5).expect("a watcher with a live host still speaks");
-    assert!(line.starts_with("Designless canvas: 1 annotation(s) are waiting."), "{line}");
+    assert!(line.starts_with("Designless canvas: 1 annotation(s) on \"Untitled\" are waiting."), "{line}");
     let _ = w.stop();
 }
 
@@ -1001,6 +1001,105 @@ fn the_hooks_name_their_session_as_the_watcher_does() {
         let (_, start, _) = run_with(&["hook", "session-start-inbox"], &input, &s.path("elsewhere"), &sock, &extra);
         assert!(!context(&start).contains("request(s)"), "{start}");
     }
+}
+
+// ── notes offered to one session at a time ─────────────────────────────────
+// A note is offered first to the session that last worked on its document,
+// then to one other session at a time, then to anyone, as a request is held.
+// A newer server lists the notes an agent could take now, each with its offer
+// (`notes`, null from a server that predates it); `n_annotation` still counts
+// every note, a taken one too.
+
+const NOTE_LINE: &str = "annotation(s) on \"Deck\" are waiting. They are not mechanical edits: read them as context with less_canvas_ops action=peek";
+
+/// One canvas holding notes: `open`, the notes an agent could take now, each
+/// as (number, offered to, offered until), "" for no one or no end; `taken`,
+/// more an agent holds. With `open` None, a server that predates offers.
+fn noted_inbox(open: Option<&[(u32, &str, &str)]>, taken: u32) -> &'static str {
+    let q = |v: &str| if v.is_empty() { "null".to_string() } else { format!("\"{v}\"") };
+    let (notes, all) = match open {
+        Some(list) => (
+            format!("[{}]", list.iter().map(|(seq, to, until)| format!(r#"{{"seq":{seq},"offered_to":{},"offered_until":{}}}"#, q(to), q(until))).collect::<Vec<_>>().join(",")),
+            list.len() as u32 + taken,
+        ),
+        None => ("null".to_string(), taken),
+    };
+    let row = format!(
+        r#"{{"session_id":"a","session_status":"active","surface_type":null,"n_page":0,"n_artefact":0,"n_annotation":{all},"n_needs_human":0,"n_held_for_review":0,"pending_count":{all},"n_undelivered":0,"latest_seq":8,"source_hint":null,"repo_remote":null,"repo_head":null,"brand_slug":"acme","template_id":"hot-take-acid","title":"Deck","oldest_pending_at":null,"last_op_at":null,"bridge_open_lease":false,"heartbeat_stale":false,"recoverable":false,"captures_incomplete":false,"owner_online":true,"snapshot_freshness":null,"safety_branch":null,"attention_reason":null,"attention_actionable":true,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":null,"requests":[],"n_page_undelivered":0,"notes":{notes}}}"#
+    );
+    Box::leak(format!("{{\"op\":\"inbox\",\"count\":1,\"sessions\":[{row}],\"attn_dark\":0,\"served_by\":\"server\"}}\n").into_boxed_str())
+}
+
+#[test]
+fn a_note_offered_to_one_session_wakes_that_session_and_no_other_until_its_window_passes() {
+    let s = Scratch::new("noteheld");
+    let sock = s.path("held.sock");
+    desktop(&sock, noted_inbox(Some(&[(8, AS_CODEX, NEVER_ENDS)]), 0));
+    let elsewhere = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("other"), &sock, &[CLAUDE_HOST]);
+    let unnamed = Watcher::start(&["inbox-watch", "--once", HOST_SID], &s.path("unnamed"), &sock);
+    let mut mine = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("mine"), &sock, &[CODEX_HOST]);
+    assert_eq!(elsewhere.line_within(3), None, "offered to another session");
+    assert_eq!(unnamed.line_within(1), None, "a session with no name waits the window out");
+    let line = mine.line_within(5).expect("the session the note is offered to hears it");
+    assert!(line.starts_with(&format!("Designless canvas: 1 {NOTE_LINE}")), "{line}");
+    assert_eq!(mine.child.wait().unwrap().code(), Some(0));
+    assert_eq!(elsewhere.stop().0, Some(0));
+    assert_eq!(unnamed.stop().0, Some(0));
+    // Nor is the session it is not offered to told at its turn boundary.
+    let input = format!(r#"{{"cwd":"/tmp","session_id":"{HOST_SID}"}}"#);
+    assert_eq!(run_with(&["hook", "canvas-wake"], &input, &s.path("other-turn"), &sock, &[CLAUDE_HOST]).1, "");
+    // Once the window passes, the note is anyone's.
+    let open = s.path("open.sock");
+    desktop(&open, noted_inbox(Some(&[(8, AS_CODEX, LONG_ENDED)]), 0));
+    let mut w = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("late"), &open, &[CLAUDE_HOST]);
+    assert!(w.line_within(5).expect("a note nobody took in its window").starts_with(&format!("Designless canvas: 1 {NOTE_LINE}")));
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+}
+
+#[test]
+fn a_note_an_agent_has_taken_wakes_nobody_and_is_not_said_to_wait() {
+    let s = Scratch::new("notetaken");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, noted_inbox(Some(&[]), 1));
+    let w = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path("home"), &sock, &[CLAUDE_HOST]);
+    assert_eq!(w.line_within(3), None, "a note in an agent's hands");
+    assert_eq!(w.stop().0, Some(0));
+    let input = format!(r#"{{"cwd":"/tmp","session_id":"{HOST_SID}"}}"#);
+    assert_eq!(run_with(&["hook", "canvas-wake"], &input, &s.path("turn"), &sock, &[CLAUDE_HOST]).1, "");
+    // One taken beside one open to all: only the open one is said.
+    let both = s.path("both.sock");
+    desktop(&both, noted_inbox(Some(&[(8, "", "")]), 1));
+    let (_, out, _) = run_with(&["hook", "canvas-wake"], &input, &s.path("both"), &both, &[CLAUDE_HOST]);
+    assert!(context(&out).starts_with(&format!("Designless canvas: 1 {NOTE_LINE}")), "{out}");
+}
+
+#[test]
+fn the_note_line_names_its_document_from_any_server() {
+    let s = Scratch::new("notename");
+    let input = format!(r#"{{"cwd":"/tmp","session_id":"{HOST_SID}"}}"#);
+    for (i, frame) in [noted_inbox(Some(&[(8, "", "")]), 0), noted_inbox(None, 1)].into_iter().enumerate() {
+        let sock = s.path(&format!("{i}.sock"));
+        desktop(&sock, frame);
+        let (_, out, _) = run_with(&["hook", "canvas-wake"], &input, &s.path(&format!("home-{i}")), &sock, &[CLAUDE_HOST]);
+        assert!(context(&out).starts_with(&format!("Designless canvas: 1 {NOTE_LINE}")), "{i}: {out}");
+        let mut w = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &s.path(&format!("watch-{i}")), &sock, &[CLAUDE_HOST]);
+        assert!(w.line_within(5).expect("the note").starts_with(&format!("Designless canvas: 1 {NOTE_LINE}")), "{i}");
+        assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    }
+}
+
+#[test]
+fn a_newer_note_after_the_first_was_taken_is_news_at_the_same_count() {
+    // Told about note 7; an agent took it, and note 8 came in.
+    let s = Scratch::new("notenewer");
+    let sock = s.path("ipc.sock");
+    desktop(&sock, noted_inbox(Some(&[(8, "", "")]), 1));
+    let home = s.path("home");
+    std::fs::create_dir_all(format!("{home}/.designless/watch")).unwrap();
+    std::fs::write(format!("{home}/.designless/watch/{HOST_SID}.seen.json"), r#"{"at":"2026-10-22T00:00:00.000Z","sessions":[["a",0,1,7]]}"#).unwrap();
+    let mut w = Watcher::start_with(&["inbox-watch", "--once", HOST_SID], &home, &sock, &[CLAUDE_HOST]);
+    assert!(w.line_within(5).expect("the newer note").contains(NOTE_LINE));
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
 }
 
 // ── a conversation's end ───────────────────────────────────────────────────
