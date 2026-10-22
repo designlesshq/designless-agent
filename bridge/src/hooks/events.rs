@@ -51,39 +51,6 @@ fn is_open_url(s: &str) -> bool {
     (1..=300).contains(&n) && !rest.chars().any(js::is_ws)
 }
 
-/// One line of text with nothing in it that can act like formatting.
-fn one_line(v: Option<&J>, max: usize) -> Option<String> {
-    let Some(J::Str(v)) = v else { return None };
-    let mut flat = String::new();
-    let mut in_ctrl = false;
-    for c in v.chars() {
-        let ctrl = (c as u32) <= 0x1f || (0x7f..=0x9f).contains(&(c as u32));
-        if ctrl {
-            if !in_ctrl {
-                flat.push(' ');
-            }
-        } else {
-            flat.push(c);
-        }
-        in_ctrl = ctrl;
-    }
-    let mut collapsed = String::new();
-    let mut in_ws = false;
-    for c in flat.chars() {
-        if js::is_ws(c) {
-            if !in_ws {
-                collapsed.push(' ');
-            }
-            in_ws = true;
-        } else {
-            collapsed.push(c);
-            in_ws = false;
-        }
-    }
-    let t = js::trim(&collapsed);
-    (!t.is_empty()).then(|| js::utf16_prefix(t, max))
-}
-
 /// What this workspace composed last, served at session start. The values are
 /// never part of the sentence: the instruction is fixed text, and the record
 /// follows it as JSON, which no content can break out of.
@@ -99,8 +66,8 @@ pub fn epilogue_line(cwd: &str, now: f64) -> Option<String> {
     if !(0.0..=EPILOGUE_FRESH_DAYS).contains(&age) {
         return None;
     }
-    let brand = one_line(js::get(e, "brand_slug"), 80)?;
-    let template = one_line(js::get(e, "template_id"), 80)?;
+    let brand = probe::one_line(js::get(e, "brand_slug"), 80)?;
+    let template = probe::one_line(js::get(e, "template_id"), 80)?;
     let canvas = match js::get(e, "session_id") {
         Some(J::Str(s)) if is_uuid(s) => s.clone(),
         _ => return None,
@@ -111,7 +78,7 @@ pub fn epilogue_line(cwd: &str, now: f64) -> Option<String> {
         ("template", J::Str(template)),
         ("canvas", J::Str(canvas)),
     ];
-    if let Some(t) = one_line(js::get(e, "title"), 80) {
+    if let Some(t) = probe::one_line(js::get(e, "title"), 80) {
         record.push(("title", J::Str(t)));
     }
     if let Some(J::Str(u)) = js::get(e, "open_url") {
@@ -452,14 +419,63 @@ pub async fn drain_check(raw: &str, _env: &Env) -> Option<String> {
     if js::truthy(js::get(Some(&data), "stop_hook_active")) {
         return None; // already continuing - never loop
     }
+    // The work is already in this session's own Designless agent's hands: a
+    // hold would set the session racing it for the same edit.
+    if own_agent_at_work(Some(&data)) {
+        return None;
+    }
+    if codex_turn_end(Some(&data)) {
+        return None;
+    }
     let cwd = js::nonempty_str(js::get(Some(&data), "cwd"))?.to_string();
     let probe = probe::probe_inbox().await;
     drain_text(&cwd, &probe)
 }
 
-/// Stall the turn ONCE, only for a page edit drainable from THIS checkout. A
-/// Type-1 edit applies server-side from anywhere, so ending the turn loses
-/// nothing and it never stalls.
+/// Codex runs this hook too: it reads the plugin's Claude Code hooks file, and
+/// its turn end names the turn (`turn_id`) and lists no background tasks,
+/// where Claude Code's always lists them (an empty list when none run). It
+/// cannot hold a turn quietly. It refuses added context there as invalid
+/// output and shows the person a failed hook; the one form it carries back to
+/// the model, a block with a reason, it shows the person too, every time. So
+/// at Codex's turn end the hook says nothing, and the next prompt's hook names
+/// the edit, as it does wherever the turn ends.
+pub fn codex_turn_end(input: Option<&J>) -> bool {
+    js::truthy(js::get(input, "turn_id")) && !matches!(js::get(input, "background_tasks"), Some(J::Arr(_)))
+}
+
+/// A background task that has ended. The host lists the tasks still running
+/// when a turn ends; a status that says otherwise is not at work.
+const ENDED: [&str; 5] = ["completed", "failed", "killed", "stopped", "cancelled"];
+
+/// Is one of this session's own Designless agents still at work? The host
+/// lists the session's background tasks when its turn ends, each sub-agent by
+/// its type, and a plugin's agent is typed `<plugin>:<agent>`. A watcher is a
+/// shell, and takes nothing; another kind of agent is not ours to wait for.
+pub fn own_agent_at_work(input: Option<&J>) -> bool {
+    let Some(J::Arr(tasks)) = js::get(input, "background_tasks") else { return false };
+    tasks.iter().any(|t| {
+        let t = Some(t);
+        matches!(js::get(t, "type"), Some(J::Str(k)) if k == "subagent")
+            && matches!(js::get(t, "agent_type"), Some(J::Str(a)) if a.starts_with("designless:"))
+            && !matches!(js::get(t, "status"), Some(J::Str(s)) if ENDED.contains(&s.as_str()))
+    })
+}
+
+/// Hold the turn ONCE, only for page edits nobody has taken that are
+/// drainable from THIS checkout. A Type-1 edit applies server-side from
+/// anywhere, so ending the turn loses nothing and it never holds.
+///
+/// It holds only on the server's own count of untaken page edits. A server
+/// that does not count them says only `n_page`, which also counts an edit an
+/// agent holds under its lease: a hold on that sets the session racing its own
+/// agent for an edit nobody may take, while the turn ending loses nothing,
+/// because the watcher and the next prompt still bring an edit that waits.
+///
+/// The form keeps the turn going once and says nothing went wrong. Ending the
+/// turn instead left the line for whatever next woke the session, by when the
+/// edit could be long applied; and the host's continuation flag, which
+/// `drain_check` reads, is what ends the turn it kept going.
 pub fn drain_text(cwd: &str, probe: &Probe) -> Option<String> {
     if probe.count() == 0 {
         return None;
@@ -470,7 +486,7 @@ pub fn drain_text(cwd: &str, probe: &Probe) -> Option<String> {
         .iter()
         .filter(|s| {
             let r = js::get(Some(s), "repo_remote");
-            js::num_or_zero(js::get(Some(s), "n_page")) > 0.0
+            probe::untaken_page_counted(s).is_some_and(|n| n > 0.0)
                 && (js::nullish(r) || probe::is_safe_repo_remote(r))
                 && probe::page_drainable_here(s, &origin, cwd)
         })
@@ -487,17 +503,21 @@ pub fn drain_text(cwd: &str, probe: &Probe) -> Option<String> {
             branches.join(", ")
         )
     };
-    let reason = format!(
-        "Designless canvas: page (Type-2 SOURCE) edits are waiting and drainable from this checkout. \
+    let waiting: f64 = here.iter().map(|s| probe::untaken_page(s)).sum();
+    let context = format!(
+        "Designless canvas: {} page edit(s) on {} are waiting for an agent and drainable from this checkout. \
 These are source ops - work BRANCH-FIRST: READ the required branch from the session's safety_branch field \
 (on the less_canvas_inbox row, also on less_canvas_status), then git checkout -b <safety_branch> (or git \
 checkout it if it exists) BEFORE you claim - the server withholds every source op unless you are on that safety \
 branch. If safety_branch is null the session is un-stamped: no branch is required. On EVERY source \
 claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). \
 Enumerate with less_canvas_inbox, then apply with less_canvas_ops (claim -> apply on previous_value -> ack). \
-If none remain claimable from here, you are done: the watcher brings the next edit, so do not wait or loop for it.{hint}"
+If none remain claimable from here, you are done: the watcher brings the next edit, so do not wait or loop for it.{hint}{}",
+        js::num_to_string(waiting),
+        probe::documents(&here),
+        probe::checkout_path_hint(&here, cwd)
     );
-    Some(js::stringify(&js::obj(vec![("continue", J::Bool(false)), ("stopReason", J::Str(reason))])))
+    Some(emit("Stop", &context))
 }
 
 // ── after a Designless tool ─────────────────────────────────────────────────
@@ -1109,24 +1129,96 @@ mod tests {
     }
 
     // ── the stop ──
+    fn page(n_page: f64, untaken: Option<f64>, extra: Vec<(&str, J)>) -> Probe {
+        let mut row = vec![("n_page", J::Num(n_page))];
+        if let Some(u) = untaken {
+            row.push(("n_page_undelivered", J::Num(u)));
+        }
+        row.extend(extra);
+        Probe { sessions: vec![js::obj(row)], ..Default::default() }
+    }
+
     #[test]
-    fn the_stop_stalls_only_for_a_page_edit_drainable_here() {
+    fn the_stop_holds_only_for_a_page_edit_nobody_has_taken_drainable_here() {
         let artefact_only = Probe { sessions: vec![js::obj(vec![("n_artefact", J::Num(3.0))])], ..Default::default() };
         assert_eq!(drain_text("/tmp", &artefact_only), None);
-        let elsewhere = Probe {
-            sessions: vec![js::obj(vec![("n_page", J::Num(1.0)), ("repo_remote", s("https://github.com/o/not-here"))])],
-            ..Default::default()
-        };
+        let elsewhere = page(1.0, Some(1.0), vec![("repo_remote", s("https://github.com/o/not-here"))]);
         assert_eq!(drain_text("/tmp", &elsewhere), None);
-        let unknown_checkout = Probe {
-            sessions: vec![js::obj(vec![("n_page", J::Num(2.0)), ("safety_branch", s("designless/abc"))])],
-            ..Default::default()
-        };
+        assert_eq!(drain_text("/tmp", &page(2.0, Some(0.0), vec![])), None, "every one of them in an agent's hands");
+        assert_eq!(drain_text("/tmp", &page(2.0, None, vec![])), None, "a server that cannot say which are untaken: no hold");
+        let unknown_checkout = page(2.0, Some(2.0), vec![("safety_branch", s("designless/abc")), ("title", s("Store"))]);
         let out = drain_text("/tmp", &unknown_checkout).unwrap();
-        assert!(out.starts_with(r#"{"continue":false,"stopReason":"Designless canvas: page (Type-2 SOURCE)"#));
-        assert!(out.ends_with(r#" Required safety branch(es): designless/abc (server-owned; read from each row's safety_branch, do NOT derive)."}"#));
+        assert!(out.starts_with(r#"{"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"Designless canvas: 2 page edit(s) on \"Store\" are waiting for an agent"#), "{out}");
+        assert!(out.ends_with(r#" Required safety branch(es): designless/abc (server-owned; read from each row's safety_branch, do NOT derive)."}}"#), "{out}");
         assert!(out.contains("the watcher brings the next edit, so do not wait or loop for it."));
         assert!(!out.contains("less_stream"));
+        // Never the form that ends the turn, nor one that tells the person something failed.
+        for never in ["\"continue\"", "stopReason", "\"decision\""] {
+            assert!(!out.contains(never), "{never}: {out}");
+        }
+        assert!(!out.contains('\u{2014}'));
+    }
+
+    #[test]
+    fn the_stop_counts_only_the_untaken_edits_of_the_rows_it_names() {
+        let p = Probe {
+            sessions: vec![
+                js::obj(vec![("title", s("Store")), ("n_page", J::Num(3.0)), ("n_page_undelivered", J::Num(1.0))]),
+                js::obj(vec![("title", s("Shop")), ("n_page", J::Num(2.0)), ("n_page_undelivered", J::Num(0.0))]),
+            ],
+            ..Default::default()
+        };
+        let line = ctx(&drain_text("/tmp", &p).unwrap());
+        assert!(line.starts_with("Designless canvas: 1 page edit(s) on \"Store\" are waiting"), "{line}");
+        assert!(!line.contains("Shop"), "{line}");
+    }
+
+    #[test]
+    fn a_running_designless_agent_is_this_sessions_work_in_hand_and_nothing_else_is() {
+        let tasks = |t: &str| js::parse(&format!(r#"{{"background_tasks":{t}}}"#)).unwrap();
+        let agent = |status: &str, kind: &str, ty: &str| format!(r#"[{{"id":"a1","type":"{kind}","status":"{status}","description":"x","agent_type":"{ty}"}}]"#);
+        assert!(own_agent_at_work(Some(&tasks(&agent("running", "subagent", "designless:prism-agent")))));
+        assert!(own_agent_at_work(Some(&tasks(&agent("pending", "subagent", "designless:arbiter-agent")))));
+        assert!(own_agent_at_work(Some(&tasks(r#"[{"type":"subagent","agent_type":"designless:prism-agent"}]"#))), "no status said: still listed, so still at work");
+        for (status, kind, ty) in [
+            ("completed", "subagent", "designless:prism-agent"),
+            ("running", "subagent", "general-purpose"),
+            ("running", "subagent", "Designless:prism-agent"),
+            ("running", "subagent", "other:designless:prism-agent"),
+            ("running", "shell", "designless:prism-agent"),
+        ] {
+            assert!(!own_agent_at_work(Some(&tasks(&agent(status, kind, ty)))), "{status} {kind} {ty}");
+        }
+        for none in ["[]", "null", "{}", r#""designless:prism-agent""#] {
+            assert!(!own_agent_at_work(Some(&tasks(none))), "{none}");
+        }
+        assert!(!own_agent_at_work(None));
+    }
+
+    #[tokio::test]
+    async fn the_stop_reads_nothing_while_its_own_agent_works_or_after_holding_once() {
+        // Each is answered before the desktop is asked, so none costs a read.
+        let e = env("/nowhere");
+        let busy = r#"{"cwd":"/tmp","stop_hook_active":false,"background_tasks":[{"type":"subagent","status":"running","agent_type":"designless:prism-agent"}]}"#;
+        assert_eq!(drain_check(busy, &e).await, None);
+        assert_eq!(drain_check(r#"{"cwd":"/tmp","stop_hook_active":true}"#, &e).await, None);
+        assert_eq!(drain_check(r#"{"cwd":"/tmp","stop_hook_active":false,"turn_id":"019a0b1c"}"#, &e).await, None);
+        let src = include_str!("events.rs");
+        let body = &src[src.find("pub async fn drain_check(").unwrap()..src.find("/// Codex runs this hook too").unwrap()];
+        let read = body.find("probe_inbox()").unwrap();
+        for check in ["stop_hook_active", "own_agent_at_work", "codex_turn_end"] {
+            assert!(body.find(check).unwrap() < read, "{check}: {body}");
+        }
+    }
+
+    #[test]
+    fn only_codex_names_the_turn_at_its_end() {
+        let at = |raw: &str| codex_turn_end(js::parse(raw).as_ref());
+        assert!(at(r#"{"session_id":"019a0b1c","turn_id":"019a0b1d","model":"gpt-5.5-codex","stop_hook_active":false}"#));
+        assert!(!at(r#"{"session_id":"0c1d2e3f","prompt_id":"6c21bcfb","stop_hook_active":false,"background_tasks":[]}"#), "Claude Code's");
+        assert!(!at(r#"{"turn_id":""}"#) && !at("null"));
+        // Claude Code always lists its background tasks: a turn it names is still its own.
+        assert!(!at(r#"{"session_id":"0c1d2e3f","turn_id":"9c1f7e2a","stop_hook_active":false,"background_tasks":[]}"#));
     }
 
     // ── the compose epilogue ──

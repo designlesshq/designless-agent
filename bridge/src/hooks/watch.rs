@@ -82,8 +82,9 @@ pub struct Work {
     /// judgment that the server holds for another session counts once its
     /// window has passed, and not before.
     pub untaken: f64,
-    /// Notes left on the canvas. Reading one does not take it, so a note in
-    /// hand looks like a new one; only MORE notes than were seen are news.
+    /// Notes left on the canvas for this session. On a server that does not
+    /// offer them, reading one does not take it, so a note in hand looks like
+    /// a new one; only MORE notes than were seen are news.
     pub notes: f64,
     /// The canvas's newest edit number. Every new edit advances it and
     /// applying one does not, so it tells a new edit from an old one when the
@@ -102,10 +103,18 @@ fn said(v: Option<&J>) -> Option<f64> {
     }
 }
 
+/// The newer of two numbers either of which may be unsaid.
+fn newest(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    }
+}
+
 /// Per canvas, what it holds for this session, as a value that changes only
 /// when that work does. Canvases holding nothing for it are absent: items only
-/// the user can act on, edits already in an agent's hands, and requests held
-/// for another session.
+/// the user can act on, edits already in an agent's hands, and requests and
+/// notes offered to another session.
 pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
     let mut rows: Vec<(String, Work)> = sessions
         .iter()
@@ -119,13 +128,16 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
                 // window passes, and then it is both.
                 Some(requests) => {
                     let mine: Vec<&J> = requests.iter().filter(|r| probe::open_to(r, me)).collect();
-                    let seq = mine
-                        .iter()
-                        .map(|r| said(js::get(Some(r), "seq")))
-                        .fold(said(js::get(Some(s), "latest_value_seq")), |a, b| match (a, b) {
-                            (Some(a), Some(b)) => Some(a.max(b)),
-                            (a, b) => a.or(b),
-                        });
+                    // The newest value number counts every note too, whoever
+                    // holds it. A server that offers notes says the newest
+                    // edit apart from them, null when there is none; one that
+                    // does not is read whole, so a note may repeat what was
+                    // told, and no edit is lost. Null beside value edits is a
+                    // field the server does not send yet.
+                    let edit = js::get(Some(s), "latest_edit_seq");
+                    let says = edit.is_some() && probe::takeable_notes(s).is_some() && (!js::nullish(edit) || n("n_value_artefact") + n("n_value_undelivered") + n("n_page") <= 0.0);
+                    let value = if says { said(edit) } else { said(js::get(Some(s), "latest_value_seq")) };
+                    let seq = mine.iter().map(|r| said(js::get(Some(r), "seq"))).fold(value, newest);
                     (n("n_value_undelivered") + mine.len() as f64, seq)
                 }
                 None => {
@@ -136,7 +148,15 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
                     (untaken, said(js::get(Some(s), "latest_seq")))
                 }
             };
-            let w = Work { untaken, notes: n("n_annotation"), seq };
+            // Notes are offered the same way: only those open to this session
+            // are its work, and a newer one is news at the same count, after
+            // an agent took the one before it. An older server's row counts
+            // every note, taken or not.
+            let seq = match probe::takeable_notes(s) {
+                Some(notes) => notes.iter().filter(|x| probe::note_open_to(x, me)).map(|x| said(js::get(Some(x), "seq"))).fold(seq, newest),
+                None => seq,
+            };
+            let w = Work { untaken, notes: probe::notes_for(s, me), seq };
             // NaN counts as nothing.
             if (w.untaken + w.notes).partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
                 return None;
@@ -464,6 +484,64 @@ mod tests {
     /// the same way.
     fn work_of(s: &[J]) -> Vec<(String, Work)> {
         super::work_of(s, &Me::default())
+    }
+
+    #[test]
+    fn a_note_held_for_another_session_or_taken_is_no_newer_edit_here() {
+        // The row's newest value number counts every note's too, whoever holds
+        // it; the newest edit number leaves notes out.
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let told = vec![("a".to_string(), Work { untaken: 1.0, notes: 0.0, seq: Some(7.0) })];
+        let row = |value: u32, edit: u32, notes: &str| {
+            sessions(&format!(
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":{value},"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":{value},"latest_edit_seq":{edit},"requests":[],"n_annotation":1,"notes":{notes}}}]"#
+            ))
+        };
+        let offered = |to: &str| format!(r#"[{{"seq":9,"offered_to":"{to}","offered_until":"2999-01-01T00:00:00.000Z"}}]"#);
+        let none = Vec::<String>::new();
+        assert_eq!(news(&told, &super::work_of(&row(9, 7, &offered("codex:9f8e7d6c")).sessions, &me)), none);
+        assert_eq!(news(&told, &super::work_of(&row(9, 7, "[]").sessions, &me)), none, "a note an agent has taken");
+        assert_eq!(news(&told, &super::work_of(&row(9, 7, &offered("claude:fdd5f4f9")).sessions, &me)), vec!["a".to_string()], "a note offered to it");
+        // Edit 7 is applied and edit 10 comes while the note is still held
+        // elsewhere: what was seen beside the held note keeps its number, so
+        // the new edit is news.
+        let seen = super::work_of(&row(9, 7, &offered("codex:9f8e7d6c")).sessions, &me);
+        assert_eq!(news(&seen, &super::work_of(&row(10, 10, &offered("codex:9f8e7d6c")).sessions, &me)), vec!["a".to_string()], "a newer edit beside it");
+    }
+
+    #[test]
+    fn a_server_with_no_edit_beside_its_requests_says_so() {
+        // One request open to anyone; the newest value number is a note an
+        // agent has taken.
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let row = |edit: &str| {
+            sessions(&format!(
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":9,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":9,{edit}"requests":[{{"seq":5,"kind":"fit_slide","offered_to":null,"offered_until":null}}],"n_annotation":1,"notes":[]}}]"#
+            ))
+        };
+        let told = vec![("a".to_string(), Work { untaken: 1.0, notes: 0.0, seq: Some(5.0) })];
+        assert_eq!(news(&told, &super::work_of(&row(r#""latest_edit_seq":null,"#).sessions, &me)), Vec::<String>::new());
+        // A server that does not say reads the value number whole: a note may
+        // repeat what was told, and no edit is lost.
+        assert_eq!(super::work_of(&row("").sessions, &me)[0].1.seq, Some(9.0));
+        let held = sessions(
+            r#"[{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":9,"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":9,"requests":[],"n_annotation":1,"notes":[{"seq":9,"offered_to":"codex:9f8e7d6c","offered_until":"2999-01-01T00:00:00.000Z"}]}]"#,
+        );
+        assert_eq!(super::work_of(&held.sessions, &me)[0].1.seq, Some(9.0));
+    }
+
+    #[test]
+    fn no_newest_edit_beside_value_edits_is_a_server_that_does_not_say() {
+        // A route may write null for a field its database does not send yet.
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let row = |value: u32| {
+            sessions(&format!(
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":{value},"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":{value},"latest_edit_seq":null,"requests":[],"n_annotation":1,"notes":[{{"seq":9,"offered_to":"codex:9f8e7d6c","offered_until":"2999-01-01T00:00:00.000Z"}}]}}]"#
+            ))
+        };
+        let seen = super::work_of(&row(9).sessions, &me);
+        assert_eq!(seen[0].1.seq, Some(9.0));
+        assert_eq!(news(&seen, &super::work_of(&row(10).sessions, &me)), vec!["a".to_string()], "edit 10 at the same count");
     }
 
     // ── requests held for a session ──

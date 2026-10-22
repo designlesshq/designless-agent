@@ -572,6 +572,27 @@ fn sum(rows: &[&J], key: &str) -> f64 {
     rows.iter().fold(0.0, |a, s| a + js::num_or_zero(js::get(Some(s), key)))
 }
 
+/// The server's own count of the page edits on a row that an agent could take
+/// now, or None from a server that predates it. `n_page` also counts an edit
+/// an agent has claimed and still holds under its lease, which nobody else may
+/// take: read alone, it told a session edits were waiting seconds after its
+/// own agent had taken them. No request is among them: the server gives every
+/// request a deck's surface, and page work is a page edit, offered to nobody.
+pub fn untaken_page_counted(row: &J) -> Option<f64> {
+    match js::get(Some(row), "n_page_undelivered") {
+        Some(J::Num(n)) if n.is_finite() => Some(n.max(0.0)),
+        _ => None,
+    }
+}
+
+/// The page edits on a row to tell an agent about: the ones it could take
+/// now, when the server counts them, and otherwise `n_page`, read as before.
+/// `n_undelivered` is no stand-in: it spans every surface, so a taken page
+/// edit beside a deck edit nobody has taken still counts there.
+pub fn untaken_page(row: &J) -> f64 {
+    untaken_page_counted(row).unwrap_or_else(|| js::num_or_zero(js::get(Some(row), "n_page")))
+}
+
 /// Insertion-ordered de-duplication, as a `Set` does it.
 fn unique<T: PartialEq + Clone>(items: impl IntoIterator<Item = T>) -> Vec<T> {
     let mut out: Vec<T> = Vec::new();
@@ -606,7 +627,8 @@ fn q(p: &str) -> String {
     format!("'{p}'")
 }
 
-fn checkout_path_hint(rows: &[&J], cwd: &str) -> String {
+/// Where to run the claim, when the checkout is not the folder the session is in.
+pub fn checkout_path_hint(rows: &[&J], cwd: &str) -> String {
     let here = js::resolve(&[cwd]);
     let paths = unique(
         rows.iter()
@@ -686,6 +708,57 @@ pub fn open_to(request: &J, me: &Me) -> bool {
     matches!((js::get(Some(request), "offered_to"), me.name.as_deref()), (Some(J::Str(to)), Some(name)) if to == name)
 }
 
+/// How long a note's passed window still holds it when the server does not
+/// say when its walk ends: one refresh of the desktop's copy of the inbox,
+/// and a watcher's beat after it. The server walks an untaken note on to the
+/// next session as each window passes, and opens it to everyone when the
+/// walk ends, but the desktop's copy shows the next offer only at its next
+/// refresh. Read as open at once, every session woke on the same note, the
+/// wake the offer is there to spare.
+const NOTE_WALK_GRACE_MS: f64 = 45_000.0;
+
+/// The server's whole walk, three windows of a minute each: no passed window
+/// holds a note longer, whatever time a copy says the walk ends.
+const NOTE_WALK_MS: f64 = 180_000.0;
+
+/// May this session take this note now? As a request may, except that a
+/// window that has passed holds the note, for everyone, until the server's
+/// next offer can show: until the time the server says the note opens to
+/// all, or, when it does not say, a grace after the window.
+pub fn note_open_to(note: &J, me: &Me) -> bool {
+    let until = js::get(Some(note), "offered_until");
+    let t = if js::nullish(until) { f64::NAN } else { js::date_value(until) };
+    if t.is_finite() && t <= me.now {
+        let open_at = js::get(Some(note), "open_at");
+        let open_at = if js::nullish(open_at) { f64::NAN } else { js::date_value(open_at) };
+        let held_until = if open_at.is_finite() { open_at.min(t + NOTE_WALK_MS) } else { t + NOTE_WALK_GRACE_MS };
+        if me.now < held_until {
+            return false;
+        }
+    }
+    open_to(note, me)
+}
+
+/// The notes an agent could take now, each with its offer, on a row from a
+/// server that offers a note to one session at a time; None for a row from a
+/// server that predates it. A note an agent has taken is not among them.
+pub fn takeable_notes(row: &J) -> Option<&[J]> {
+    match js::get(Some(row), "notes") {
+        Some(J::Arr(notes)) => Some(notes),
+        _ => None,
+    }
+}
+
+/// The notes this session may take now: those open to it, as a request is.
+/// A row from an older server says only how many notes there are, taken or
+/// not, and every one is counted, as before.
+pub fn notes_for(row: &J, me: &Me) -> f64 {
+    match takeable_notes(row) {
+        Some(notes) => notes.iter().filter(|n| matches!(n, J::Obj(_)) && note_open_to(n, me)).count() as f64,
+        None => js::num_or_zero(js::get(Some(row), "n_annotation")),
+    }
+}
+
 /// Options for `summarize_inbox`.
 #[derive(Clone, Debug)]
 pub struct Opts {
@@ -710,26 +783,57 @@ impl Default for Opts {
 pub const WAIT_ONCE: &str = "If your turn goes on beside the open canvas after applying them, wait once for the next edit \
 (less_canvas_inbox with wait_seconds). Do not loop the wait: each pass costs a whole turn.";
 
+/// One line of text with nothing in it that can act like formatting.
+pub fn one_line(v: Option<&J>, max: usize) -> Option<String> {
+    let Some(J::Str(v)) = v else { return None };
+    let mut flat = String::new();
+    let mut in_ctrl = false;
+    for c in v.chars() {
+        let ctrl = (c as u32) <= 0x1f || (0x7f..=0x9f).contains(&(c as u32));
+        if ctrl {
+            if !in_ctrl {
+                flat.push(' ');
+            }
+        } else {
+            flat.push(c);
+        }
+        in_ctrl = ctrl;
+    }
+    let mut collapsed = String::new();
+    let mut in_ws = false;
+    for c in flat.chars() {
+        if js::is_ws(c) {
+            if !in_ws {
+                collapsed.push(' ');
+            }
+            in_ws = true;
+        } else {
+            collapsed.push(c);
+            in_ws = false;
+        }
+    }
+    let t = js::trim(&collapsed);
+    (!t.is_empty()).then(|| js::utf16_prefix(t, max))
+}
+
 /// The documents the rows are on, each named once, quoted, in order: the
-/// title, else the brand, else the repo's last segment, else "Untitled".
-fn documents(rows: &[&J]) -> String {
-    let docs: Vec<J> = unique(rows.iter().map(|s| {
-        for k in ["title", "brand_slug"] {
-            let v = js::get(Some(s), k);
-            if js::truthy(v) {
-                return v.cloned().unwrap();
-            }
-        }
-        let r = js::get(Some(s), "repo_remote");
-        if js::truthy(r) {
-            let tail = js::to_string(r).rsplit('/').next().unwrap_or("").to_string();
-            if !tail.is_empty() {
-                return J::Str(tail);
-            }
-        }
-        J::Str("Untitled".into())
+/// title, else the brand, else the repo's last segment, else "Untitled". A
+/// name is the person's own text, so it is one line, quoted as a JSON string
+/// is: nothing in it reads as part of the sentence around it.
+pub fn documents(rows: &[&J]) -> String {
+    let docs: Vec<String> = unique(rows.iter().map(|s| {
+        let text = |v: Option<&J>| if js::truthy(v) { one_line(Some(&J::Str(js::to_string(v))), 80) } else { None };
+        let repo = || {
+            let r = js::get(Some(s), "repo_remote");
+            let tail = js::truthy(r).then(|| js::to_string(r).rsplit('/').next().unwrap_or("").to_string());
+            text(tail.map(J::Str).as_ref())
+        };
+        text(js::get(Some(s), "title"))
+            .or_else(|| text(js::get(Some(s), "brand_slug")))
+            .or_else(repo)
+            .unwrap_or_else(|| "Untitled".into())
     }));
-    docs.iter().map(|d| format!("\"{}\"", js::to_string(Some(d)))).collect::<Vec<_>>().join(", ")
+    docs.into_iter().map(|d| js::stringify(&J::Str(d))).collect::<Vec<_>>().join(", ")
 }
 
 /// The agent-facing wake text, routed by surface and checkout. Empty when
@@ -738,10 +842,13 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
     let origin = cwd_git_remote(cwd);
     let (mut here, mut elsewhere, mut artefact, mut annotations, mut attention, mut recoverable) =
         (vec![], vec![], vec![], vec![], vec![], vec![]);
-    let (mut requests, mut n_artefact, mut n_requests) = (vec![], 0.0, 0usize);
+    let (mut requests, mut n_artefact, mut n_requests, mut n_notes) = (vec![], 0.0, 0usize, 0.0);
     for s in sessions {
         let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
-        if n("n_page") > 0.0 {
+        // Only page edits an agent could take now: one already in an agent's
+        // hands is not this session's to drain, nor the user's to re-route.
+        let page = untaken_page(s);
+        if page > 0.0 {
             if page_drainable_here(s, &origin, cwd) {
                 here.push(s)
             } else {
@@ -762,19 +869,21 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
             requests.push(s);
             n_requests += open;
         }
-        if n("n_annotation") > 0.0 {
+        // Likewise a note offered to another session for now, or one an agent
+        // has taken, is not mentioned.
+        let notes = notes_for(s, &opts.me);
+        if notes > 0.0 {
             annotations.push(s);
+            n_notes += notes;
         }
         if n("n_needs_human") > 0.0 {
             attention.push(s);
         }
-        // An expired canvas holding nothing but requests held for another
-        // session holds nothing for this one.
-        let held_only = pending.is_some_and(|r| !r.is_empty())
-            && open == 0
-            && edits <= 0.0
-            && n("n_page") <= 0.0
-            && n("n_annotation") <= 0.0;
+        // An expired canvas holding nothing but work held elsewhere, requests
+        // or notes offered to another session, or page edits or notes an
+        // agent has taken, holds nothing for this one.
+        let held = pending.is_some_and(|r| !r.is_empty()) || n("n_page") > page || n("n_annotation") > notes;
+        let held_only = held && open == 0 && edits <= 0.0 && page <= 0.0 && notes <= 0.0;
         if js::truthy(js::get(Some(s), "recoverable")) && !held_only {
             recoverable.push(s);
         }
@@ -789,7 +898,7 @@ withholds every source op unless you are on that safety branch. If a session's s
 On EVERY source claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). \
 Then apply with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), \
 and let the canvas re-capture. Apply them now; do not ask first.{}{}",
-            js::num_to_string(sum(&here, "n_page")),
+            js::num_to_string(here.iter().map(|s| untaken_page(s)).sum()),
             required_branch_hint(&here),
             checkout_path_hint(&here, cwd)
         ));
@@ -806,7 +915,7 @@ and let the canvas re-capture. Apply them now; do not ask first.{}{}",
         };
         lines.push(format!(
             "{} page edit(s) target {}; this session is rooted elsewhere - tell the user to run /designless from that repo (do NOT claim here).",
-            js::num_to_string(js::num_or_zero(js::get(Some(s), "n_page"))),
+            js::num_to_string(untaken_page(s)),
             target
         ));
     }
@@ -827,8 +936,9 @@ and let the canvas re-capture. Apply them now; do not ask first.{}{}",
     }
     if !annotations.is_empty() {
         lines.push(format!(
-            "{} annotation(s) are waiting. They are not mechanical edits: read them as context with less_canvas_ops action=peek, form your judgment, then ack them applied. Do this now; do not ask first.",
-            js::num_to_string(sum(&annotations, "n_annotation"))
+            "{} annotation(s) on {} are waiting. They are not mechanical edits: read them as context with less_canvas_ops action=peek, form your judgment, then ack them applied. Do this now; do not ask first.",
+            js::num_to_string(n_notes),
+            documents(&annotations)
         ));
     }
     if !attention.is_empty() && opts.include_attention {
@@ -934,6 +1044,95 @@ mod tests {
     }
     fn page_row(repo: &str) -> J {
         row(vec![("title", s("Skyway")), ("n_page", J::Num(1.0)), ("repo_remote", s(&format!("file://{repo}"))), ("safety_branch", s("designless/abc"))])
+    }
+
+    #[test]
+    fn the_notes_a_session_may_take_are_those_open_to_it_or_on_an_older_server_every_one() {
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let note = |to: J, until: J| row(vec![("seq", J::Num(8.0)), ("offered_to", to), ("offered_until", until)]);
+        let held = |to: &str| note(s(to), s("2999-01-01T00:00:00.000Z"));
+        let notes = J::Arr(vec![held("claude:fdd5f4f9"), held("codex:9f8e7d6c"), note(J::Null, J::Null), note(s("codex:9f8e7d6c"), s("2001-01-01T00:00:00.000Z"))]);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(5.0)), ("notes", notes)]), &me), 3.0, "its own, the open one, the passed one");
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(1.0)), ("notes", J::Arr(vec![]))]), &me), 0.0, "one an agent has taken");
+        for older in [J::Null, s("[]"), row(vec![])] {
+            assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(2.0)), ("notes", older.clone())]), &me), 2.0, "{older:?}");
+        }
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(2.0))]), &me), 2.0);
+    }
+
+    #[test]
+    fn a_note_whose_window_just_passed_waits_for_the_next_offer() {
+        // The server walks an untaken note on to the next session as each
+        // window passes, and the desktop's copy of the inbox shows the next
+        // offer only at its next refresh. Read as open at once, every session
+        // woke on the same note.
+        let now = js::now_ms();
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now };
+        let unnamed = Me { name: None, now };
+        let note = |to: &str, until: f64| row(vec![("seq", J::Num(8.0)), ("offered_to", s(to)), ("offered_until", s(&js::iso_string(until)))]);
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now - 5_000.0), &me), "just passed, offered elsewhere");
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now - 5_000.0), &unnamed));
+        assert!(!note_open_to(&note("claude:fdd5f4f9", now - 5_000.0), &me), "its own window has passed too");
+        assert!(note_open_to(&note("codex:9f8e7d6c", now - 120_000.0), &me), "a walk that never comes holds it no longer");
+        assert!(note_open_to(&note("claude:fdd5f4f9", now + 30_000.0), &me));
+        assert!(note_open_to(&row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null)]), &unnamed), "the server opened it");
+        // A request is offered once, then to anyone, as before.
+        assert!(open_to(&note("codex:9f8e7d6c", now - 5_000.0), &me));
+        let notes = J::Arr(vec![note("codex:9f8e7d6c", now - 5_000.0)]);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(1.0)), ("notes", notes)]), &me), 0.0);
+    }
+
+    #[test]
+    fn a_note_whose_window_passed_waits_until_the_server_says_it_opens_to_all() {
+        // A newer server says when its walk opens the note to everyone. Until
+        // then a passed window means the walk has moved on to a session this
+        // copy does not show yet.
+        let now = js::now_ms();
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now };
+        let unnamed = Me { name: None, now };
+        let note = |to: &str, until: f64, open_at: J| {
+            row(vec![("seq", J::Num(8.0)), ("offered_to", s(to)), ("offered_until", s(&js::iso_string(until))), ("open_at", open_at)])
+        };
+        let at = |t: f64| s(&js::iso_string(t));
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, at(now + 20_000.0)), &me), "the walk is still on");
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, at(now + 20_000.0)), &unnamed));
+        assert!(!note_open_to(&note("claude:fdd5f4f9", now - 100_000.0, at(now + 20_000.0)), &me), "its own window has passed");
+        assert!(note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, at(now - 1_000.0)), &unnamed), "the walk has ended");
+        assert!(note_open_to(&note("claude:fdd5f4f9", now + 30_000.0, at(now + 150_000.0)), &me), "offered to it now");
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now + 30_000.0, at(now + 150_000.0)), &me));
+        // No walk outlasts the server's: three windows of a minute each.
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, s("2999-01-01T00:00:00.000Z")), &me));
+        assert!(note_open_to(&note("codex:9f8e7d6c", now - 200_000.0, s("2999-01-01T00:00:00.000Z")), &me), "a walk that never ends holds it no longer");
+        let opened = row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null), ("open_at", at(now + 150_000.0))]);
+        assert!(note_open_to(&opened, &unnamed), "a note offered to nobody is open, whenever the walk would have ended");
+        // A time this copy cannot read leaves the grace in place.
+        for open_at in [J::Null, s("x")] {
+            assert!(!note_open_to(&note("codex:9f8e7d6c", now - 5_000.0, open_at.clone()), &me), "{open_at:?}");
+            assert!(note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, open_at.clone()), &me), "{open_at:?}");
+        }
+        let notes = J::Arr(vec![note("codex:9f8e7d6c", now - 100_000.0, at(now + 20_000.0))]);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(1.0)), ("notes", notes)]), &me), 0.0);
+    }
+
+    #[test]
+    fn only_a_well_formed_note_counts() {
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let notes = J::Arr(vec![J::Null, J::Num(1.0), s("x"), J::Arr(vec![]), row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null)])]);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(1.0)), ("notes", notes)]), &me), 1.0);
+    }
+
+    #[test]
+    fn an_expired_canvas_whose_notes_are_held_elsewhere_or_taken_says_nothing() {
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let expired = |notes: J| {
+            row(vec![("session_id", s("a")), ("title", s("Deck")), ("session_status", s("expired")), ("recoverable", J::Bool(true)), ("n_annotation", J::Num(1.0)), ("notes", notes)])
+        };
+        let said = |notes: J| summarize_inbox(&[expired(notes)], "/tmp", Opts { me: me.clone(), ..Opts::default() });
+        let elsewhere = row(vec![("seq", J::Num(8.0)), ("offered_to", s("codex:9f8e7d6c")), ("offered_until", s("2999-01-01T00:00:00.000Z"))]);
+        assert_eq!(said(J::Arr(vec![elsewhere])), "", "offered to another session");
+        assert_eq!(said(J::Arr(vec![])), "", "taken by an agent");
+        let open = row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null)]);
+        assert!(said(J::Arr(vec![open])).contains("1 expired session(s) still hold un-applied edits"));
     }
 
     // ── where the desktop is ──
@@ -1227,6 +1426,67 @@ mod tests {
         let other = row(vec![("title", s("x")), ("n_page", J::Num(1.0)), ("repo_remote", s("https://github.com/org/DIFFERENT")), ("safety_branch", s("designless/abc"))]);
         assert!(!page_drainable_here(&other, &cwd_git_remote(&repo), &repo));
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    // ── page edits an agent already holds ──
+    #[test]
+    fn a_document_is_named_by_its_first_name_with_text_else_untitled() {
+        let named = |pairs: Vec<(&str, J)>| documents(&[&row(pairs)]);
+        assert_eq!(named(vec![]), "\"Untitled\"");
+        assert_eq!(named(vec![("repo_remote", J::Null)]), "\"Untitled\"");
+        assert_eq!(named(vec![("title", s("  \n "))]), "\"Untitled\"");
+        assert_eq!(named(vec![("title", s("  \n ")), ("brand_slug", s("acme"))]), "\"acme\"", "a blank title gives way to the brand");
+        assert_eq!(named(vec![("title", s(" ")), ("repo_remote", s("file:///Users/someone/store"))]), "\"store\"");
+        assert_eq!(named(vec![("title", s("Q3 \"final\" \\ v2"))]), r#""Q3 \"final\" \\ v2""#);
+    }
+
+    #[test]
+    fn the_untaken_page_count_is_the_servers_when_it_says_and_n_page_when_it_does_not() {
+        let r = |pairs: Vec<(&str, J)>| row(pairs);
+        assert_eq!(untaken_page_counted(&r(vec![("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0))])), Some(0.0));
+        assert_eq!(untaken_page(&r(vec![("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0))])), 0.0);
+        assert_eq!(untaken_page(&r(vec![("n_page", J::Num(3.0)), ("n_page_undelivered", J::Num(2.0))])), 2.0);
+        // A server that predates the count: n_page, read as before, whatever
+        // n_undelivered says, since it spans every surface.
+        for absent in [None, Some(J::Null), Some(s("1")), Some(J::Bool(true))] {
+            let mut pairs = vec![("n_page", J::Num(1.0)), ("n_undelivered", J::Num(0.0))];
+            if let Some(a) = absent.clone() {
+                pairs.push(("n_page_undelivered", a));
+            }
+            assert_eq!(untaken_page_counted(&r(pairs.clone())), None, "{absent:?}");
+            assert_eq!(untaken_page(&r(pairs)), 1.0, "{absent:?}");
+        }
+        assert_eq!(untaken_page_counted(&r(vec![("n_page_undelivered", J::Num(-1.0))])), Some(0.0), "never below nothing");
+        assert_eq!(untaken_page(&r(vec![])), 0.0);
+    }
+
+    #[test]
+    fn a_page_edit_an_agent_holds_gets_no_line_here_or_elsewhere() {
+        let root = tmp("dl-taken-");
+        let repo = mk_repo(&format!("{root}/site"));
+        let taken = |remote: &str| row(vec![("title", s("Skyway")), ("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0)), ("repo_remote", s(remote)), ("safety_branch", s("designless/abc"))]);
+        assert_eq!(summarize_inbox(&[taken(&format!("file://{repo}"))], &root, Opts::default()), "", "here");
+        assert_eq!(summarize_inbox(&[taken("https://github.com/o/elsewhere")], &root, Opts::default()), "", "elsewhere: nothing to send the user there for");
+        // Of three page edits, the one nobody has taken is the one said.
+        let some = row(vec![("title", s("Skyway")), ("n_page", J::Num(3.0)), ("n_page_undelivered", J::Num(1.0)), ("repo_remote", s(&format!("file://{repo}")))]);
+        assert!(summarize_inbox(&[some], &root, Opts::default()).starts_with("1 page edit(s) are drainable from this checkout."));
+        let away = row(vec![("n_page", J::Num(3.0)), ("n_page_undelivered", J::Num(2.0)), ("repo_remote", s("https://github.com/o/elsewhere"))]);
+        assert!(summarize_inbox(&[away], &root, Opts::default()).starts_with("2 page edit(s) target https://github.com/o/elsewhere;"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_expired_canvas_whose_page_edits_an_agent_holds_says_nothing_of_requests_held_elsewhere() {
+        let held = row(vec![
+            ("session_id", s("a")),
+            ("recoverable", J::Bool(true)),
+            ("n_page", J::Num(1.0)),
+            ("n_page_undelivered", J::Num(0.0)),
+            ("n_value_artefact", J::Num(0.0)),
+            ("n_value_undelivered", J::Num(0.0)),
+            ("requests", J::Arr(vec![row(vec![("seq", J::Num(7.0)), ("offered_to", s("codex:9f8e7d6c")), ("offered_until", s("2999-01-01T00:00:00.000Z"))])])),
+        ]);
+        assert_eq!(summarize_inbox(&[held], &tmpdir(), Opts { me: Me { name: Some("claude:0a1b2c3d".into()), now: 0.0 }, ..Opts::default() }), "");
     }
 
     // ── the dark count ──
