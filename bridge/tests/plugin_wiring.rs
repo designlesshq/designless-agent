@@ -777,34 +777,25 @@ fn store_row(frame: &str, set: &[(&str, Value)]) -> &'static str {
 }
 
 #[test]
-fn a_page_request_offered_to_another_session_holds_no_turn_and_is_not_said_to_wait() {
-    // The server counts a page document's request in its page count whoever it
-    // is offered to: the count is per row, and does not know who asks. Inside
-    // the offer's window, another session's claim takes nothing.
+fn a_deck_request_offered_elsewhere_does_not_hide_a_page_edit_beside_it() {
+    // The server gives every request a deck's surface and routes page work as
+    // a page edit, offered to nobody: a request held for another session is
+    // never one of the page edits it counts.
     let s = Scratch::new("pageoffer");
     let repo = store_repo(&s);
-    let home = s.path("home");
-    let offered = |until: &str| {
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    desktop(
+        &sock,
         store_row(
             store_inbox(&repo, 0, false, Some(1)),
-            &[
-                ("n_value_undelivered", serde_json::json!(0)),
-                ("requests", serde_json::json!([{"seq":2,"kind":"redo_change","offered_to":"codex:9f8e7d6c","offered_until":until}])),
-            ],
-        )
-    };
-    let prompt = format!(r#"{{"cwd":"{repo}","session_id":"{STORE_HOST}","prompt":"go on"}}"#);
-    let sock = s.path("0.sock");
-    desktop(&sock, offered("2999-01-01T00:00:00.000Z"));
-    assert_eq!(drain(&stop_input(&repo, false, "[]"), &home, &sock), "", "nothing here may take it inside its window");
-    let (code, out, _) = run(&["hook", "canvas-wake"], &prompt, &home, &sock);
-    assert_eq!(code, 0);
-    assert!(!out.contains("page edit(s)"), "{out}");
-    // Once the window has passed it is anyone's.
-    let sock = s.path("1.sock");
-    desktop(&sock, offered("2020-01-01T00:00:00.000Z"));
+            &[("requests", serde_json::json!([{"seq":3,"kind":"fit_slide","offered_to":"codex:9f8e7d6c","offered_until":"2999-01-01T00:00:00.000Z"}]))],
+        ),
+    );
     let line = context(&drain(&stop_input(&repo, false, "[]"), &home, &sock));
     assert!(line.starts_with("Designless canvas: 1 page edit(s) on \"Store\" are waiting for an agent"), "{line}");
+    let prompt = format!(r#"{{"cwd":"{repo}","session_id":"{STORE_HOST}","prompt":"go on"}}"#);
+    let (_, out, _) = run(&["hook", "canvas-wake"], &prompt, &home, &sock);
+    assert!(context(&out).starts_with("Designless canvas: 1 page edit(s) are drainable from this checkout."), "{out}");
 }
 
 #[test]

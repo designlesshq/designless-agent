@@ -1299,6 +1299,16 @@ mod tests {
 
     // ── page edits an agent already holds ──
     #[test]
+    fn a_document_is_named_by_its_first_name_with_text_else_untitled() {
+        let named = |pairs: Vec<(&str, J)>| documents(&[&row(pairs)]);
+        assert_eq!(named(vec![]), "\"Untitled\"");
+        assert_eq!(named(vec![("repo_remote", J::Null)]), "\"Untitled\"");
+        assert_eq!(named(vec![("title", s("  \n "))]), "\"Untitled\"");
+        assert_eq!(named(vec![("title", s("  \n ")), ("brand_slug", s("acme"))]), "\"acme\"", "a blank title gives way to the brand");
+        assert_eq!(named(vec![("title", s(" ")), ("repo_remote", s("file:///Users/someone/store"))]), "\"store\"");
+        assert_eq!(named(vec![("title", s("Q3 \"final\" \\ v2"))]), r#""Q3 \"final\" \\ v2""#);
+    }
+
     fn the_untaken_page_count_is_the_servers_when_it_says_and_n_page_when_it_does_not() {
         let r = |pairs: Vec<(&str, J)>| row(pairs);
         let me = Me::default();
