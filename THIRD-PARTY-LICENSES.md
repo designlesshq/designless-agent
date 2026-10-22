@@ -125,7 +125,7 @@ binary (135 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | ring | 0.17.14 | Apache-2.0 AND ISC | Copyright (c) 2009 The Go Authors. All rights reserved. |
 | rustls | 0.23.46 | Apache-2.0 OR ISC OR MIT | Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com> |
 | rustls-pki-types | 1.14.1 | MIT OR Apache-2.0 | Copyright 2023 Dirkjan Ochtman |
-| rustls-webpki | 0.103.15 | ISC | Copyright 2015 Brian Smith. |
+| rustls-webpki | 0.103.16 | ISC | Copyright 2015 Brian Smith. |
 | ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 | (no holder stated upstream) |
 | serde | 1.0.228 | MIT OR Apache-2.0 | (no holder stated upstream) |
 | serde_core | 1.0.228 | MIT OR Apache-2.0 | (no holder stated upstream) |
@@ -170,7 +170,7 @@ binary (135 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | utf8_iter | 1.0.4 | Apache-2.0 OR MIT | (no holder stated upstream) |
 | version_check | 0.9.5 | MIT/Apache-2.0 | Copyright (c) 2017-2018 Sergio Benitez |
 | want | 0.3.1 | MIT | Copyright (c) 2018-2019 Sean McArthur |
-| webpki-roots | 1.0.7 | CDLA-Permissive-2.0 | (no holder stated upstream) |
+| webpki-roots | 1.0.10 | CDLA-Permissive-2.0 | (no holder stated upstream) |
 | writeable | 0.6.3 | Unicode-3.0 | Copyright © 2020-2024 Unicode, Inc. |
 | yoke | 0.8.2 | Unicode-3.0 | Copyright © 2020-2024 Unicode, Inc. |
 | yoke-derive | 0.8.2 | Unicode-3.0 | Copyright © 2020-2024 Unicode, Inc. |
