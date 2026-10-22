@@ -183,6 +183,19 @@ pub fn news(before: &[(String, Work)], now: &[(String, Work)]) -> Vec<String> {
         .collect()
 }
 
+/// The slice: only the canvases with news, so a line never repeats what the
+/// agent was told before or counts what is already in an agent's hands.
+pub fn with_news(sessions: &[J], fresh: &[String]) -> Vec<J> {
+    sessions
+        .iter()
+        .filter(|s| {
+            let id = js::get(Some(s), "session_id");
+            fresh.contains(&if js::nullish(id) { String::new() } else { js::to_string(id) })
+        })
+        .cloned()
+        .collect()
+}
+
 /// `work_of` as the shape `marker::write_seen` keeps on disk.
 pub fn seen_json(work: &[(String, Work)]) -> J {
     J::Arr(
@@ -268,17 +281,7 @@ pub fn step(probe: &Probe, prev: &State, cwd: &str, now: f64) -> (Voice, State) 
     if fresh.is_empty() {
         return (Voice::Silent, next);
     }
-    // The slice: only the canvases with news, so a line never repeats what the
-    // agent was told before or counts what is already in an agent's hands.
-    let slice: Vec<J> = probe
-        .sessions
-        .iter()
-        .filter(|s| {
-            let id = js::get(Some(s), "session_id");
-            fresh.contains(&if js::nullish(id) { String::new() } else { js::to_string(id) })
-        })
-        .cloned()
-        .collect();
+    let slice = with_news(&probe.sessions, &fresh);
     let opts = probe::Opts { include_attention: false, attn_dark: None, watcher_live: true, me };
     let text = probe::summarize_inbox(&slice, cwd, opts);
     if text.is_empty() {
@@ -370,6 +373,8 @@ pub async fn run(args: &[String], env: &Env) -> i32 {
         say("Designless watcher: one is already running for this session.\n");
         return 0;
     }
+    // Whatever line came before this watcher, it answers.
+    marker::take_line(&env.home, &sid);
     let cwd = js::process_cwd().unwrap_or_default();
     if let Ok(c) = std::ffi::CString::new(marker::marker_path(&env.home, &sid)) {
         let _ = MARKER.set(c);
@@ -422,7 +427,14 @@ pub async fn run(args: &[String], env: &Env) -> i32 {
             match voice {
                 Voice::Wake(line) => {
                     let line = if once { once_line(&line, &env.watcher, sid_text) } else { line };
-                    if !say(&format!("{line}\n")) || once {
+                    let said = say(&format!("{line}\n"));
+                    if said && once {
+                        // The line asks for the next watcher, so it is the ask
+                        // for the turn its exit starts. Written before the
+                        // exit, so it is on disk before that turn's first call.
+                        super::events::note_watchers_line(&env.home, Some(&sid));
+                    }
+                    if !said || once {
                         return stop();
                     }
                     quiet_beats = 0;

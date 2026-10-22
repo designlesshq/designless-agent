@@ -112,6 +112,7 @@ fn session_start_source(raw: &str) -> Option<String> {
 
 pub async fn session_start(raw: &str, env: &Env) -> Option<String> {
     let (cwd, sid) = session_start_input(raw);
+    let own = !in_sub_agent(js::parse(raw).as_ref());
     // First, before anything that can wait: a conversation that moved on
     // inside its host (a clear, a resume) leaves its name for that host's
     // bridge, which keeps running across it (host_session.rs).
@@ -119,17 +120,30 @@ pub async fn session_start(raw: &str, env: &Env) -> Option<String> {
         Some(J::Str(s)) => Some(s.as_str()),
         _ => None,
     };
-    crate::host_session::on_session_start(std::path::Path::new(&env.home), session_start_source(raw).as_deref(), id);
+    if own {
+        crate::host_session::on_session_start(std::path::Path::new(&env.home), session_start_source(raw).as_deref(), id);
+    }
     let cwd = cwd.or_else(js::process_cwd)?;
     let memory = epilogue_line(&cwd, js::now_ms());
     let probe = probe::probe_inbox().await;
-    Some(session_start_text(&cwd, sid.as_ref(), memory, &probe, env))
+    Some(session_start_text(&cwd, sid.as_ref(), memory, &probe, env, own))
 }
 
-pub fn session_start_text(cwd: &str, sid: Option<&J>, memory: Option<String>, probe: &Probe, env: &Env) -> String {
+/// Is this hook running inside one of the session's sub-agents? Claude Code
+/// gives a sub-agent's hooks the session's own id and transcript; only
+/// `agent_id` tells them apart. A watcher a sub-agent starts reports to the
+/// sub-agent, which has ended by the time it speaks, and anything recorded
+/// under the id is recorded for the session.
+fn in_sub_agent(input: Option<&J>) -> bool {
+    js::truthy(js::get(input, "agent_id"))
+}
+
+/// `own` is false inside a sub-agent: it hears what is waiting, and asks for
+/// nothing and records nothing.
+pub fn session_start_text(cwd: &str, sid: Option<&J>, memory: Option<String>, probe: &Probe, env: &Env, own: bool) -> String {
     let live = marker::is_armed(&env.home, sid, js::now_ms());
     let want_watch = |has: bool| {
-        if has && js::truthy(sid) && !live {
+        if has && own && js::truthy(sid) && !live {
             // Always asked at a session start, a resumed one included; the
             // stamp only spares the rest of this turn a second ask.
             note_arm_ask(&env.home, sid);
@@ -156,7 +170,9 @@ read the real inbox with the canvas-inbox tool (less_canvas_inbox) before treati
     // One reader for both the record and the text, so what is recorded as told
     // is what was said.
     let me = Me::session(sid);
-    note_seen(&env.home, sid, probe, &me);
+    if own {
+        note_seen(&env.home, sid, probe, &me);
+    }
     if probe.count() == 0 {
         return emit("SessionStart", &format!("{reg}{}", want_watch(memory.is_some())));
     }
@@ -202,7 +218,12 @@ fn write_state(home: &str, sid: &J, patch: Vec<(&str, Option<J>)>) -> std::io::R
         }
     }
     js::set(&mut next, "at", J::Str(js::iso_string(js::now_ms())));
-    std::fs::write(state_file(home, sid)?, js::stringify(&J::Obj(next)))
+    // Whole or not at all: the watcher writes here too, and a reader that
+    // caught a half-written file would read every gate as unset.
+    let p = state_file(home, sid)?;
+    let tmp = format!("{p}.{}.tmp", std::process::id());
+    std::fs::write(&tmp, js::stringify(&J::Obj(next)))?;
+    std::fs::rename(&tmp, &p)
 }
 
 fn attention_gate(home: &str, sid: Option<&J>, digest: &str) -> bool {
@@ -246,9 +267,27 @@ fn note_turn(home: &str, sid: Option<&J>) {
     let _ = write_state(home, sid, vec![("turn_at", Some(J::Num(js::now_ms())))]);
 }
 
+/// The watcher was asked for.
 fn note_arm_ask(home: &str, sid: Option<&J>) {
     let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
     let _ = write_state(home, sid, vec![("arm_asked_at", Some(J::Num(js::now_ms())))]);
+}
+
+/// A one-shot watcher said its line, which asks for the next watcher: it is
+/// the ask, and the turn its exit starts is told so.
+pub fn note_watchers_line(home: &str, sid: Option<&J>) {
+    let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
+    marker::note_line(home, sid);
+    let _ = write_state(home, sid, vec![("arm_asked_at", Some(J::Num(js::now_ms())))]);
+}
+
+/// Did a watcher's line come in that no turn has taken, and that no watcher
+/// since has answered? Taking it means the next notification turn, one some
+/// other command's exit starts, or a later watcher's that ended without a
+/// line, opens the ask again. It is kept apart from the state the hooks
+/// rewrite, so no hook's write can bring it back or lose it.
+fn took_watchers_line(home: &str, sid: Option<&J>) -> bool {
+    sid.filter(|s| js::truthy(Some(s))).is_some_and(|sid| marker::take_line(home, sid))
 }
 
 /// Was the watcher already asked for since the user last typed? The ask is
@@ -276,15 +315,70 @@ fn note_seen(home: &str, sid: Option<&J>, probe: &Probe, me: &Me) {
 }
 
 pub async fn canvas_wake(raw: &str, env: &Env) -> Option<String> {
+    let input = js::parse(raw).filter(|v| !matches!(v, J::Null));
+    // Codex runs this hook inside a sub-agent too, under the root session's
+    // id. That prompt is the parent's message, not a person's, and anything
+    // recorded under the id is recorded for the session: the parent's own turn
+    // hears what waits, as it does in Claude Code, whose sub-agents run no
+    // prompt hook.
+    if in_sub_agent(input.as_ref()) {
+        return None;
+    }
     // A prompt is the plainest evidence a person is here. Stamped first, so a
     // malformed payload or an unreachable desktop does not cost the signal.
     marker::note_activity(&env.home, js::now_ms());
-    let input = js::parse(raw).filter(|v| !matches!(v, J::Null))?;
+    let input = input?;
     let cwd = js::nonempty_str(js::get(Some(&input), "cwd"))?.to_string();
     let sid = js::get(Some(&input), "session_id").cloned();
-    note_turn(&env.home, sid.as_ref());
+    // A turn a finished background command starts is not one the person
+    // typed. When the watcher's line started it, that line asked for the next
+    // watcher, so the ask stays spent; any other such turn opens it again, as
+    // a watcher that ended without a line asked for nothing.
+    let notified = started_by_a_task(js::get(Some(&input), "prompt"));
+    if !notified || !took_watchers_line(&env.home, sid.as_ref()) {
+        note_turn(&env.home, sid.as_ref());
+    }
     let probe = probe::probe_inbox().await;
+    if notified {
+        return notified_text(&cwd, sid.as_ref(), &probe, env);
+    }
     wake_text(&cwd, sid.as_ref(), &probe, env)
+}
+
+/// A background command that finishes starts a turn with its notification
+/// where the prompt would be.
+fn started_by_a_task(prompt: Option<&J>) -> bool {
+    matches!(prompt, Some(J::Str(p)) if p.trim_start().starts_with("<task-notification>"))
+}
+
+/// The turn a finished background command started. When the command was the
+/// watcher, its line already told the agent what came in and how to keep
+/// watching, and this hook said the same edits again in the same turn. So
+/// such a turn hears only what the session has not been told, read against
+/// the record the watcher keeps; another command's turn still hears news.
+pub fn notified_text(cwd: &str, sid: Option<&J>, probe: &Probe, env: &Env) -> Option<String> {
+    if probe.unknown.is_some() {
+        return wake_text(cwd, sid, probe, env);
+    }
+    clear_unknown(&env.home, sid);
+    let me = Me::session(sid);
+    let told = match sid.filter(|s| js::truthy(Some(s))) {
+        Some(s) => watch::seen_from_json(marker::read_seen(&env.home, s).as_ref()),
+        None => Vec::new(),
+    };
+    let fresh = watch::news(&told, &watch::work_of(&probe.sessions, &me));
+    note_seen(&env.home, sid, probe, &me);
+    let slice = watch::with_news(&probe.sessions, &fresh);
+    if slice.is_empty() {
+        return None;
+    }
+    let watcher_live = marker::is_armed(&env.home, sid, js::now_ms());
+    // As the watcher says it: what waits on the user is the person's turn's to say.
+    let text = probe::summarize_inbox(&slice, cwd, probe::Opts { include_attention: false, attn_dark: None, watcher_live, me });
+    if text.is_empty() {
+        return None;
+    }
+    Some(emit("UserPromptSubmit", &format!("Designless canvas: {text}")))
 }
 
 pub fn wake_text(cwd: &str, sid: Option<&J>, probe: &Probe, env: &Env) -> Option<String> {
@@ -481,7 +575,7 @@ the floor.",
 pub fn decide(input: Option<&J>, env: &Env, armed: &dyn Fn(&J) -> bool) -> Option<String> {
     let tool = js::coalesce(js::get(input, "tool_name"), js::get(input, "toolName"));
     let sid = js::coalesce(js::get(input, "session_id"), js::get(input, "sessionId"));
-    if !js::truthy(sid) {
+    if !js::truthy(sid) || in_sub_agent(input) {
         return None;
     }
     let resp = js::coalesce(js::coalesce(js::get(input, "tool_response"), js::get(input, "toolResponse")), js::get(input, "result"));
@@ -819,6 +913,28 @@ mod tests {
     }
 
     #[test]
+    fn a_sub_agents_call_is_never_a_reason_to_ask() {
+        let e = env("/nowhere");
+        let call = |agent: Option<&str>| {
+            let mut f = vec![("tool_name", s("x_less_canvas_compose")), ("session_id", s("s1")), ("tool_response", s(""))];
+            f.extend(agent.map(|a| ("agent_id", s(a))));
+            js::obj(f)
+        };
+        assert!(decide(Some(&call(None)), &e, NEVER).is_some());
+        assert_eq!(decide(Some(&call(Some("a41881e549bdd02f2"))), &e, NEVER), None);
+        assert!(decide(Some(&call(Some(""))), &e, NEVER).is_some(), "an empty id names no sub-agent");
+    }
+
+    #[test]
+    fn only_a_finished_tasks_notification_is_a_turn_nobody_typed() {
+        assert!(started_by_a_task(Some(&s("<task-notification>\n<task-id>b1d2e3f4a</task-id>"))));
+        assert!(started_by_a_task(Some(&s("\n <task-notification>"))));
+        assert!(!started_by_a_task(Some(&s("why did a <task-notification> show up?"))));
+        assert!(!started_by_a_task(Some(&s("apply the edits"))));
+        assert!(!started_by_a_task(None));
+    }
+
+    #[test]
     fn the_ask_is_made_once_a_turn() {
         let h = home("arm-turn");
         let sid = s("s-turn");
@@ -979,7 +1095,7 @@ mod tests {
         let out = ctx(&wake_text("/tmp", Some(&sid), &probe(&[open, held]), &e).unwrap());
         assert!(out.starts_with("Designless canvas: 1 request(s) on \"Deck\" are for this session: take them now"), "{out}");
         assert!(seen().contains(r#""sessions":[["a",1,0,7]]"#), "what was said is what is recorded: {}", seen());
-        let start = ctx(&session_start_text("/tmp", Some(&sid), None, &probe(&[held]), &e));
+        let start = ctx(&session_start_text("/tmp", Some(&sid), None, &probe(&[held]), &e, true));
         assert!(!start.contains("request(s)") && !start.contains("waiting edits"), "{start}");
     }
 
@@ -994,7 +1110,7 @@ mod tests {
     // ── the session start ──
     #[test]
     fn session_start_carries_the_hint_and_never_calls_it_unreachable() {
-        let out = ctx(&session_start_text("/tmp", None, None, &blind("timeout after 700ms"), &env("/nowhere")));
+        let out = ctx(&session_start_text("/tmp", None, None, &blind("timeout after 700ms"), &env("/nowhere"), true));
         assert!(out.contains(MISSED_HINT));
         assert!(!out.contains("unreachable"));
         assert!(out.ends_with(REGISTER));
@@ -1004,12 +1120,12 @@ mod tests {
     fn session_start_asks_for_a_watcher_when_edits_wait_and_none_runs() {
         let h = home("ss-a");
         let probe = Probe { sessions: vec![js::obj(vec![("session_id", s("a")), ("n_artefact", J::Num(1.0)), ("title", s("Deck"))])], ..Default::default() };
-        let out = ctx(&session_start_text("/tmp", Some(&s("sid-9")), None, &probe, &env(&h)));
+        let out = ctx(&session_start_text("/tmp", Some(&s("sid-9")), None, &probe, &env(&h), true));
         assert!(out.starts_with("Designless canvas (waiting edits): 1 edit(s) are waiting on the Designless app for \"Deck\"."));
         assert!(out.ends_with("remain the floor."));
         assert!(out.contains("inbox-watch --once sid-9."));
         // Nothing waiting and no memory: the register alone.
-        assert_eq!(ctx(&session_start_text("/tmp", Some(&s("sid-9")), None, &Probe::default(), &env(&h))), REGISTER);
+        assert_eq!(ctx(&session_start_text("/tmp", Some(&s("sid-9")), None, &Probe::default(), &env(&h), true)), REGISTER);
     }
 
     // ── the stop ──
