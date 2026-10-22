@@ -51,39 +51,6 @@ fn is_open_url(s: &str) -> bool {
     (1..=300).contains(&n) && !rest.chars().any(js::is_ws)
 }
 
-/// One line of text with nothing in it that can act like formatting.
-fn one_line(v: Option<&J>, max: usize) -> Option<String> {
-    let Some(J::Str(v)) = v else { return None };
-    let mut flat = String::new();
-    let mut in_ctrl = false;
-    for c in v.chars() {
-        let ctrl = (c as u32) <= 0x1f || (0x7f..=0x9f).contains(&(c as u32));
-        if ctrl {
-            if !in_ctrl {
-                flat.push(' ');
-            }
-        } else {
-            flat.push(c);
-        }
-        in_ctrl = ctrl;
-    }
-    let mut collapsed = String::new();
-    let mut in_ws = false;
-    for c in flat.chars() {
-        if js::is_ws(c) {
-            if !in_ws {
-                collapsed.push(' ');
-            }
-            in_ws = true;
-        } else {
-            collapsed.push(c);
-            in_ws = false;
-        }
-    }
-    let t = js::trim(&collapsed);
-    (!t.is_empty()).then(|| js::utf16_prefix(t, max))
-}
-
 /// What this workspace composed last, served at session start. The values are
 /// never part of the sentence: the instruction is fixed text, and the record
 /// follows it as JSON, which no content can break out of.
@@ -99,8 +66,8 @@ pub fn epilogue_line(cwd: &str, now: f64) -> Option<String> {
     if !(0.0..=EPILOGUE_FRESH_DAYS).contains(&age) {
         return None;
     }
-    let brand = one_line(js::get(e, "brand_slug"), 80)?;
-    let template = one_line(js::get(e, "template_id"), 80)?;
+    let brand = probe::one_line(js::get(e, "brand_slug"), 80)?;
+    let template = probe::one_line(js::get(e, "template_id"), 80)?;
     let canvas = match js::get(e, "session_id") {
         Some(J::Str(s)) if is_uuid(s) => s.clone(),
         _ => return None,
@@ -111,7 +78,7 @@ pub fn epilogue_line(cwd: &str, now: f64) -> Option<String> {
         ("template", J::Str(template)),
         ("canvas", J::Str(canvas)),
     ];
-    if let Some(t) = one_line(js::get(e, "title"), 80) {
+    if let Some(t) = probe::one_line(js::get(e, "title"), 80) {
         record.push(("title", J::Str(t)));
     }
     if let Some(J::Str(u)) = js::get(e, "open_url") {
@@ -368,18 +335,19 @@ pub async fn drain_check(raw: &str, _env: &Env) -> Option<String> {
     }
     let cwd = js::nonempty_str(js::get(Some(&data), "cwd"))?.to_string();
     let probe = probe::probe_inbox().await;
-    drain_text(&cwd, &probe)
+    drain_text(&cwd, &Me::session(js::get(Some(&data), "session_id")), &probe)
 }
 
 /// Codex runs this hook too: it reads the plugin's Claude Code hooks file, and
-/// its turn end names the turn (`turn_id`), which Claude Code's does not. It
+/// its turn end names the turn (`turn_id`) and lists no background tasks,
+/// where Claude Code's always lists them (an empty list when none run). It
 /// cannot hold a turn quietly. It refuses added context there as invalid
 /// output and shows the person a failed hook; the one form it carries back to
 /// the model, a block with a reason, it shows the person too, every time. So
 /// at Codex's turn end the hook says nothing, and the next prompt's hook names
 /// the edit, as it does wherever the turn ends.
 pub fn codex_turn_end(input: Option<&J>) -> bool {
-    js::truthy(js::get(input, "turn_id"))
+    js::truthy(js::get(input, "turn_id")) && !matches!(js::get(input, "background_tasks"), Some(J::Arr(_)))
 }
 
 /// A background task that has ended. The host lists the tasks still running
@@ -414,7 +382,7 @@ pub fn own_agent_at_work(input: Option<&J>) -> bool {
 /// turn instead left the line for whatever next woke the session, by when the
 /// edit could be long applied; and the host's continuation flag, which
 /// `drain_check` reads, is what ends the turn it kept going.
-pub fn drain_text(cwd: &str, probe: &Probe) -> Option<String> {
+pub fn drain_text(cwd: &str, me: &Me, probe: &Probe) -> Option<String> {
     if probe.count() == 0 {
         return None;
     }
@@ -424,7 +392,7 @@ pub fn drain_text(cwd: &str, probe: &Probe) -> Option<String> {
         .iter()
         .filter(|s| {
             let r = js::get(Some(s), "repo_remote");
-            probe::untaken_page_counted(s).is_some_and(|n| n > 0.0)
+            probe::untaken_page_counted(s, me).is_some_and(|n| n > 0.0)
                 && (js::nullish(r) || probe::is_safe_repo_remote(r))
                 && probe::page_drainable_here(s, &origin, cwd)
         })
@@ -441,7 +409,7 @@ pub fn drain_text(cwd: &str, probe: &Probe) -> Option<String> {
             branches.join(", ")
         )
     };
-    let waiting: f64 = here.iter().map(|s| probe::untaken_page(s)).sum();
+    let waiting: f64 = here.iter().map(|s| probe::untaken_page(s, me)).sum();
     let context = format!(
         "Designless canvas: {} page edit(s) on {} are waiting for an agent and drainable from this checkout. \
 These are source ops - work BRANCH-FIRST: READ the required branch from the session's safety_branch field \
@@ -450,9 +418,10 @@ checkout it if it exists) BEFORE you claim - the server withholds every source o
 branch. If safety_branch is null the session is un-stamped: no branch is required. On EVERY source \
 claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). \
 Enumerate with less_canvas_inbox, then apply with less_canvas_ops (claim -> apply on previous_value -> ack). \
-If none remain claimable from here, you are done: the watcher brings the next edit, so do not wait or loop for it.{hint}",
+If none remain claimable from here, you are done: the watcher brings the next edit, so do not wait or loop for it.{hint}{}",
         js::num_to_string(waiting),
-        probe::documents(&here)
+        probe::documents(&here),
+        probe::checkout_path_hint(&here, cwd)
     );
     Some(emit("Stop", &context))
 }
@@ -1056,13 +1025,13 @@ mod tests {
     #[test]
     fn the_stop_holds_only_for_a_page_edit_nobody_has_taken_drainable_here() {
         let artefact_only = Probe { sessions: vec![js::obj(vec![("n_artefact", J::Num(3.0))])], ..Default::default() };
-        assert_eq!(drain_text("/tmp", &artefact_only), None);
+        assert_eq!(drain_text("/tmp", &Me::default(), &artefact_only), None);
         let elsewhere = page(1.0, Some(1.0), vec![("repo_remote", s("https://github.com/o/not-here"))]);
-        assert_eq!(drain_text("/tmp", &elsewhere), None);
-        assert_eq!(drain_text("/tmp", &page(2.0, Some(0.0), vec![])), None, "every one of them in an agent's hands");
-        assert_eq!(drain_text("/tmp", &page(2.0, None, vec![])), None, "a server that cannot say which are untaken: no hold");
+        assert_eq!(drain_text("/tmp", &Me::default(), &elsewhere), None);
+        assert_eq!(drain_text("/tmp", &Me::default(), &page(2.0, Some(0.0), vec![])), None, "every one of them in an agent's hands");
+        assert_eq!(drain_text("/tmp", &Me::default(), &page(2.0, None, vec![])), None, "a server that cannot say which are untaken: no hold");
         let unknown_checkout = page(2.0, Some(2.0), vec![("safety_branch", s("designless/abc")), ("title", s("Store"))]);
-        let out = drain_text("/tmp", &unknown_checkout).unwrap();
+        let out = drain_text("/tmp", &Me::default(), &unknown_checkout).unwrap();
         assert!(out.starts_with(r#"{"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"Designless canvas: 2 page edit(s) on \"Store\" are waiting for an agent"#), "{out}");
         assert!(out.ends_with(r#" Required safety branch(es): designless/abc (server-owned; read from each row's safety_branch, do NOT derive)."}}"#), "{out}");
         assert!(out.contains("the watcher brings the next edit, so do not wait or loop for it."));
@@ -1083,7 +1052,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        let line = ctx(&drain_text("/tmp", &p).unwrap());
+        let line = ctx(&drain_text("/tmp", &Me::default(), &p).unwrap());
         assert!(line.starts_with("Designless canvas: 1 page edit(s) on \"Store\" are waiting"), "{line}");
         assert!(!line.contains("Shop"), "{line}");
     }
@@ -1132,6 +1101,8 @@ mod tests {
         assert!(at(r#"{"session_id":"019a0b1c","turn_id":"019a0b1d","model":"gpt-5.5-codex","stop_hook_active":false}"#));
         assert!(!at(r#"{"session_id":"0c1d2e3f","prompt_id":"6c21bcfb","stop_hook_active":false,"background_tasks":[]}"#), "Claude Code's");
         assert!(!at(r#"{"turn_id":""}"#) && !at("null"));
+        // Claude Code always lists its background tasks: a turn it names is still its own.
+        assert!(!at(r#"{"session_id":"0c1d2e3f","turn_id":"9c1f7e2a","stop_hook_active":false,"background_tasks":[]}"#));
     }
 
     // ── the compose epilogue ──
