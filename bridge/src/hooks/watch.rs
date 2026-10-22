@@ -82,8 +82,9 @@ pub struct Work {
     /// judgment that the server holds for another session counts once its
     /// window has passed, and not before.
     pub untaken: f64,
-    /// Notes left on the canvas. Reading one does not take it, so a note in
-    /// hand looks like a new one; only MORE notes than were seen are news.
+    /// Notes left on the canvas for this session. On a server that does not
+    /// offer them, reading one does not take it, so a note in hand looks like
+    /// a new one; only MORE notes than were seen are news.
     pub notes: f64,
     /// The canvas's newest edit number. Every new edit advances it and
     /// applying one does not, so it tells a new edit from an old one when the
@@ -127,7 +128,17 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
                 // window passes, and then it is both.
                 Some(requests) => {
                     let mine: Vec<&J> = requests.iter().filter(|r| probe::open_to(r, me)).collect();
-                    let seq = mine.iter().map(|r| said(js::get(Some(r), "seq"))).fold(said(js::get(Some(s), "latest_value_seq")), newest);
+                    // The newest value number counts notes too, whoever they
+                    // are offered to: one that is a note held for another
+                    // session says nothing of an edit.
+                    let held: Vec<Option<f64>> = probe::takeable_notes(s)
+                        .unwrap_or_default()
+                        .iter()
+                        .filter(|x| !probe::note_open_to(x, me))
+                        .map(|x| said(js::get(Some(x), "seq")))
+                        .collect();
+                    let value = said(js::get(Some(s), "latest_value_seq")).filter(|v| !held.contains(&Some(*v)));
+                    let seq = mine.iter().map(|r| said(js::get(Some(r), "seq"))).fold(value, newest);
                     (n("n_value_undelivered") + mine.len() as f64, seq)
                 }
                 None => {
@@ -143,7 +154,7 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
             // an agent took the one before it. An older server's row counts
             // every note, taken or not.
             let seq = match probe::takeable_notes(s) {
-                Some(notes) => notes.iter().filter(|x| probe::open_to(x, me)).map(|x| said(js::get(Some(x), "seq"))).fold(seq, newest),
+                Some(notes) => notes.iter().filter(|x| probe::note_open_to(x, me)).map(|x| said(js::get(Some(x), "seq"))).fold(seq, newest),
                 None => seq,
             };
             let w = Work { untaken, notes: probe::notes_for(s, me), seq };

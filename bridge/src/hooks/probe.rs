@@ -708,8 +708,22 @@ pub fn open_to(request: &J, me: &Me) -> bool {
     matches!((js::get(Some(request), "offered_to"), me.name.as_deref()), (Some(J::Str(to)), Some(name)) if to == name)
 }
 
-/// May this session take this note now? As a request.
+/// How long a note's passed window still holds it: one refresh of the
+/// desktop's copy of the inbox, and a watcher's beat after it. The server
+/// walks an untaken note on to the next session as each window passes, and
+/// opens it to everyone when the walk ends, but the desktop's copy shows the
+/// next offer only at its next refresh. Read as open at once, every session
+/// woke on the same note, the wake the offer is there to spare.
+const NOTE_WALK_GRACE_MS: f64 = 45_000.0;
+
+/// May this session take this note now? As a request may, except that a
+/// window that has just passed holds the note, for everyone, until the
+/// server's next offer can show; a walk that never comes holds it no longer.
 pub fn note_open_to(note: &J, me: &Me) -> bool {
+    let t = js::date_value(js::get(Some(note), "offered_until"));
+    if t.is_finite() && t <= me.now && me.now < t + NOTE_WALK_GRACE_MS {
+        return false;
+    }
     open_to(note, me)
 }
 
@@ -728,7 +742,7 @@ pub fn takeable_notes(row: &J) -> Option<&[J]> {
 /// not, and every one is counted, as before.
 pub fn notes_for(row: &J, me: &Me) -> f64 {
     match takeable_notes(row) {
-        Some(notes) => notes.iter().filter(|n| open_to(n, me)).count() as f64,
+        Some(notes) => notes.iter().filter(|n| matches!(n, J::Obj(_)) && note_open_to(n, me)).count() as f64,
         None => js::num_or_zero(js::get(Some(row), "n_annotation")),
     }
 }
@@ -854,9 +868,9 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
             attention.push(s);
         }
         // An expired canvas holding nothing but work held elsewhere, requests
-        // or notes offered to another session or page edits an agent has
-        // taken, holds nothing for this one.
-        let held = pending.is_some_and(|r| !r.is_empty()) || n("n_page") > page || takeable_notes(s).is_some_and(|n| !n.is_empty());
+        // or notes offered to another session, or page edits or notes an
+        // agent has taken, holds nothing for this one.
+        let held = pending.is_some_and(|r| !r.is_empty()) || n("n_page") > page || n("n_annotation") > notes;
         let held_only = held && open == 0 && edits <= 0.0 && page <= 0.0 && notes <= 0.0;
         if js::truthy(js::get(Some(s), "recoverable")) && !held_only {
             recoverable.push(s);
