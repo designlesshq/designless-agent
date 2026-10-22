@@ -314,17 +314,21 @@ pub fn note_watchers_line(home: &str, sid: Option<&J>) {
     let _ = write_state(home, sid, vec![("arm_asked_at", Some(now.clone())), ("line_at", Some(now))]);
 }
 
-/// Did a watcher's line come in since a turn last took one? Taking it means
-/// the next notification turn, one some other command's exit starts, or a
-/// later watcher's that ended without a line, opens the ask again.
+/// Did a watcher's line come in since a turn last took one, and is it still
+/// the newest ask? Taking it means the next notification turn, one some other
+/// command's exit starts, or a later watcher's that ended without a line,
+/// opens the ask again. A line whose turn never came, and that an ask made
+/// since has overtaken, asked for nothing that is still running.
 fn took_watchers_line(home: &str, sid: Option<&J>) -> bool {
     let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return false };
     let st = J::Obj(read_state(home, sid));
-    if !js::to_number(js::get(Some(&st), "line_at")).is_finite() {
+    let line = js::to_number(js::get(Some(&st), "line_at"));
+    if !line.is_finite() {
         return false;
     }
     let _ = write_state(home, sid, vec![("line_at", None)]);
-    true
+    let asked = js::to_number(js::get(Some(&st), "arm_asked_at"));
+    !(asked.is_finite() && asked > line)
 }
 
 /// Was the watcher already asked for since the user last typed? The ask is
