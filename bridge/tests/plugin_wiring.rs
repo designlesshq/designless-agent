@@ -683,6 +683,29 @@ fn the_turn_end_does_not_hold_while_this_sessions_designless_agent_works() {
     assert!(context(&drain(&stop_input(&repo, false, others), &home, &sock)).contains("drainable from this checkout"));
 }
 
+/// What Codex hands the same hook at its turn's end, field for field: Codex
+/// reads this plugin's Claude Code hooks file too.
+fn codex_stop_input(cwd: &str) -> String {
+    format!(
+        r#"{{"session_id":"019a0b1c-2d3e-7f40-8a5b-6c7d8e9f0a1b","turn_id":"019a0b1c-2d3e-7f40-8a5b-6c7d8e9f0a1c","transcript_path":"/Users/someone/.codex/sessions/2026/10/22/rollout-2026-10-22T10-00-00-019a0b1c-2d3e-7f40-8a5b-6c7d8e9f0a1b.jsonl","cwd":"{cwd}","hook_event_name":"Stop","model":"gpt-5.5-codex","permission_mode":"default","stop_hook_active":false,"last_assistant_message":"Handed to the agent."}}"#
+    )
+}
+
+#[test]
+fn codex_cannot_hold_a_turn_quietly_so_its_turn_end_hears_nothing() {
+    // Codex's turn end takes no added context: it refuses this hold as invalid
+    // output and shows the person a failed hook. The one form it carries back
+    // to the model it shows the person as well. The next prompt's hook still
+    // names the edit.
+    let s = Scratch::new("stopcodex");
+    let repo = store_repo(&s);
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    desktop(&sock, store_inbox(&repo, 0, false, Some(1)));
+    assert_eq!(drain(&codex_stop_input(&repo), &home, &sock), "");
+    // The same edit at a Claude Code turn's end is held.
+    assert!(context(&drain(&stop_input(&repo, false, "[]"), &home, &sock)).contains("drainable from this checkout"));
+}
+
 #[test]
 fn a_page_edit_an_agent_has_taken_is_not_said_to_wait_at_any_turn_boundary() {
     let s = Scratch::new("pagetaken");
