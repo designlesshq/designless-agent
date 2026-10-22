@@ -363,9 +363,23 @@ pub async fn drain_check(raw: &str, _env: &Env) -> Option<String> {
     if own_agent_at_work(Some(&data)) {
         return None;
     }
+    if codex_turn_end(Some(&data)) {
+        return None;
+    }
     let cwd = js::nonempty_str(js::get(Some(&data), "cwd"))?.to_string();
     let probe = probe::probe_inbox().await;
     drain_text(&cwd, &probe)
+}
+
+/// Codex runs this hook too: it reads the plugin's Claude Code hooks file, and
+/// its turn end names the turn (`turn_id`), which Claude Code's does not. It
+/// cannot hold a turn quietly. It refuses added context there as invalid
+/// output and shows the person a failed hook; the one form it carries back to
+/// the model, a block with a reason, it shows the person too, every time. So
+/// at Codex's turn end the hook says nothing, and the next prompt's hook names
+/// the edit, as it does wherever the turn ends.
+pub fn codex_turn_end(input: Option<&J>) -> bool {
+    js::truthy(js::get(input, "turn_id"))
 }
 
 /// A background task that has ended. The host lists the tasks still running
@@ -1098,15 +1112,26 @@ mod tests {
 
     #[tokio::test]
     async fn the_stop_reads_nothing_while_its_own_agent_works_or_after_holding_once() {
-        // Both are answered before the desktop is asked, so neither costs a read.
+        // Each is answered before the desktop is asked, so none costs a read.
         let e = env("/nowhere");
         let busy = r#"{"cwd":"/tmp","stop_hook_active":false,"background_tasks":[{"type":"subagent","status":"running","agent_type":"designless:prism-agent"}]}"#;
         assert_eq!(drain_check(busy, &e).await, None);
         assert_eq!(drain_check(r#"{"cwd":"/tmp","stop_hook_active":true}"#, &e).await, None);
+        assert_eq!(drain_check(r#"{"cwd":"/tmp","stop_hook_active":false,"turn_id":"019a0b1c"}"#, &e).await, None);
         let src = include_str!("events.rs");
-        let body = &src[src.find("pub async fn drain_check(").unwrap()..src.find("/// A background task that has ended.").unwrap()];
+        let body = &src[src.find("pub async fn drain_check(").unwrap()..src.find("/// Codex runs this hook too").unwrap()];
         let read = body.find("probe_inbox()").unwrap();
-        assert!(body.find("stop_hook_active").unwrap() < read && body.find("own_agent_at_work").unwrap() < read, "{body}");
+        for check in ["stop_hook_active", "own_agent_at_work", "codex_turn_end"] {
+            assert!(body.find(check).unwrap() < read, "{check}: {body}");
+        }
+    }
+
+    #[test]
+    fn only_codex_names_the_turn_at_its_end() {
+        let at = |raw: &str| codex_turn_end(js::parse(raw).as_ref());
+        assert!(at(r#"{"session_id":"019a0b1c","turn_id":"019a0b1d","model":"gpt-5.5-codex","stop_hook_active":false}"#));
+        assert!(!at(r#"{"session_id":"0c1d2e3f","prompt_id":"6c21bcfb","stop_hook_active":false,"background_tasks":[]}"#), "Claude Code's");
+        assert!(!at(r#"{"turn_id":""}"#) && !at("null"));
     }
 
     // ── the compose epilogue ──
