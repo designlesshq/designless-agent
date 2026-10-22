@@ -516,6 +516,20 @@ mod tests {
         assert_eq!(super::work_of(&held.sessions, &me)[0].1.seq, Some(9.0));
     }
 
+    #[test]
+    fn no_newest_edit_beside_value_edits_is_a_server_that_does_not_say() {
+        // A route may write null for a field its database does not send yet.
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let row = |value: u32| {
+            sessions(&format!(
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":{value},"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":{value},"latest_edit_seq":null,"requests":[],"n_annotation":1,"notes":[{{"seq":9,"offered_to":"codex:9f8e7d6c","offered_until":"2999-01-01T00:00:00.000Z"}}]}}]"#
+            ))
+        };
+        let seen = super::work_of(&row(9).sessions, &me);
+        assert_eq!(seen[0].1.seq, Some(9.0));
+        assert_eq!(news(&seen, &super::work_of(&row(10).sessions, &me)), vec!["a".to_string()], "edit 10 at the same count");
+    }
+
     // ── requests held for a session ──
     const ME: &str = "claude:0a1b2c3d";
     const OTHER: &str = "codex:9f8e7d6c";
