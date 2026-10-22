@@ -583,6 +583,164 @@ fn edits_in_an_agents_hands_and_a_blind_desktop_wake_nobody() {
     assert!(err.contains("the quick check did not answer (timeout after 10000ms); still watching"), "{err}");
 }
 
+// ── page edits an agent already holds, and the turn's end ──────────────────
+// A page edit an agent has claimed stays in the server's page count until it
+// is acked, under a lease nobody else may take. A newer server counts the
+// ones an agent could take now apart (`n_page_undelivered`, null from a server
+// that predates it). The rows here are the shape the desktop passes on, field
+// for field, with synthetic values: an app's page document in a checkout with
+// no origin, read while an agent holds its one page edit.
+
+const STORE: &str = "5e55a0c1-7d2b-4c3e-9f40-1a2b3c4d5e6f";
+const STORE_HOST: &str = "0c1d2e3f-4a5b-4c6d-8e7f-8091a2b3c4d5";
+
+/// A git checkout with no origin, as the app's own folder is. Its identity is
+/// its own path, which is what the server records for it.
+fn store_repo(s: &Scratch) -> String {
+    let repo = s.path("store");
+    std::fs::create_dir_all(&repo).unwrap();
+    assert!(Command::new("git").args(["init", "-q"]).current_dir(&repo).status().unwrap().success());
+    std::fs::canonicalize(&repo).unwrap().to_string_lossy().into_owned()
+}
+
+/// The store's inbox frame: one page edit, taken by an agent or not, and
+/// `deck` deck edits waiting beside it. `untaken` is the server's own count of
+/// page edits an agent could take now, or None for a server that predates it.
+fn store_inbox(repo: &str, deck: u32, page_taken: bool, untaken: Option<u32>) -> &'static str {
+    let waiting = deck + u32::from(!page_taken);
+    let untaken = untaken.map(|n| format!(r#","n_page_undelivered":{n}"#)).unwrap_or_default();
+    let row = format!(
+        r#"{{"session_id":"{STORE}","session_status":"active","surface_type":null,"n_page":1,"n_artefact":{deck},"n_annotation":0,"n_needs_human":0,"n_held_for_review":0,"pending_count":{},"n_undelivered":{waiting},"latest_seq":2,"source_hint":null,"repo_remote":"file://{repo}","repo_head":"fb49c34a","brand_slug":"acme","template_id":"app-preview","title":"Store","oldest_pending_at":null,"last_op_at":null,"bridge_open_lease":{page_taken},"heartbeat_stale":false,"recoverable":false,"captures_incomplete":false,"owner_online":true,"snapshot_freshness":null,"safety_branch":"designless/5e55a0c1","attention_reason":null,"attention_actionable":true,"n_value_artefact":{deck},"n_value_undelivered":{waiting},"latest_value_seq":2,"requests":[]{untaken}}}"#,
+        deck + 1
+    );
+    Box::leak(format!("{{\"op\":\"inbox\",\"count\":1,\"sessions\":[{row}],\"attn_dark\":0,\"served_by\":\"server\"}}\n").into_boxed_str()) as &str
+}
+
+/// What Claude Code hands its Stop hook, field for field.
+fn stop_input(cwd: &str, stop_hook_active: bool, background_tasks: &str) -> String {
+    format!(
+        r#"{{"session_id":"{STORE_HOST}","transcript_path":"/Users/someone/.claude/projects/-store/{STORE_HOST}.jsonl","cwd":"{cwd}","prompt_id":"6c21bcfb-7b93-44e3-9e74-04e198d61908","permission_mode":"default","effort":{{"level":"medium"}},"hook_event_name":"Stop","stop_hook_active":{stop_hook_active},"last_assistant_message":"Handed to the agent.","background_tasks":{background_tasks},"session_crons":[]}}"#
+    )
+}
+
+/// This session's own Designless agent, running in the background.
+const OWN_AGENT: &str = r#"[{"id":"a0f49546bc8e1a57d","type":"subagent","status":"running","description":"Go with Option 2","agent_type":"designless:prism-agent"}]"#;
+
+fn drain(input: &str, home: &str, sock: &str) -> String {
+    let (code, out, err) = run(&["hook", "canvas-drain-check"], input, home, sock);
+    assert_eq!((code, err.as_str()), (0, ""), "{out}");
+    out
+}
+
+#[test]
+fn the_turn_end_holds_nothing_for_a_page_edit_an_agent_has_taken() {
+    let s = Scratch::new("stoptaken");
+    let repo = store_repo(&s);
+    let home = s.path("home");
+    for (i, (tag, frame)) in [
+        ("taken", store_inbox(&repo, 0, true, Some(0))),
+        ("taken, beside a deck edit nobody has taken", store_inbox(&repo, 1, true, Some(0))),
+        ("taken, from a server that does not count untaken page edits", store_inbox(&repo, 0, true, None)),
+        ("untaken, from a server that does not count untaken page edits", store_inbox(&repo, 0, false, None)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let sock = s.path(&format!("{i}.sock"));
+        desktop(&sock, frame);
+        assert_eq!(drain(&stop_input(&repo, false, "[]"), &home, &sock), "", "{tag}: nothing an agent could take now is known to wait");
+    }
+}
+
+#[test]
+fn the_turn_end_holds_the_turn_once_quietly_for_a_page_edit_nobody_has_taken() {
+    let s = Scratch::new("stophold");
+    let repo = store_repo(&s);
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    desktop(&sock, store_inbox(&repo, 0, false, Some(1)));
+    let out = drain(&stop_input(&repo, false, "[]"), &home, &sock);
+    let v: Value = serde_json::from_str(&out).unwrap_or_else(|_| panic!("not JSON: {out}"));
+    // The form that keeps the turn going once and tells the person nothing went
+    // wrong. Ending the turn instead left the line for whatever woke it next.
+    assert_eq!(v.as_object().unwrap().keys().collect::<Vec<_>>(), ["hookSpecificOutput"], "{out}");
+    assert_eq!(v["hookSpecificOutput"]["hookEventName"], "Stop");
+    let line = context(&out);
+    assert!(line.starts_with("Designless canvas: 1 page edit(s) on \"Store\" are waiting for an agent and drainable from this checkout."), "{line}");
+    assert!(line.contains("Required safety branch(es): designless/5e55a0c1"), "{line}");
+    // The turn it kept going ends as a turn does.
+    assert_eq!(drain(&stop_input(&repo, true, "[]"), &home, &sock), "");
+}
+
+#[test]
+fn the_turn_end_does_not_hold_while_this_sessions_designless_agent_works() {
+    let s = Scratch::new("stopagent");
+    let repo = store_repo(&s);
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    desktop(&sock, store_inbox(&repo, 0, false, Some(1)));
+    assert_eq!(drain(&stop_input(&repo, false, OWN_AGENT), &home, &sock), "", "the work is already in its own agent's hands");
+    // A watcher, or another kind of helper, is not a Designless agent.
+    let others = r#"[{"id":"bwbd6v50l","type":"shell","status":"running","description":"Designless Agent","command":"/bin/sh '/p/bin/designless' inbox-watch --once x"},{"id":"a41881e549bdd02f2","type":"subagent","status":"running","description":"Look something up","agent_type":"general-purpose"}]"#;
+    assert!(context(&drain(&stop_input(&repo, false, others), &home, &sock)).contains("drainable from this checkout"));
+}
+
+#[test]
+fn a_page_edit_an_agent_has_taken_is_not_said_to_wait_at_any_turn_boundary() {
+    let s = Scratch::new("pagetaken");
+    let repo = store_repo(&s);
+    let home = s.path("home");
+    let input = format!(r#"{{"cwd":"{repo}","session_id":"{STORE_HOST}"}}"#);
+    let socks = std::cell::Cell::new(0);
+    let said = |frame: &'static str, hook: &str| {
+        socks.set(socks.get() + 1);
+        let sock = s.path(&format!("{}.sock", socks.get()));
+        desktop(&sock, frame);
+        let (code, out, _) = run(&["hook", hook], &input, &home, &sock);
+        assert_eq!(code, 0);
+        if out.is_empty() { out } else { context(&out) }
+    };
+    let taken = store_inbox(&repo, 0, true, Some(0));
+    assert_eq!(said(taken, "canvas-wake"), "", "the per-prompt hook");
+    let start = said(taken, "session-start-inbox");
+    assert!(start.starts_with("Designless register") && !start.contains("page edit(s)"), "the session start: {start}");
+    // A server that does not count them leaves only the count it has, read as before.
+    assert!(said(store_inbox(&repo, 0, true, None), "canvas-wake").starts_with("Designless canvas: 1 page edit(s) are drainable"));
+    let beside = said(store_inbox(&repo, 1, true, Some(0)), "canvas-wake");
+    assert!(beside.starts_with("Designless canvas: 1 edit(s) are waiting on the Designless app for \"Store\"."), "{beside}");
+    assert!(!beside.contains("page edit(s)"), "{beside}");
+    let untaken = said(store_inbox(&repo, 0, false, Some(1)), "canvas-wake");
+    assert!(untaken.starts_with("Designless canvas: 1 page edit(s) are drainable from this checkout."), "{untaken}");
+}
+
+#[test]
+fn the_watchers_line_names_no_page_edit_an_agent_has_taken() {
+    let s = Scratch::new("watchtaken");
+    let repo = store_repo(&s);
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    desktop(&sock, store_inbox(&repo, 1, true, Some(0)));
+    // Started in the app's own checkout, as the agent starts it.
+    let mut child = Command::new(BIN)
+        .args(["inbox-watch", "--once", STORE_HOST])
+        .env_clear()
+        .env("HOME", &home)
+        .env("DESIGNLESS_IPC_SOCKET", &sock)
+        .current_dir(&repo)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        let _ = BufReader::new(stdout).read_line(&mut line);
+        let _ = tx.send(line);
+    });
+    let line = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap_or_default();
+    unsafe { libc::kill(child.id() as i32, libc::SIGTERM) };
+    let _ = child.wait();
+    assert!(line.starts_with("Designless canvas: 1 edit(s) are waiting on the Designless app for \"Store\"."), "the deck edit is the news: {line}");
+    assert!(!line.contains("page edit(s)"), "{line}");
+}
+
 // ── requests held for a session ─────────────────────────────────────────────
 // A request for a judgment (fit a slide, look the slides over) is offered
 // first to the session that made the deck, for a while, then to anyone. Each
