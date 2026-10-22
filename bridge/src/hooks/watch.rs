@@ -476,19 +476,47 @@ mod tests {
     }
 
     #[test]
-    fn a_note_held_for_another_session_is_no_newer_edit_here() {
-        // The row's newest value number counts every note's too, whoever the
-        // note is offered to.
+    fn a_note_held_for_another_session_or_taken_is_no_newer_edit_here() {
+        // The row's newest value number counts every note's too, whoever holds
+        // it; the newest edit number leaves notes out.
         let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
         let told = vec![("a".to_string(), Work { untaken: 1.0, notes: 0.0, seq: Some(7.0) })];
-        let row = |latest: u32, to: &str| {
+        let row = |value: u32, edit: u32, notes: &str| {
             sessions(&format!(
-                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":{latest},"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":{latest},"requests":[],"n_annotation":1,"notes":[{{"seq":9,"offered_to":"{to}","offered_until":"2999-01-01T00:00:00.000Z"}}]}}]"#
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":{value},"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":{value},"latest_edit_seq":{edit},"requests":[],"n_annotation":1,"notes":{notes}}}]"#
             ))
         };
-        assert_eq!(news(&told, &super::work_of(&row(9, "codex:9f8e7d6c").sessions, &me)), Vec::<String>::new());
-        assert_eq!(news(&told, &super::work_of(&row(9, "claude:fdd5f4f9").sessions, &me)), vec!["a".to_string()], "a note offered to it");
-        assert_eq!(news(&told, &super::work_of(&row(10, "codex:9f8e7d6c").sessions, &me)), vec!["a".to_string()], "a newer edit beside it");
+        let offered = |to: &str| format!(r#"[{{"seq":9,"offered_to":"{to}","offered_until":"2999-01-01T00:00:00.000Z"}}]"#);
+        let none = Vec::<String>::new();
+        assert_eq!(news(&told, &super::work_of(&row(9, 7, &offered("codex:9f8e7d6c")).sessions, &me)), none);
+        assert_eq!(news(&told, &super::work_of(&row(9, 7, "[]").sessions, &me)), none, "a note an agent has taken");
+        assert_eq!(news(&told, &super::work_of(&row(9, 7, &offered("claude:fdd5f4f9")).sessions, &me)), vec!["a".to_string()], "a note offered to it");
+        // Edit 7 is applied and edit 10 comes while the note is still held
+        // elsewhere: what was seen beside the held note keeps its number, so
+        // the new edit is news.
+        let seen = super::work_of(&row(9, 7, &offered("codex:9f8e7d6c")).sessions, &me);
+        assert_eq!(news(&seen, &super::work_of(&row(10, 10, &offered("codex:9f8e7d6c")).sessions, &me)), vec!["a".to_string()], "a newer edit beside it");
+    }
+
+    #[test]
+    fn a_server_with_no_edit_beside_its_requests_says_so() {
+        // One request open to anyone; the newest value number is a note an
+        // agent has taken.
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let row = |edit: &str| {
+            sessions(&format!(
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":9,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":9,{edit}"requests":[{{"seq":5,"kind":"fit_slide","offered_to":null,"offered_until":null}}],"n_annotation":1,"notes":[]}}]"#
+            ))
+        };
+        let told = vec![("a".to_string(), Work { untaken: 1.0, notes: 0.0, seq: Some(5.0) })];
+        assert_eq!(news(&told, &super::work_of(&row(r#""latest_edit_seq":null,"#).sessions, &me)), Vec::<String>::new());
+        // A server that does not say reads the value number whole: a note may
+        // repeat what was told, and no edit is lost.
+        assert_eq!(super::work_of(&row("").sessions, &me)[0].1.seq, Some(9.0));
+        let held = sessions(
+            r#"[{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":9,"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":9,"requests":[],"n_annotation":1,"notes":[{"seq":9,"offered_to":"codex:9f8e7d6c","offered_until":"2999-01-01T00:00:00.000Z"}]}]"#,
+        );
+        assert_eq!(super::work_of(&held.sessions, &me)[0].1.seq, Some(9.0));
     }
 
     // ── requests held for a session ──

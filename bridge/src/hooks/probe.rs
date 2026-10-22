@@ -1071,6 +1071,33 @@ mod tests {
     }
 
     #[test]
+    fn a_note_whose_window_passed_waits_until_the_server_says_it_opens_to_all() {
+        // A newer server says when its walk opens the note to everyone. Until
+        // then a passed window means the walk has moved on to a session this
+        // copy does not show yet.
+        let now = js::now_ms();
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now };
+        let unnamed = Me { name: None, now };
+        let note = |to: &str, until: f64, open_at: J| {
+            row(vec![("seq", J::Num(8.0)), ("offered_to", s(to)), ("offered_until", s(&js::iso_string(until))), ("open_at", open_at)])
+        };
+        let at = |t: f64| s(&js::iso_string(t));
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, at(now + 20_000.0)), &me), "the walk is still on");
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, at(now + 20_000.0)), &unnamed));
+        assert!(!note_open_to(&note("claude:fdd5f4f9", now - 100_000.0, at(now + 20_000.0)), &me), "its own window has passed");
+        assert!(note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, at(now - 1_000.0)), &unnamed), "the walk has ended");
+        assert!(note_open_to(&note("claude:fdd5f4f9", now + 30_000.0, at(now + 150_000.0)), &me), "offered to it now");
+        assert!(!note_open_to(&note("codex:9f8e7d6c", now + 30_000.0, at(now + 150_000.0)), &me));
+        // A time this copy cannot read leaves the grace in place.
+        for open_at in [J::Null, s("x")] {
+            assert!(!note_open_to(&note("codex:9f8e7d6c", now - 5_000.0, open_at.clone()), &me), "{open_at:?}");
+            assert!(note_open_to(&note("codex:9f8e7d6c", now - 100_000.0, open_at.clone()), &me), "{open_at:?}");
+        }
+        let notes = J::Arr(vec![note("codex:9f8e7d6c", now - 100_000.0, at(now + 20_000.0))]);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(1.0)), ("notes", notes)]), &me), 0.0);
+    }
+
+    #[test]
     fn only_a_well_formed_note_counts() {
         let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
         let notes = J::Arr(vec![J::Null, J::Num(1.0), s("x"), J::Arr(vec![]), row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null)])]);
