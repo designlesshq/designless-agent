@@ -627,6 +627,55 @@ fn a_turn_typed_before_a_watchers_notification_leaves_that_notification_its_line
 }
 
 #[test]
+fn a_starting_watcher_writes_nothing_a_hook_also_writes() {
+    // A hook that reads the shared state while a watcher starts, and writes it
+    // back after, would undo the watcher's write, or lose its own.
+    let s = Scratch::new("racefree");
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    let inbox = changing_desktop(&sock, NOTHING);
+    assert_eq!(run(&["hook", "canvas-wake"], &typed(), &home, &sock).1, "");
+    assert!(context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"));
+    *inbox.lock().unwrap() = ONE_EDIT;
+    let mut w = Watcher::start(&["inbox-watch", "--once", PARENT], &home, &sock);
+    assert!(w.line_within(5).expect("the watcher's line").ends_with(&format!("--once {PARENT}")));
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    let before = nudge_state(&home);
+    *inbox.lock().unwrap() = NOTHING;
+    let mut w = Watcher::start(&["inbox-watch", "--once", PARENT], &home, &sock);
+    held(&home);
+    unsafe { libc::kill(w.child.id() as i32, libc::SIGTERM) };
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert_eq!(nudge_state(&home), before);
+}
+
+#[test]
+fn a_line_a_watcher_answered_stays_answered_whatever_the_state_file_says() {
+    let s = Scratch::new("restored");
+    let (home, sock) = (s.path("home"), s.path("ipc.sock"));
+    let inbox = changing_desktop(&sock, NOTHING);
+    assert_eq!(run(&["hook", "canvas-wake"], &typed(), &home, &sock).1, "");
+    assert!(context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"));
+    *inbox.lock().unwrap() = ONE_EDIT;
+    let mut w = Watcher::start(&["inbox-watch", "--once", PARENT], &home, &sock);
+    assert!(w.line_within(5).expect("the watcher's line").ends_with(&format!("--once {PARENT}")));
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    let lined = nudge_state(&home);
+    // The next watcher starts, and a hook that read the state before it did
+    // writes that copy back.
+    *inbox.lock().unwrap() = NOTHING;
+    let mut w = Watcher::start(&["inbox-watch", "--once", PARENT], &home, &sock);
+    held(&home);
+    std::fs::write(format!("{home}/.designless/nudge-state/{PARENT}.json"), &lined).unwrap();
+    unsafe { libc::kill(w.child.id() as i32, libc::SIGTERM) };
+    assert_eq!(w.child.wait().unwrap().code(), Some(0));
+    assert_eq!(run(&["hook", "canvas-wake"], &notified("bl1k2j3h4"), &home, &sock).1, "");
+    assert!(
+        context(&run(&["hook", "canvas-arm-watch"], &after_call(None), &home, &sock).1).contains("inbox-watch --once"),
+        "the watcher that answered the line is gone"
+    );
+}
+
+#[test]
 fn a_watcher_the_agent_starts_again_on_its_own_answers_the_line_before_it() {
     let s = Scratch::new("restarted");
     let (home, sock) = (s.path("home"), s.path("ipc.sock"));
