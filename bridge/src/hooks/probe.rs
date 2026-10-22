@@ -717,6 +717,10 @@ pub fn open_to(request: &J, me: &Me) -> bool {
 /// wake the offer is there to spare.
 const NOTE_WALK_GRACE_MS: f64 = 45_000.0;
 
+/// The server's whole walk, three windows of a minute each: no passed window
+/// holds a note longer, whatever time a copy says the walk ends.
+const NOTE_WALK_MS: f64 = 180_000.0;
+
 /// May this session take this note now? As a request may, except that a
 /// window that has passed holds the note, for everyone, until the server's
 /// next offer can show: until the time the server says the note opens to
@@ -727,7 +731,7 @@ pub fn note_open_to(note: &J, me: &Me) -> bool {
     if t.is_finite() && t <= me.now {
         let open_at = js::get(Some(note), "open_at");
         let open_at = if js::nullish(open_at) { f64::NAN } else { js::date_value(open_at) };
-        let held_until = if open_at.is_finite() { open_at } else { t + NOTE_WALK_GRACE_MS };
+        let held_until = if open_at.is_finite() { open_at.min(t + NOTE_WALK_MS) } else { t + NOTE_WALK_GRACE_MS };
         if me.now < held_until {
             return false;
         }

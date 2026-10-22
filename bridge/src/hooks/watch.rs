@@ -132,9 +132,11 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
                     // holds it. A server that offers notes says the newest
                     // edit apart from them, null when there is none; one that
                     // does not is read whole, so a note may repeat what was
-                    // told, and no edit is lost.
+                    // told, and no edit is lost. Null beside value edits is a
+                    // field the server does not send yet.
                     let edit = js::get(Some(s), "latest_edit_seq");
-                    let value = if edit.is_some() && probe::takeable_notes(s).is_some() { said(edit) } else { said(js::get(Some(s), "latest_value_seq")) };
+                    let says = edit.is_some() && probe::takeable_notes(s).is_some() && (!js::nullish(edit) || n("n_value_artefact") + n("n_value_undelivered") + n("n_page") <= 0.0);
+                    let value = if says { said(edit) } else { said(js::get(Some(s), "latest_value_seq")) };
                     let seq = mine.iter().map(|r| said(js::get(Some(r), "seq"))).fold(value, newest);
                     (n("n_value_undelivered") + mine.len() as f64, seq)
                 }
