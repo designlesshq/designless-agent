@@ -251,7 +251,12 @@ fn write_state(home: &str, sid: &J, patch: Vec<(&str, Option<J>)>) -> std::io::R
         }
     }
     js::set(&mut next, "at", J::Str(js::iso_string(js::now_ms())));
-    std::fs::write(state_file(home, sid)?, js::stringify(&J::Obj(next)))
+    // Whole or not at all: the watcher writes here too, and a reader that
+    // caught a half-written file would read every gate as unset.
+    let p = state_file(home, sid)?;
+    let tmp = format!("{p}.{}.tmp", std::process::id());
+    std::fs::write(&tmp, js::stringify(&J::Obj(next)))?;
+    std::fs::rename(&tmp, &p)
 }
 
 fn attention_gate(home: &str, sid: Option<&J>, digest: &str) -> bool {
@@ -295,11 +300,31 @@ fn note_turn(home: &str, sid: Option<&J>) {
     let _ = write_state(home, sid, vec![("turn_at", Some(J::Num(js::now_ms())))]);
 }
 
-/// The watcher was asked for. A one-shot watcher's line asks for the next
-/// one, so the watcher records its own line here too.
-pub fn note_arm_ask(home: &str, sid: Option<&J>) {
+/// The watcher was asked for.
+fn note_arm_ask(home: &str, sid: Option<&J>) {
     let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
     let _ = write_state(home, sid, vec![("arm_asked_at", Some(J::Num(js::now_ms())))]);
+}
+
+/// A one-shot watcher said its line, which asks for the next watcher: it is
+/// the ask, and the turn its exit starts is told so.
+pub fn note_watchers_line(home: &str, sid: Option<&J>) {
+    let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return };
+    let now = J::Num(js::now_ms());
+    let _ = write_state(home, sid, vec![("arm_asked_at", Some(now.clone())), ("line_at", Some(now))]);
+}
+
+/// Did a watcher's line come in since a turn last took one? Taking it means
+/// the next notification turn, one some other command's exit starts, or a
+/// later watcher's that ended without a line, opens the ask again.
+fn took_watchers_line(home: &str, sid: Option<&J>) -> bool {
+    let Some(sid) = sid.filter(|s| js::truthy(Some(s))) else { return false };
+    let st = J::Obj(read_state(home, sid));
+    if !js::to_number(js::get(Some(&st), "line_at")).is_finite() {
+        return false;
+    }
+    let _ = write_state(home, sid, vec![("line_at", None)]);
+    true
 }
 
 /// Was the watcher already asked for since the user last typed? The ask is
@@ -327,16 +352,27 @@ fn note_seen(home: &str, sid: Option<&J>, probe: &Probe, me: &Me) {
 }
 
 pub async fn canvas_wake(raw: &str, env: &Env) -> Option<String> {
+    let input = js::parse(raw).filter(|v| !matches!(v, J::Null));
+    // Codex runs this hook inside a sub-agent too, under the root session's
+    // id. That prompt is the parent's message, not a person's, and anything
+    // recorded under the id is recorded for the session: the parent's own turn
+    // hears what waits, as it does in Claude Code, whose sub-agents run no
+    // prompt hook.
+    if in_sub_agent(input.as_ref()) {
+        return None;
+    }
     // A prompt is the plainest evidence a person is here. Stamped first, so a
     // malformed payload or an unreachable desktop does not cost the signal.
     marker::note_activity(&env.home, js::now_ms());
-    let input = js::parse(raw).filter(|v| !matches!(v, J::Null))?;
+    let input = input?;
     let cwd = js::nonempty_str(js::get(Some(&input), "cwd"))?.to_string();
     let sid = js::get(Some(&input), "session_id").cloned();
     // A turn a finished background command starts is not one the person
-    // typed: the watcher ask stays spent until they do.
+    // typed. When the watcher's line started it, that line asked for the next
+    // watcher, so the ask stays spent; any other such turn opens it again, as
+    // a watcher that ended without a line asked for nothing.
     let notified = started_by_a_task(js::get(Some(&input), "prompt"));
-    if !notified {
+    if !notified || !took_watchers_line(&env.home, sid.as_ref()) {
         note_turn(&env.home, sid.as_ref());
     }
     let probe = probe::probe_inbox().await;

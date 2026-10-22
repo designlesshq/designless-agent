@@ -410,7 +410,7 @@ pub async fn run(args: &[String], env: &Env) -> i32 {
                         // The line asks for the next watcher, so it is the ask
                         // for the turn its exit starts. Written before the
                         // exit, so it is on disk before that turn's first call.
-                        super::events::note_arm_ask(&env.home, Some(&sid));
+                        super::events::note_watchers_line(&env.home, Some(&sid));
                     }
                     if !said || once {
                         return stop();
