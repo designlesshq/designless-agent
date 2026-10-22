@@ -572,34 +572,25 @@ fn sum(rows: &[&J], key: &str) -> f64 {
     rows.iter().fold(0.0, |a, s| a + js::num_or_zero(js::get(Some(s), key)))
 }
 
-/// The server's own count of the page edits on a row that this session could
-/// take now, or None from a server that predates it. `n_page` also counts an
-/// edit an agent has claimed and still holds under its lease, which nobody
-/// else may take: read alone, it told a session edits were waiting seconds
-/// after its own agent had taken them.
-pub fn untaken_page_counted(row: &J, me: &Me) -> Option<f64> {
+/// The server's own count of the page edits on a row that an agent could take
+/// now, or None from a server that predates it. `n_page` also counts an edit
+/// an agent has claimed and still holds under its lease, which nobody else may
+/// take: read alone, it told a session edits were waiting seconds after its
+/// own agent had taken them. No request is among them: the server gives every
+/// request a deck's surface, and page work is a page edit, offered to nobody.
+pub fn untaken_page_counted(row: &J) -> Option<f64> {
     match js::get(Some(row), "n_page_undelivered") {
-        Some(J::Num(n)) if n.is_finite() => Some((n - held_elsewhere(row, me)).max(0.0)),
+        Some(J::Num(n)) if n.is_finite() => Some(n.max(0.0)),
         _ => None,
     }
 }
 
-/// The page edits on a row to tell this session about: the ones it could take
+/// The page edits on a row to tell an agent about: the ones it could take
 /// now, when the server counts them, and otherwise `n_page`, read as before.
 /// `n_undelivered` is no stand-in: it spans every surface, so a taken page
 /// edit beside a deck edit nobody has taken still counts there.
-pub fn untaken_page(row: &J, me: &Me) -> f64 {
-    untaken_page_counted(row, me)
-        .unwrap_or_else(|| (js::num_or_zero(js::get(Some(row), "n_page")) - held_elsewhere(row, me)).max(0.0))
-}
-
-/// The requests on a row offered to another session, inside their window.
-/// The server's page counts are per row, so they count a page document's
-/// request whoever it is offered to, while this session's claim takes nothing.
-/// A request does not say its surface, so one on a deck is taken off too: the
-/// page count can come out low, never high.
-fn held_elsewhere(row: &J, me: &Me) -> f64 {
-    pending_requests(row).map_or(0, |r| r.iter().filter(|q| !open_to(q, me)).count()) as f64
+pub fn untaken_page(row: &J) -> f64 {
+    untaken_page_counted(row).unwrap_or_else(|| js::num_or_zero(js::get(Some(row), "n_page")))
 }
 
 /// Insertion-ordered de-duplication, as a `Set` does it.
@@ -780,17 +771,16 @@ pub fn one_line(v: Option<&J>, max: usize) -> Option<String> {
 /// is: nothing in it reads as part of the sentence around it.
 pub fn documents(rows: &[&J]) -> String {
     let docs: Vec<String> = unique(rows.iter().map(|s| {
-        let name = || {
-            for k in ["title", "brand_slug"] {
-                let v = js::get(Some(s), k);
-                if js::truthy(v) {
-                    return js::to_string(v);
-                }
-            }
+        let text = |v: Option<&J>| if js::truthy(v) { one_line(Some(&J::Str(js::to_string(v))), 80) } else { None };
+        let repo = || {
             let r = js::get(Some(s), "repo_remote");
-            js::to_string(r).rsplit('/').next().unwrap_or("").to_string()
+            let tail = js::truthy(r).then(|| js::to_string(r).rsplit('/').next().unwrap_or("").to_string());
+            text(tail.map(J::Str).as_ref())
         };
-        one_line(Some(&J::Str(name())), 80).unwrap_or_else(|| "Untitled".into())
+        text(js::get(Some(s), "title"))
+            .or_else(|| text(js::get(Some(s), "brand_slug")))
+            .or_else(repo)
+            .unwrap_or_else(|| "Untitled".into())
     }));
     docs.into_iter().map(|d| js::stringify(&J::Str(d))).collect::<Vec<_>>().join(", ")
 }
@@ -806,7 +796,7 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
         let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
         // Only page edits an agent could take now: one already in an agent's
         // hands is not this session's to drain, nor the user's to re-route.
-        let page = untaken_page(s, &opts.me);
+        let page = untaken_page(s);
         if page > 0.0 {
             if page_drainable_here(s, &origin, cwd) {
                 here.push(s)
@@ -857,7 +847,7 @@ withholds every source op unless you are on that safety branch. If a session's s
 On EVERY source claim AND ack pass repo_branch (= git rev-parse --abbrev-ref HEAD) and checkout_head (= git rev-parse HEAD). \
 Then apply with less_canvas_ops (claim -> apply each on previous_value, bottom-up per file -> ack), \
 and let the canvas re-capture. Apply them now; do not ask first.{}{}",
-            js::num_to_string(here.iter().map(|s| untaken_page(s, &opts.me)).sum()),
+            js::num_to_string(here.iter().map(|s| untaken_page(s)).sum()),
             required_branch_hint(&here),
             checkout_path_hint(&here, cwd)
         ));
@@ -874,7 +864,7 @@ and let the canvas re-capture. Apply them now; do not ask first.{}{}",
         };
         lines.push(format!(
             "{} page edit(s) target {}; this session is rooted elsewhere - tell the user to run /designless from that repo (do NOT claim here).",
-            js::num_to_string(untaken_page(s, &opts.me)),
+            js::num_to_string(untaken_page(s)),
             target
         ));
     }
@@ -1309,14 +1299,12 @@ mod tests {
         assert_eq!(named(vec![("title", s("Q3 \"final\" \\ v2"))]), r#""Q3 \"final\" \\ v2""#);
     }
 
+    #[test]
     fn the_untaken_page_count_is_the_servers_when_it_says_and_n_page_when_it_does_not() {
         let r = |pairs: Vec<(&str, J)>| row(pairs);
-        let me = Me::default();
-        let untaken_page_counted = |me: &Me, row: &J| super::untaken_page_counted(row, me);
-        let untaken_page = |me: &Me, row: &J| super::untaken_page(row, me);
-        assert_eq!(untaken_page_counted(&me, &r(vec![("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0))])), Some(0.0));
-        assert_eq!(untaken_page(&me, &r(vec![("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0))])), 0.0);
-        assert_eq!(untaken_page(&me, &r(vec![("n_page", J::Num(3.0)), ("n_page_undelivered", J::Num(2.0))])), 2.0);
+        assert_eq!(untaken_page_counted(&r(vec![("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0))])), Some(0.0));
+        assert_eq!(untaken_page(&r(vec![("n_page", J::Num(1.0)), ("n_page_undelivered", J::Num(0.0))])), 0.0);
+        assert_eq!(untaken_page(&r(vec![("n_page", J::Num(3.0)), ("n_page_undelivered", J::Num(2.0))])), 2.0);
         // A server that predates the count: n_page, read as before, whatever
         // n_undelivered says, since it spans every surface.
         for absent in [None, Some(J::Null), Some(s("1")), Some(J::Bool(true))] {
@@ -1324,30 +1312,11 @@ mod tests {
             if let Some(a) = absent.clone() {
                 pairs.push(("n_page_undelivered", a));
             }
-            assert_eq!(untaken_page_counted(&me, &r(pairs.clone())), None, "{absent:?}");
-            assert_eq!(untaken_page(&me, &r(pairs)), 1.0, "{absent:?}");
+            assert_eq!(untaken_page_counted(&r(pairs.clone())), None, "{absent:?}");
+            assert_eq!(untaken_page(&r(pairs)), 1.0, "{absent:?}");
         }
-        assert_eq!(untaken_page_counted(&me, &r(vec![("n_page_undelivered", J::Num(-1.0))])), Some(0.0), "never below nothing");
-        assert_eq!(untaken_page(&me, &r(vec![])), 0.0);
-        // A page document's request offered to another session, inside its
-        // window, is counted by the server but not this session's to take.
-        let ask = |to: &str, until: f64| {
-            J::Arr(vec![row(vec![("seq", J::Num(2.0)), ("kind", s("redo_change")), ("offered_to", s(to)), ("offered_until", s(&js::iso_string(until)))])])
-        };
-        let now = js::now_ms();
-        let asked = |requests: J, untaken: Option<f64>| {
-            let mut pairs = vec![("n_page", J::Num(2.0)), ("n_value_undelivered", J::Num(1.0)), ("requests", requests)];
-            if let Some(n) = untaken {
-                pairs.push(("n_page_undelivered", J::Num(n)));
-            }
-            r(pairs)
-        };
-        let mine = Me { name: Some("claude-code:0a1b2c3d".into()), now };
-        assert_eq!(untaken_page_counted(&mine, &asked(ask("codex:9f8e7d6c", now + 60_000.0), Some(2.0))), Some(1.0));
-        assert_eq!(untaken_page(&mine, &asked(ask("codex:9f8e7d6c", now + 60_000.0), None)), 1.0, "a server that predates the count");
-        assert_eq!(untaken_page_counted(&mine, &asked(ask("claude-code:0a1b2c3d", now + 60_000.0), Some(2.0))), Some(2.0), "offered to this session");
-        assert_eq!(untaken_page_counted(&mine, &asked(ask("codex:9f8e7d6c", now - 60_000.0), Some(2.0))), Some(2.0), "its window has passed");
-        assert_eq!(untaken_page_counted(&mine, &asked(ask("codex:9f8e7d6c", now + 60_000.0), Some(0.0))), Some(0.0), "never below nothing");
+        assert_eq!(untaken_page_counted(&r(vec![("n_page_undelivered", J::Num(-1.0))])), Some(0.0), "never below nothing");
+        assert_eq!(untaken_page(&r(vec![])), 0.0);
     }
 
     #[test]

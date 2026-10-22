@@ -335,7 +335,7 @@ pub async fn drain_check(raw: &str, _env: &Env) -> Option<String> {
     }
     let cwd = js::nonempty_str(js::get(Some(&data), "cwd"))?.to_string();
     let probe = probe::probe_inbox().await;
-    drain_text(&cwd, &Me::session(js::get(Some(&data), "session_id")), &probe)
+    drain_text(&cwd, &probe)
 }
 
 /// Codex runs this hook too: it reads the plugin's Claude Code hooks file, and
@@ -382,7 +382,7 @@ pub fn own_agent_at_work(input: Option<&J>) -> bool {
 /// turn instead left the line for whatever next woke the session, by when the
 /// edit could be long applied; and the host's continuation flag, which
 /// `drain_check` reads, is what ends the turn it kept going.
-pub fn drain_text(cwd: &str, me: &Me, probe: &Probe) -> Option<String> {
+pub fn drain_text(cwd: &str, probe: &Probe) -> Option<String> {
     if probe.count() == 0 {
         return None;
     }
@@ -392,7 +392,7 @@ pub fn drain_text(cwd: &str, me: &Me, probe: &Probe) -> Option<String> {
         .iter()
         .filter(|s| {
             let r = js::get(Some(s), "repo_remote");
-            probe::untaken_page_counted(s, me).is_some_and(|n| n > 0.0)
+            probe::untaken_page_counted(s).is_some_and(|n| n > 0.0)
                 && (js::nullish(r) || probe::is_safe_repo_remote(r))
                 && probe::page_drainable_here(s, &origin, cwd)
         })
@@ -409,7 +409,7 @@ pub fn drain_text(cwd: &str, me: &Me, probe: &Probe) -> Option<String> {
             branches.join(", ")
         )
     };
-    let waiting: f64 = here.iter().map(|s| probe::untaken_page(s, me)).sum();
+    let waiting: f64 = here.iter().map(|s| probe::untaken_page(s)).sum();
     let context = format!(
         "Designless canvas: {} page edit(s) on {} are waiting for an agent and drainable from this checkout. \
 These are source ops - work BRANCH-FIRST: READ the required branch from the session's safety_branch field \
@@ -1025,13 +1025,13 @@ mod tests {
     #[test]
     fn the_stop_holds_only_for_a_page_edit_nobody_has_taken_drainable_here() {
         let artefact_only = Probe { sessions: vec![js::obj(vec![("n_artefact", J::Num(3.0))])], ..Default::default() };
-        assert_eq!(drain_text("/tmp", &Me::default(), &artefact_only), None);
+        assert_eq!(drain_text("/tmp", &artefact_only), None);
         let elsewhere = page(1.0, Some(1.0), vec![("repo_remote", s("https://github.com/o/not-here"))]);
-        assert_eq!(drain_text("/tmp", &Me::default(), &elsewhere), None);
-        assert_eq!(drain_text("/tmp", &Me::default(), &page(2.0, Some(0.0), vec![])), None, "every one of them in an agent's hands");
-        assert_eq!(drain_text("/tmp", &Me::default(), &page(2.0, None, vec![])), None, "a server that cannot say which are untaken: no hold");
+        assert_eq!(drain_text("/tmp", &elsewhere), None);
+        assert_eq!(drain_text("/tmp", &page(2.0, Some(0.0), vec![])), None, "every one of them in an agent's hands");
+        assert_eq!(drain_text("/tmp", &page(2.0, None, vec![])), None, "a server that cannot say which are untaken: no hold");
         let unknown_checkout = page(2.0, Some(2.0), vec![("safety_branch", s("designless/abc")), ("title", s("Store"))]);
-        let out = drain_text("/tmp", &Me::default(), &unknown_checkout).unwrap();
+        let out = drain_text("/tmp", &unknown_checkout).unwrap();
         assert!(out.starts_with(r#"{"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"Designless canvas: 2 page edit(s) on \"Store\" are waiting for an agent"#), "{out}");
         assert!(out.ends_with(r#" Required safety branch(es): designless/abc (server-owned; read from each row's safety_branch, do NOT derive)."}}"#), "{out}");
         assert!(out.contains("the watcher brings the next edit, so do not wait or loop for it."));
@@ -1052,7 +1052,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        let line = ctx(&drain_text("/tmp", &Me::default(), &p).unwrap());
+        let line = ctx(&drain_text("/tmp", &p).unwrap());
         assert!(line.starts_with("Designless canvas: 1 page edit(s) on \"Store\" are waiting"), "{line}");
         assert!(!line.contains("Shop"), "{line}");
     }
