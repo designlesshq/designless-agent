@@ -149,7 +149,7 @@ binary (135 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | thiserror-impl | 1.0.69 | MIT OR Apache-2.0 | (no holder stated upstream) |
 | thread_local | 1.1.9 | MIT OR Apache-2.0 | Copyright (c) 2016 The Rust Project Developers |
 | tinystr | 0.8.3 | Unicode-3.0 | Copyright © 2020-2024 Unicode, Inc. |
-| tokio | 1.52.3 | MIT | (no holder stated upstream) |
+| tokio | 1.54.1 | MIT | (no holder stated upstream) |
 | tokio-macros | 2.7.0 | MIT | Copyright (c) 2019 Yoshua Wuyts |
 | tokio-rustls | 0.26.4 | MIT OR Apache-2.0 | Copyright 2017 quininer kel |
 | tokio-util | 0.7.18 | MIT | (no holder stated upstream) |
