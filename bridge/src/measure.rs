@@ -3,9 +3,9 @@
 //! A deck carried as html is checked before it is written: the server
 //! converts it, renders it through the canvas's own renderer, and needs a
 //! browser to say whether the render fits (a slide past its box, a picture
-//! box collapsed to a band, a label fused to its number). The server first
-//! sent the render to a hosted browser; the founder refused that when the
-//! Designless app on the customer's desk is a browser already. So the bridge
+//! box collapsed to a band, a label fused to its number). The render never
+//! goes to a hosted browser: the Designless app on the person's desk is a
+//! browser already. So the bridge
 //! orchestrates: the dry run goes up once asking for the render
 //! (`measure_at: "app"`), the app lays it out over IPC and answers numbers,
 //! and the dry run goes up again carrying them (`layout_measure`); the
