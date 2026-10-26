@@ -50,6 +50,8 @@ The fast path. macOS / Linux Launch Services route the URL to the registered Des
 
 If you don't know the user's OS, default to `open` (macOS is the primary distribution target). The plugin allow-lists `Bash(open designless://*)` and `Bash(xdg-open designless://*)`, so launches don't prompt after the first approval. Treat a non-zero exit, "command not found", or sandboxing error as "URL handler unreachable" - fall through to Path 2.
 
+Before falling through, if the launch failed with a sandbox or Launch Services error and your host can request permission to run a command outside its sandbox, ask once to run the same `open "<url>"` from the compose answer, with a plain reason: "Open the canvas to show your work." If approved and the command exits 0, stop there, still only once per session. If permission is refused, unavailable, or the command fails, continue to Path 2, then Path 3. A launch error inside a sandbox is never a reason to suggest reinstalling Designless.
+
 ### Path 2 - computer-use open_application (Cowork or any environment with computer-use)
 
 If you have computer-use tools available (`mcp__computer-use__*`) and Path 1 didn't work:
