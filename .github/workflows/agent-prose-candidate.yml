@@ -26,4 +26,3 @@ jobs:
       - run: node .github/checks/agent-prose.mjs
         env:
           GH_TOKEN: ${{ github.token }}
-
