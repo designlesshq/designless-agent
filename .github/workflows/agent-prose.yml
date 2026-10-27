@@ -1,0 +1,29 @@
+name: Agent prose
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  policy:
+    name: Agent prose policy
+    runs-on: ubuntu-latest
+    steps:
+      # Enforcement executes the default branch's checker, never PR code.
+      # PR commits are fetched and read as text without checking them out.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node .github/checks/agent-prose.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}

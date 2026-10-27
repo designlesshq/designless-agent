@@ -1,0 +1,29 @@
+name: Agent prose candidate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  candidate:
+    name: Prose policy candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test .github/checks/agent-prose.test.mjs
+      - run: node .github/checks/agent-prose.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+
