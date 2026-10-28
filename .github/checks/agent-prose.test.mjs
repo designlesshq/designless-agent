@@ -12,8 +12,8 @@ const event = (id, login, action = 'labeled') => ({ id, event: action, label: { 
 test('an added skill paragraph needs an exception', () => {
   const result = compareTrees(tree({ 'skills/example/SKILL.md': '# Example\n' }), tree({ 'skills/example/SKILL.md': '# Example\n\nAlways decide the whole direction first.\n' }))
   assert.equal(result.growth, true)
-  assert.equal(result.textNet, 1)
-  assert.deepEqual(result.files, [{ file: 'skills/example/SKILL.md', added: 1, removed: 0 }])
+  assert.equal(result.textLines, 1)
+  assert.deepEqual(result.files, [{ file: 'skills/example/SKILL.md', added: 1, removed: 0, lines: [3] }])
 })
 
 test('a deletion passes', () => {
@@ -23,7 +23,7 @@ test('a deletion passes', () => {
 
 test('renames and moves with identical text pass across covered directories', () => {
   const result = compareTrees(tree({ 'skills/old/SKILL.md': '# Example\nKeep the context.\n' }), tree({ 'docs/new.txt': '# Example\nKeep the context.\n' }))
-  assert.equal(result.textNet, 0)
+  assert.equal(result.textLines, 0)
   assert.equal(result.growth, false)
 })
 
@@ -107,6 +107,7 @@ test('real git snapshots use the merge base and detect a changed skill', () => {
     git('add', '.'); git('commit', '-qm', 'Initial')
     git('checkout', '-qb', 'candidate')
     put('skills/example/SKILL.md', '# Example\nAdded guidance here.\n')
+    put('.codex-plugin/plugin.json', '{"description":"New manifest guidance."}')
     git('add', '.'); git('commit', '-qm', 'Candidate')
     const head = git('rev-parse', 'HEAD')
     git('checkout', '-q', 'main')
@@ -114,8 +115,9 @@ test('real git snapshots use the merge base and detect a changed skill', () => {
     git('add', '.'); git('commit', '-qm', 'Advance base')
     const result = inspectRepository(cwd, 'main', head)
     assert.equal(result.growth, true)
-    assert.equal(result.textNet, 1)
-    assert.equal(result.files.length, 1)
+    assert.equal(result.textLines, 1)
+    assert.equal(result.files.length, 2)
+    assert.equal(result.manifestStrings, 1)
   } finally { rmSync(cwd, { recursive: true, force: true }) }
 })
 
@@ -125,4 +127,65 @@ test('hook JSON text is covered and Rust escapes cannot hide sentence words', ()
   assert.equal(rustSentences(String.raw`let s = "One\u{20}two\x20three four";`).length, 1)
   assert.equal(rustSentences(String.raw`let s = "One two       three four";`).length, 1)
   assert.throws(() => compareTrees(new Map(), tree({ 'hooks/binary.txt': 'hidden\0text' })), /binary text/)
+})
+
+test('rewording an existing skill line adds guidance without growing line count', () => {
+  const result = compareTrees(tree({ 'skills/a.md': 'Keep the old instruction.\n' }), tree({ 'skills/a.md': 'Follow this replacement instruction.\n' }))
+  assert.equal(result.growth, true)
+  assert.equal(result.textLines, 1)
+  assert.deepEqual(result.files[0].lines, [1])
+})
+
+test('lengthening an existing line adds guidance', () => {
+  const result = compareTrees(tree({ 'commands/a.md': 'Keep context.\n' }), tree({ 'commands/a.md': 'Keep context. Ask a new question first.\n' }))
+  assert.equal(result.growth, true)
+  assert.equal(result.textLines, 1)
+})
+
+test('deletions in the same file or elsewhere never offset added guidance', () => {
+  const before = tree({ 'skills/a.md': 'Old one.\nOld two.\nOld three.\n' })
+  for (const path of ['skills/a.md', 'docs/new.txt']) {
+    const result = compareTrees(before, tree({ [path]: 'New instruction.\n' }))
+    assert.equal(result.growth, true, path)
+    assert.equal(result.textLines, 1, path)
+  }
+})
+
+test('a moved text line is free but an extra copy is an addition', () => {
+  const before = tree({ 'agents/old.md': 'Keep this instruction.\n' })
+  assert.equal(compareTrees(before, tree({ 'hooks/new.txt': 'Keep this instruction.\n' })).growth, false)
+  const result = compareTrees(before, tree({ 'agents/old.md': 'Keep this instruction.\n', 'docs/copy.txt': 'Keep this instruction.\n' }))
+  assert.equal(result.textLines, 1)
+})
+
+const manifests = ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', '.codex-plugin/plugin.json', '.codex-plugin/marketplace.json', '.cursor-plugin/plugin.json', '.cursor-plugin/marketplace.json', '.agents/plugins/marketplace.json']
+
+test('all plugin and marketplace manifests cover nested string fields and arrays', () => {
+  for (const path of manifests) {
+    for (const field of ['description', 'shortDescription', 'defaultPrompt', 'futureGuidance']) {
+      const before = tree({ [path]: JSON.stringify({ plugins: [{ [field]: 'Old instruction.' }] }) })
+      const after = tree({ [path]: JSON.stringify({ plugins: [{ [field]: 'New instruction.' }] }) })
+      const result = compareTrees(before, after)
+      assert.equal(result.growth, true, path + ':' + field)
+      assert.equal(result.manifestStrings, 1)
+      assert.deepEqual(result.files, [{ file: path, added: 1, removed: 0 }])
+    }
+  }
+})
+
+test('manifest formatting and moves pass while deletions cannot offset new strings', () => {
+  const before = tree({ [manifests[0]]: '{"description":"Existing instruction.","prompts":["Delete this.","Delete that."]}' })
+  assert.equal(compareTrees(before, tree({ [manifests[1]]: JSON.stringify(JSON.parse(before.get(manifests[0])), null, 2) })).growth, false)
+  const result = compareTrees(before, tree({ [manifests[1]]: '{"description":"New instruction."}' }))
+  assert.equal(result.growth, true)
+  assert.equal(result.manifestStrings, 1)
+  assert.equal(compareTrees(before, new Map()).growth, false)
+})
+
+test('manifest string multiplicity and category boundaries prevent text offsets', () => {
+  const before = tree({ [manifests[0]]: '{"description":"Same instruction."}', 'skills/a.md': 'New instruction.\n' })
+  const result = compareTrees(before, tree({ [manifests[0]]: '{"description":"Same instruction.","prompts":["Same instruction.","New instruction."]}' }))
+  assert.equal(result.manifestStrings, 2)
+  assert.equal(result.growth, true)
+  assert.throws(() => compareTrees(new Map(), tree({ [manifests[0]]: '{bad json}' })), SyntaxError)
 })

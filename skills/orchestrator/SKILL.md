@@ -501,5 +501,3 @@ Every lifecycle mode (01-12, plus 00 Connect) has shipped capabilities at the se
 - **Discovery-driven (no playbook here, surfaced via `less_search_tools`):** Monitor (page registration, drift probes, Arbiter compliance scan), Inherit (multi-brand parent/child hierarchy), Learn (inner loop self-heal), Batch (scalable batch evaluation), Observe (provenance + audit trail)
 
 When the user asks for a Monitor / Inherit / Learn / Batch / Observe action, route through discovery - describe their intent to `less_search_tools` and execute the returned tool. Don't invent playbooks for these modes; the server is the source of truth.
-
-This temporary line tests the guidance policy.

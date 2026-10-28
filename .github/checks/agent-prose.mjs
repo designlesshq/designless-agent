@@ -11,6 +11,7 @@ function git(args, cwd) {
 
 const textPath = (p) => p === 'llms.txt' || p.startsWith('hooks/') || /^(skills|agents|commands|docs)\/.*\.(md|mdx|markdown|txt|text|rst|adoc)$/i.test(p)
 const bridgePath = (p) => /^bridge\/src\/.*\.rs$/.test(p) && !/(^|\/)(tests?|.*[_.]tests?)\.rs$/.test(p) && !/(^|\/)(tests?)\//.test(p)
+const manifestPath = (p) => /^(?:\.(?:claude|codex|cursor)-plugin\/(?:plugin|marketplace)\.json|\.agents\/plugins\/marketplace\.json)$/.test(p)
 const lines = (s) => s.split(/\r?\n/).filter((line) => line.trim()).length
 
 // Read Rust literals without mistaking comments, raw delimiters or escapes for code.
@@ -100,40 +101,53 @@ export function rustSentences(source) {
   }).map(({ text, at }) => ({ text, line: source.slice(0, at).split('\n').length, count: lines(text) }))
 }
 
-export function compareTrees(before, after) {
-  const files = []
-  const oldSentences = new Map()
-  let textAdded = 0, textRemoved = 0
+function textLines(source) {
+  if (source.includes('\0')) throw new Error('Cannot review binary text')
+  return source.split(/\r?\n/).flatMap((text, index) => text.trim() ? [{ text, line: index + 1, count: 1 }] : [])
+}
+
+function manifestStrings(source) {
+  const strings = []
+  const visit = (value) => {
+    if (typeof value === 'string') strings.push({ text: value, count: 1 })
+    else if (Array.isArray(value)) value.forEach(visit)
+    else if (value && typeof value === 'object') Object.values(value).forEach(visit)
+  }
+  visit(JSON.parse(source))
+  return strings
+}
+
+// Identical entries cancel across files within a category, with multiplicity.
+// A deletion never pays for a new instruction, even when line counts match.
+function additions(before, after, accepts, extract) {
+  const remaining = new Map()
   for (const [path, source] of before) {
-    if (bridgePath(path)) for (const { text } of rustSentences(source)) oldSentences.set(text, (oldSentences.get(text) ?? 0) + 1)
+    if (accepts(path)) for (const { text } of extract(source)) remaining.set(text, (remaining.get(text) ?? 0) + 1)
   }
-  // Unchanged literals cancel globally, so moving a sentence or file is free.
-  const newSentences = []
+  const files = new Map()
   for (const [path, source] of after) {
-    if (bridgePath(path)) for (const literal of rustSentences(source)) newSentences.push({ path, ...literal })
-  }
-  const bridgeAdded = new Map()
-  for (const literal of newSentences) {
-    const remaining = oldSentences.get(literal.text) ?? 0
-    if (remaining) oldSentences.set(literal.text, remaining - 1)
-    else {
-      const found = bridgeAdded.get(literal.path) ?? { file: literal.path, added: 0, removed: 0, lines: [] }
-      found.added += literal.count
-      found.lines.push(literal.line)
-      bridgeAdded.set(literal.path, found)
+    if (!accepts(path)) continue
+    for (const entry of extract(source)) {
+      const count = remaining.get(entry.text) ?? 0
+      if (count) remaining.set(entry.text, count - 1)
+      else {
+        const file = files.get(path) ?? { file: path, added: 0, removed: 0 }
+        file.added += entry.count
+        if (entry.line !== undefined) (file.lines ??= []).push(entry.line)
+        files.set(path, file)
+      }
     }
   }
-  for (const path of new Set([...before.keys(), ...after.keys()])) {
-    if (!textPath(path)) continue
-    if ((before.get(path) ?? '').includes('\0') || (after.get(path) ?? '').includes('\0')) throw new Error(`Cannot review binary text at ${JSON.stringify(path)}`)
-    const delta = lines(after.get(path) ?? '') - lines(before.get(path) ?? '')
-    textAdded += Math.max(delta, 0)
-    textRemoved += Math.max(-delta, 0)
-    if (delta) files.push({ file: path, added: Math.max(delta, 0), removed: Math.max(-delta, 0) })
-  }
-  files.push(...bridgeAdded.values())
-  const bridgeLines = [...bridgeAdded.values()].reduce((sum, file) => sum + file.added, 0)
-  return { files, textNet: Math.max(0, textAdded - textRemoved), bridgeLines, growth: textAdded > textRemoved || bridgeLines > 0 }
+  return [...files.values()]
+}
+
+export function compareTrees(before, after) {
+  const text = additions(before, after, textPath, textLines)
+  const bridge = additions(before, after, bridgePath, rustSentences)
+  const manifests = additions(before, after, manifestPath, manifestStrings)
+  const total = (files) => files.reduce((sum, file) => sum + file.added, 0)
+  const textAdded = total(text), bridgeLines = total(bridge), manifestAdded = total(manifests)
+  return { files: [...text, ...bridge, ...manifests], textLines: textAdded, bridgeLines, manifestStrings: manifestAdded, growth: textAdded + bridgeLines + manifestAdded > 0 }
 }
 
 export function founderException(labels, events) {
@@ -149,7 +163,7 @@ export function inspectRepository(cwd, base, head) {
   const readTree = (revision) => {
     const result = new Map()
     for (const path of git(['ls-tree', '-r', '--name-only', '-z', revision], cwd).split('\0').filter(Boolean)) {
-      if (textPath(path) || bridgePath(path)) result.set(path, git(['show', `${revision}:${path}`], cwd))
+      if (textPath(path) || bridgePath(path) || manifestPath(path)) result.set(path, git(['show', `${revision}:${path}`], cwd))
     }
     return result
   }
@@ -190,7 +204,7 @@ export async function main() {
   git(['fetch', '--no-tags', 'origin', `refs/pull/${number}/head`], process.cwd())
   if (git(['rev-parse', 'FETCH_HEAD'], process.cwd()).trim() !== expected) throw new Error('The pull request changed during the check')
   const report = inspectRepository(process.cwd(), pr.base.sha, pr.head.sha)
-  console.log(`Agent-facing text: ${report.textNet} net text lines, ${report.bridgeLines} new or changed bridge sentence lines.`)
+  console.log(`Agent-facing text: ${report.textLines} new or changed text lines, ${report.bridgeLines} bridge sentence lines, ${report.manifestStrings} manifest string values.`)
   for (const file of report.files) console.log(`${JSON.stringify(file.file)}: +${file.added} -${file.removed}${file.lines ? ` (source lines ${file.lines.join(', ')})` : ''}`)
   if (!report.growth) { console.log('No agent-facing text growth.'); return }
   const events = await issueEvents(repo, number, token)
