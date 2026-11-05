@@ -24,7 +24,7 @@ The agent discovers its capabilities from the expression infrastructure server a
 - **DLM (Designless Language Model)**: The engine of Designless. Reads the design intention behind a request and carries the compounded sum of fractional design decisions. Its judgment is instrumented, not written down.
 - **EvidenceKit**: Quality proof layer. Structured, traceable verification that output is on-brand.
 - **ContentKit**: Content intelligence. Voice-modulated content compiled to match brand tone across surfaces.
-- **Blueprint**: A structural template matched to your intent: the starting composition an agent builds from, carrying layout, content zones, emphasis hierarchy, and pattern slots.
+- **Blueprint**: A structural pattern matched to your intent: the starting composition an agent builds from, carrying layout, content zones, emphasis hierarchy, and pattern slots.
 - **Brand Archetype**: Canonical personality anchors that shape how a brand expresses itself across every design dimension.
 - **Provenance**: Traceable decision chains from user intent to generated output. Auditable, verifiable, not just aesthetic.
 - **Composition Quality**: How well components compose into governed layouts. Structural quality that goes beyond visual appearance, measured and returned with the output.
