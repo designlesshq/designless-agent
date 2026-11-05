@@ -149,7 +149,7 @@ fn the_compose_epilogue_runs_after_a_compose_and_nothing_else() {
 #[test]
 fn the_watcher_ask_runs_after_every_designless_tool() {
     let m = post_entry("hook canvas-arm-watch")["matcher"].as_str().unwrap().to_string();
-    for t in ["less_canvas_compose", "less_canvas_status", "less_artefact_open", "less_list_templates", "less_resolve_brand"] {
+    for t in ["less_canvas_compose", "less_canvas_status", "less_artefact_open", "less_list_catalogue", "less_resolve_brand"] {
         assert!(matches_either_way(&m, &qualified(t)), "{t}");
     }
     for other in ["Bash", "Read", "Edit"] {

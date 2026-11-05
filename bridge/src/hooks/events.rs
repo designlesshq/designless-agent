@@ -784,7 +784,7 @@ pub fn extract_epilogue(input: Option<&J>, now: f64) -> Option<J> {
     let resp = js::coalesce(js::coalesce(js::get(input, "tool_response"), js::get(input, "toolResponse")), js::get(input, "result"));
     let text = response_text(resp);
     let brand = str_arg(js::get(args, "brand_slug"))?;
-    let template = str_arg(js::get(args, "template_id"))?;
+    let template = str_arg(js::get(args, "catalogue_item"))?;
     // Refuse on a stated error, then require a receipt.
     if errored(resp, &text) || !has_receipt(resp, &text) {
         return None;
@@ -874,7 +874,7 @@ mod tests {
     fn any_designless_tool_is_reason_to_want_a_watcher() {
         for t in [
             "mcp__plugin_designless_less-mcp__less_artefact_open",
-            "mcp__plugin_designless_less-mcp__less_list_templates",
+            "mcp__plugin_designless_less-mcp__less_list_catalogue",
             "mcp__plugin_designless_less-mcp__less_resolve_brand",
             "less_whoami",
         ] {
@@ -1225,7 +1225,7 @@ mod tests {
     const COMPOSE: &str = "mcp__plugin_designless_less-mcp__less_canvas_compose";
     fn landed() -> J {
         js::parse(&format!(
-            r#"{{"tool_name":"{COMPOSE}","tool_input":{{"brand_slug":"acme","template_id":"hot-take-acid","title":"Why reviews get shorter","session_id":"11111111-2222-4333-8444-555555555555"}},"tool_response":[{{"type":"text","text":"Composed. verified: {{\"brand_slug\":\"acme\",\"template_id\":\"hot-take-acid\",\"slide_count\":5,\"session_id\":\"11111111-2222-4333-8444-555555555555\"}} open designless://canvas?brand=acme&session=11111111-2222-4333-8444-555555555555&template=hot-take-acid"}}]}}"#
+            r#"{{"tool_name":"{COMPOSE}","tool_input":{{"brand_slug":"acme","catalogue_item":"hot-take-acid","title":"Why reviews get shorter","session_id":"11111111-2222-4333-8444-555555555555"}},"tool_response":[{{"type":"text","text":"Composed. verified: {{\"brand_slug\":\"acme\",\"template_id\":\"hot-take-acid\",\"slide_count\":5,\"session_id\":\"11111111-2222-4333-8444-555555555555\"}} open designless://canvas?brand=acme&session=11111111-2222-4333-8444-555555555555&template=hot-take-acid"}}]}}"#
         ))
         .unwrap()
     }
@@ -1254,7 +1254,7 @@ mod tests {
         assert_eq!(extract_epilogue(Some(&with(&landed(), "tool_name", s("mcp__x__less_canvas_status"))), 0.0), None);
         let refused = js::parse(r#"[{"type":"text","text":"manifest_conflict: the canvas moved"}]"#).unwrap();
         assert_eq!(extract_epilogue(Some(&with(&landed(), "tool_response", refused)), 0.0), None);
-        let bare = with(&with(&landed(), "tool_input", js::parse(r#"{"brand_slug":"acme","template_id":"t"}"#).unwrap()), "tool_response", s("ok"));
+        let bare = with(&with(&landed(), "tool_input", js::parse(r#"{"brand_slug":"acme","catalogue_item":"t"}"#).unwrap()), "tool_response", s("ok"));
         assert_eq!(extract_epilogue(Some(&bare), 0.0), None);
     }
 
