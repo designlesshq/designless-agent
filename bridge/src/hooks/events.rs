@@ -67,7 +67,7 @@ pub fn epilogue_line(cwd: &str, now: f64) -> Option<String> {
         return None;
     }
     let brand = probe::one_line(js::get(e, "brand_slug"), 80)?;
-    let template = probe::one_line(js::get(e, "template_id"), 80)?;
+    let template = probe::one_line(js::get(e, "catalogue_item"), 80)?;
     let canvas = match js::get(e, "session_id") {
         Some(J::Str(s)) if is_uuid(s) => s.clone(),
         _ => return None,
@@ -795,7 +795,7 @@ pub fn extract_epilogue(input: Option<&J>, now: f64) -> Option<J> {
     Some(js::obj(vec![
         ("composed_at", J::Str(js::iso_string(now))),
         ("brand_slug", J::Str(brand)),
-        ("template_id", J::Str(template)),
+        ("catalogue_item", J::Str(template)),
         ("session_id", J::Str(session)),
         ("title", str_arg(js::get(args, "title")).map(J::Str).unwrap_or(J::Null)),
         ("slide_count", slides.map(|d| J::Num(js::str_to_number(&d))).unwrap_or(J::Null)),
@@ -1225,7 +1225,7 @@ mod tests {
     const COMPOSE: &str = "mcp__plugin_designless_less-mcp__less_canvas_compose";
     fn landed() -> J {
         js::parse(&format!(
-            r#"{{"tool_name":"{COMPOSE}","tool_input":{{"brand_slug":"acme","catalogue_item":"hot-take-acid","title":"Why reviews get shorter","session_id":"11111111-2222-4333-8444-555555555555"}},"tool_response":[{{"type":"text","text":"Composed. verified: {{\"brand_slug\":\"acme\",\"template_id\":\"hot-take-acid\",\"slide_count\":5,\"session_id\":\"11111111-2222-4333-8444-555555555555\"}} open designless://canvas?brand=acme&session=11111111-2222-4333-8444-555555555555&template=hot-take-acid"}}]}}"#
+            r#"{{"tool_name":"{COMPOSE}","tool_input":{{"brand_slug":"acme","catalogue_item":"hot-take-acid","title":"Why reviews get shorter","session_id":"11111111-2222-4333-8444-555555555555"}},"tool_response":[{{"type":"text","text":"Composed. verified: {{\"brand_slug\":\"acme\",\"catalogue_item\":\"hot-take-acid\",\"slide_count\":5,\"session_id\":\"11111111-2222-4333-8444-555555555555\"}} open designless://canvas?brand=acme&session=11111111-2222-4333-8444-555555555555&template=hot-take-acid"}}]}}"#
         ))
         .unwrap()
     }
@@ -1242,7 +1242,7 @@ mod tests {
     fn a_landed_compose_yields_an_epilogue() {
         let e = extract_epilogue(Some(&landed()), js::now_ms()).unwrap();
         assert_eq!(field(&e, "brand_slug"), s("acme"));
-        assert_eq!(field(&e, "template_id"), s("hot-take-acid"));
+        assert_eq!(field(&e, "catalogue_item"), s("hot-take-acid"));
         assert_eq!(field(&e, "session_id"), s("11111111-2222-4333-8444-555555555555"));
         assert_eq!(field(&e, "title"), s("Why reviews get shorter"));
         assert_eq!(field(&e, "slide_count"), J::Num(5.0));
@@ -1284,7 +1284,7 @@ mod tests {
         write_epilogue(&cwd, &e).unwrap();
         assert_eq!(
             std::fs::read_to_string(format!("{cwd}/.designless/compose-epilogue.json")).unwrap(),
-            "{\n  \"composed_at\": \"2025-10-05T13:13:20.123Z\",\n  \"brand_slug\": \"acme\",\n  \"template_id\": \"hot-take-acid\",\n  \"session_id\": \"11111111-2222-4333-8444-555555555555\",\n  \"title\": \"Why reviews get shorter\",\n  \"slide_count\": 5,\n  \"open_url\": null\n}\n"
+            "{\n  \"composed_at\": \"2025-10-05T13:13:20.123Z\",\n  \"brand_slug\": \"acme\",\n  \"catalogue_item\": \"hot-take-acid\",\n  \"session_id\": \"11111111-2222-4333-8444-555555555555\",\n  \"title\": \"Why reviews get shorter\",\n  \"slide_count\": 5,\n  \"open_url\": null\n}\n"
         );
     }
 
@@ -1336,7 +1336,7 @@ mod tests {
     #[test]
     fn the_folder_keeps_itself_out_of_commits_and_respects_an_existing_ignore() {
         let cwd = home("epi-ign");
-        let e = js::obj(vec![("composed_at", s("x")), ("brand_slug", s("acme")), ("template_id", s("deck")), ("session_id", s("x"))]);
+        let e = js::obj(vec![("composed_at", s("x")), ("brand_slug", s("acme")), ("catalogue_item", s("deck")), ("session_id", s("x"))]);
         write_epilogue(&cwd, &e).unwrap();
         let rule = std::fs::read_to_string(format!("{cwd}/.designless/.gitignore")).unwrap();
         assert!(rule.lines().any(|l| l == "*"));
@@ -1353,7 +1353,7 @@ mod tests {
         let mut rec = vec![
             ("composed_at".to_string(), s(&js::iso_string(js::now_ms()))),
             ("brand_slug".to_string(), s("acme")),
-            ("template_id".to_string(), s("hot-take-acid")),
+            ("catalogue_item".to_string(), s("hot-take-acid")),
             ("session_id".to_string(), s("11111111-2222-4333-8444-555555555555")),
         ];
         for (k, v) in extra {
@@ -1381,7 +1381,7 @@ mod tests {
 
     #[test]
     fn the_instruction_interpolates_nothing() {
-        let line = memory_for(vec![("title", s("UNIQUETITLE")), ("brand_slug", s("UNIQUEBRAND")), ("template_id", s("UNIQUETEMPLATE"))]).unwrap();
+        let line = memory_for(vec![("title", s("UNIQUETITLE")), ("brand_slug", s("UNIQUEBRAND")), ("catalogue_item", s("UNIQUETEMPLATE"))]).unwrap();
         let prose = &line[..line.find('{').unwrap()];
         for v in ["UNIQUETITLE", "UNIQUEBRAND", "UNIQUETEMPLATE", "11111111"] {
             assert!(!prose.contains(v), "{v}");
