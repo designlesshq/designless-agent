@@ -27,6 +27,7 @@ use tracing_subscriber::EnvFilter;
 
 mod anchored;
 mod auth;
+mod canvas_open;
 mod error;
 mod hooks;
 mod host_session;

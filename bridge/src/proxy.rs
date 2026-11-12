@@ -10,6 +10,7 @@
 //! crash.
 
 use crate::auth::AuthProvider;
+use crate::canvas_open;
 use crate::error::{BridgeError, BridgeResult};
 use crate::integrity::Integrity;
 use crate::mcp::{FrameReader, FrameWriter};
@@ -87,6 +88,10 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
             Ok(v) => v,
             Err(e) => error_response(id, &e),
         };
+        // A canvas the answer offers is opened here, outside any sandbox the
+        // agent's shell runs in (canvas_open.rs). Before look.rs, which drops
+        // the bridge's key.
+        let response = canvas_open::opened(response).await;
         // Pages a series check wants looked at come from the app on this
         // machine, as pictures in the same answer (look.rs).
         let response = look::shown(response).await;
