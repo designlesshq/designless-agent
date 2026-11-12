@@ -73,6 +73,9 @@ pub fn offer_in(response: &Value) -> Option<(String, Value)> {
 
 /// `designless://canvas?…` and nothing else: no user, port, path or fragment,
 /// only plain query characters, and exactly one `session` equal to `session`.
+/// A name is letters, digits, `_` or `-` only: the app decodes names before it
+/// reads them, so an encoded name such as `se%73sion` would be a second
+/// `session` to the app while it looks like another name here.
 fn is_canvas_link(url: &str, session: &str) -> bool {
     let Some(query) = url.strip_prefix("designless://canvas?") else {
         return false;
@@ -90,7 +93,12 @@ fn is_canvas_link(url: &str, session: &str) -> bool {
         let Some((key, value)) = pair.split_once('=') else {
             return false;
         };
-        if key.is_empty() || value.contains('=') {
+        if key.is_empty()
+            || !key
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+            || value.contains('=')
+        {
             return false;
         }
         if key == "session" {
@@ -263,6 +271,11 @@ mod tests {
             format!("designless://canvas?session={SESSION}&x=a b"),
             format!(" designless://canvas?session={SESSION}"),
             format!("designless://canvas?session={SESSION}&x=$(touch%20y)"),
+            // An encoded name the app reads as a second session, before or after.
+            format!("designless://canvas?se%73sion={other}&session={SESSION}"),
+            format!("designless://canvas?session={SESSION}&se%73sion={other}"),
+            format!("designless://canvas?ses+sion={other}&session={SESSION}"),
+            format!("designless://canvas?s.ession={other}&session={SESSION}"),
         ];
         for url in bad_links {
             let (calls, open) = opener(true);
