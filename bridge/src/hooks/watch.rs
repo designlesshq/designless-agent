@@ -531,6 +531,25 @@ mod tests {
     }
 
     #[test]
+    fn a_note_it_declined_never_wakes_this_session_and_still_wakes_the_rest() {
+        // Its offer ends and the note opens to every session: news to each
+        // session that did not decline it, and none to the one that did.
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
+        let other = Me { name: Some("codex:9f8e7d6c".into()), now: js::now_ms() };
+        let row = |notes: &str| {
+            sessions(&format!(
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":0,"latest_seq":9,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":null,"latest_edit_seq":null,"requests":[],"n_annotation":1,"notes":{notes}}}]"#
+            ))
+        };
+        let held = row(r#"[{"seq":9,"offered_to":"claude:fdd5f4f9","offered_until":"2999-01-01T00:00:00.000Z","declined_by":[]}]"#);
+        let opened = row(r#"[{"seq":9,"offered_to":null,"offered_until":null,"declined_by":["claude:fdd5f4f9"]}]"#);
+        let before = super::work_of(&held.sessions, &other);
+        assert_eq!(news(&before, &super::work_of(&opened.sessions, &other)), vec!["a".to_string()], "open to it now");
+        assert_eq!(super::work_of(&opened.sessions, &me), Vec::<(String, Work)>::new(), "not this session's work");
+        assert_eq!(news(&[], &super::work_of(&opened.sessions, &me)), Vec::<String>::new(), "no wake");
+    }
+
+    #[test]
     fn no_newest_edit_beside_value_edits_is_a_server_that_does_not_say() {
         // A route may write null for a field its database does not send yet.
         let me = Me { name: Some("claude:fdd5f4f9".into()), now: js::now_ms() };
