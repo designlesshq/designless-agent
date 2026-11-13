@@ -721,11 +721,26 @@ const NOTE_WALK_GRACE_MS: f64 = 45_000.0;
 /// holds a note longer, whatever time a copy says the walk ends.
 const NOTE_WALK_MS: f64 = 180_000.0;
 
+/// Has this session declined this note? A note an agent read and said it
+/// would not act on is never that session's again, whatever its offer says,
+/// and every other session reads it as before. A server that does not say
+/// who declined it reads as nobody.
+pub fn declined_by_me(note: &J, me: &Me) -> bool {
+    match (js::get(Some(note), "declined_by"), me.name.as_deref()) {
+        (Some(J::Arr(names)), Some(name)) => names.iter().any(|n| matches!(n, J::Str(d) if d.as_str() == name)),
+        _ => false,
+    }
+}
+
 /// May this session take this note now? As a request may, except that a
 /// window that has passed holds the note, for everyone, until the server's
 /// next offer can show: until the time the server says the note opens to
-/// all, or, when it does not say, a grace after the window.
+/// all, or, when it does not say, a grace after the window. A note this
+/// session declined is never open to it.
 pub fn note_open_to(note: &J, me: &Me) -> bool {
+    if declined_by_me(note, me) {
+        return false;
+    }
     let until = js::get(Some(note), "offered_until");
     let t = if js::nullish(until) { f64::NAN } else { js::date_value(until) };
     if t.is_finite() && t <= me.now {
@@ -1112,6 +1127,34 @@ mod tests {
         }
         let notes = J::Arr(vec![note("codex:9f8e7d6c", now - 100_000.0, at(now + 20_000.0))]);
         assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(1.0)), ("notes", notes)]), &me), 0.0);
+    }
+
+    #[test]
+    fn a_note_this_session_declined_is_never_its_again_and_stays_open_to_every_other() {
+        let now = js::now_ms();
+        let me = Me { name: Some("claude:fdd5f4f9".into()), now };
+        let other = Me { name: Some("codex:9f8e7d6c".into()), now };
+        let unnamed = Me { name: None, now };
+        let by = |names: &[&str]| J::Arr(names.iter().map(|n| s(n)).collect());
+        let note = |to: J, until: J, declined: J| row(vec![("seq", J::Num(8.0)), ("offered_to", to), ("offered_until", until), ("declined_by", declined)]);
+        let open = note(J::Null, J::Null, by(&["claude:fdd5f4f9"]));
+        assert!(!note_open_to(&open, &me), "open to every session, and this one declined it");
+        assert!(note_open_to(&open, &other), "every session that did not decline it can take it");
+        assert!(note_open_to(&open, &unnamed), "a host that does not say who it is reads it as before");
+        let shown = note(s("claude:fdd5f4f9"), s("2999-01-01T00:00:00.000Z"), by(&["codex:9f8e7d6c", "claude:fdd5f4f9"]));
+        assert!(!note_open_to(&shown, &me), "a copy that still shows its offer to the decliner");
+        // A server that does not say, or says it some other way, declined nothing.
+        for declined in [J::Null, by(&[]), s("claude:fdd5f4f9"), J::Arr(vec![J::Num(1.0), J::Null]), row(vec![])] {
+            assert!(note_open_to(&note(J::Null, J::Null, declined.clone()), &me), "{declined:?}");
+        }
+        assert!(note_open_to(&row(vec![("seq", J::Num(8.0)), ("offered_to", J::Null), ("offered_until", J::Null)]), &me), "no declined_by at all");
+        let notes = J::Arr(vec![open.clone(), note(J::Null, J::Null, by(&["codex:9f8e7d6c"]))]);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(2.0)), ("notes", notes.clone())]), &me), 1.0);
+        assert_eq!(notes_for(&row(vec![("n_annotation", J::Num(2.0)), ("notes", notes)]), &other), 1.0);
+        // The turn's hook says nothing of a canvas whose only note it declined.
+        let expired = row(vec![("session_id", s("a")), ("title", s("Deck")), ("session_status", s("expired")), ("recoverable", J::Bool(true)), ("n_annotation", J::Num(1.0)), ("notes", J::Arr(vec![open]))]);
+        assert_eq!(summarize_inbox(std::slice::from_ref(&expired), "/tmp", Opts { me: me.clone(), ..Opts::default() }), "");
+        assert!(summarize_inbox(&[expired], "/tmp", Opts { me: other, ..Opts::default() }).contains("1 expired session(s) still hold un-applied edits"));
     }
 
     #[test]
