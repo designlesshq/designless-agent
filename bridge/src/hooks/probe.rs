@@ -1696,6 +1696,30 @@ mod tests {
         assert!(pending_requests(&row(vec![("n_value_undelivered", J::Num(0.0)), ("requests", J::Null)])).is_none());
     }
 
+    const OPEN_LINE: &str = "request(s) on \"Deck\" are open to any agent session, this one included: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
+
+    #[test]
+    fn a_request_offered_to_nobody_is_said_to_be_open_and_one_offered_here_to_be_this_sessions() {
+        // Any watching session may take an open request, so each is told. But
+        // only one offered to this session, inside its window, is this
+        // session's: an open one is said to be open, never "for this session".
+        let soon = at(T + 60_000.0);
+        let open = [held_row(0.0, vec![request(None, None)], vec![])];
+        for name in [Some(ME), None] {
+            assert_eq!(said_to(name, &open, true), format!("1 {OPEN_LINE}"), "{name:?}");
+        }
+        let passed = [held_row(0.0, vec![request(Some(OTHER), at(T - 1.0))], vec![])];
+        assert_eq!(said_to(Some(ME), &passed, true), format!("1 {OPEN_LINE}"), "another's window has passed");
+        let lapsed = [held_row(0.0, vec![request(Some(ME), at(T - 1.0))], vec![])];
+        assert_eq!(said_to(Some(ME), &lapsed, true), format!("1 {OPEN_LINE}"), "this session's own window has passed");
+        let mine = [held_row(0.0, vec![request(Some(ME), soon.clone())], vec![])];
+        assert_eq!(said_to(Some(ME), &mine, true), format!("1 {CLAIM_LINE}"));
+        let both = [held_row(0.0, vec![request(Some(ME), soon), request(None, None)], vec![])];
+        let text = said_to(Some(ME), &both, true);
+        assert_eq!(text, format!("1 {CLAIM_LINE} 1 {OPEN_LINE}"));
+        assert!(!text.contains('\u{2014}'));
+    }
+
     #[test]
     fn a_request_for_this_session_gets_its_own_line_and_one_held_elsewhere_none() {
         let soon = at(T + 60_000.0);
