@@ -1219,6 +1219,7 @@ const CODEX_HOST: (&str, &str) = ("CODEX_SESSION_ID", HOST_SID);
 /// Another Claude Code session's id, as a command started from inside it inherits.
 const PARENT_SID: &str = "3f2c9a10-6b7d-4e21-9c55-0a1b2c3d4e5f";
 const CLAIM_LINE: &str = "request(s) on \"Deck\" are for this session: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
+const OPEN_LINE: &str = "request(s) on \"Deck\" are open to any agent session, this one included: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
 const NEVER_ENDS: &str = "2999-01-01T00:00:00.000Z";
 const LONG_ENDED: &str = "2001-01-01T00:00:00.000Z";
 
@@ -1294,7 +1295,7 @@ fn a_request_whose_window_has_passed_wakes_any_watcher() {
     desktop(&sock, held_inbox(0, &[("codex:9f8e7d6c", LONG_ENDED)]));
     let mut w = Watcher::start(&["inbox-watch", "--once", "passed-1"], &s.path("home"), &sock);
     let line = w.line_within(5).expect("a request nobody took in its window is anyone's");
-    assert!(line.starts_with(&format!("Designless canvas: 1 {CLAIM_LINE}")), "{line}");
+    assert!(line.starts_with(&format!("Designless canvas: 1 {OPEN_LINE}")), "{line}");
     assert_eq!(w.child.wait().unwrap().code(), Some(0));
 }
 

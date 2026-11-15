@@ -599,6 +599,7 @@ mod tests {
         State { name: name.map(str::to_string), ..Default::default() }
     }
     const CLAIM_LINE: &str = "1 request(s) on \"Deck\" are for this session: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
+    const OPEN_LINE: &str = "1 request(s) on \"Deck\" are open to any agent session, this one included: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
 
     #[test]
     fn a_request_held_for_this_session_is_its_work_and_wakes_it() {
@@ -618,20 +619,20 @@ mod tests {
             let (v, st) = step(&p, &as_session(name), &cwd(), T);
             assert_eq!(v, Voice::Silent, "{name:?}");
             assert_eq!(st.seen, vec![], "neither work nor news here: {name:?}");
-            // The same request once its window has passed: anyone's, and news.
+            // The same request once its window has passed: anyone's, news, and said to be open.
             let (v, st) = step(&p, &st, &cwd(), T + 5.0 * MIN);
             let line = wake(&v).unwrap_or_else(|| panic!("{name:?}"));
-            assert!(line.contains(CLAIM_LINE), "{line}");
+            assert!(line.contains(OPEN_LINE), "{line}");
             assert_eq!(st.seen, vec![("a".into(), Work { untaken: 1.0, notes: 0.0, seq: Some(7.0) })]);
         }
     }
 
     #[test]
-    fn a_request_offered_to_nobody_is_like_one_offered_to_this_session() {
+    fn a_request_offered_to_nobody_wakes_this_session_and_is_said_to_be_open() {
         let p = held_row(0, None, &[(7, None, None)]);
         for name in [Some(ME), None] {
             let line = wake(&step(&p, &as_session(name), &cwd(), T).0).map(str::to_string);
-            assert!(line.as_deref().is_some_and(|l| l.contains(CLAIM_LINE)), "{name:?}: {line:?}");
+            assert!(line.as_deref().is_some_and(|l| l.contains(OPEN_LINE) && !l.contains("for this session")), "{name:?}: {line:?}");
         }
     }
 
@@ -662,8 +663,8 @@ mod tests {
         // One value edit still waiting, numbered 5, and a newer request held elsewhere.
         let elsewhere = held_row(1, Some(5), &[(6, Some(OTHER), SOON)]);
         assert_eq!(step(&elsewhere, &told, &cwd(), T).0, Voice::Silent);
-        // Its window passes: now it is this session's too.
-        assert!(wake(&step(&elsewhere, &told, &cwd(), T + 5.0 * MIN).0).is_some_and(|l| l.contains(CLAIM_LINE)));
+        // Its window passes: now this session may take it too, as any session may.
+        assert!(wake(&step(&elsewhere, &told, &cwd(), T + 5.0 * MIN).0).is_some_and(|l| l.contains(OPEN_LINE)));
     }
 
     #[test]
