@@ -1093,7 +1093,7 @@ mod tests {
         assert_eq!(wake_text("/tmp", Some(&sid), &probe(&[held]), &e), None, "held for another session: not mentioned");
         assert!(seen().contains(r#""sessions":[]"#), "and not recorded as told: {}", seen());
         let out = ctx(&wake_text("/tmp", Some(&sid), &probe(&[open, held]), &e).unwrap());
-        assert!(out.starts_with("Designless canvas: 1 request(s) on \"Deck\" are open to any agent session, this one included: take them now"), "{out}");
+        assert!(out.starts_with("Designless canvas: 1 request(s) on \"Deck\" are for this session: take them now"), "{out}");
         assert!(seen().contains(r#""sessions":[["a",1,0,7]]"#), "what was said is what is recorded: {}", seen());
         let start = ctx(&session_start_text("/tmp", Some(&sid), None, &probe(&[held]), &e, true));
         assert!(!start.contains("request(s)") && !start.contains("waiting edits"), "{start}");

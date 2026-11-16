@@ -708,16 +708,6 @@ pub fn open_to(request: &J, me: &Me) -> bool {
     matches!((js::get(Some(request), "offered_to"), me.name.as_deref()), (Some(J::Str(to)), Some(name)) if to == name)
 }
 
-/// Is this request offered to this session, its window still running? Only
-/// then is it this session's to say so; every other request `open_to` admits
-/// is open to any agent session, this one included.
-pub fn offered_here(request: &J, me: &Me) -> bool {
-    let t = js::date_value(js::get(Some(request), "offered_until"));
-    t.is_finite()
-        && t > me.now
-        && matches!((js::get(Some(request), "offered_to"), me.name.as_deref()), (Some(J::Str(to)), Some(name)) if to == name)
-}
-
 /// How long a note's passed window still holds it when the server does not
 /// say when its walk ends: one refresh of the desktop's copy of the inbox,
 /// and a watcher's beat after it. The server walks an untaken note on to the
@@ -867,10 +857,7 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
     let origin = cwd_git_remote(cwd);
     let (mut here, mut elsewhere, mut artefact, mut annotations, mut attention, mut recoverable) =
         (vec![], vec![], vec![], vec![], vec![], vec![]);
-    let (mut requests, mut n_artefact, mut n_notes) = (vec![], 0.0, 0.0);
-    // Of the requests this session may take, those offered to it are said as
-    // its own and the rest as open to any session.
-    let (mut offered, mut n_offered, mut open_docs, mut n_open) = (vec![], 0usize, vec![], 0usize);
+    let (mut requests, mut n_artefact, mut n_requests, mut n_notes) = (vec![], 0.0, 0usize, 0.0);
     for s in sessions {
         let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
         // Only page edits an agent could take now: one already in an agent's
@@ -888,15 +875,6 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
         // session is not mentioned at all.
         let pending = pending_requests(s);
         let open = pending.map_or(0, |r| r.iter().filter(|q| open_to(q, &opts.me)).count());
-        let here_first = pending.map_or(0, |r| r.iter().filter(|q| offered_here(q, &opts.me)).count());
-        if here_first > 0 {
-            offered.push(s);
-            n_offered += here_first;
-        }
-        if open > here_first {
-            open_docs.push(s);
-            n_open += open - here_first;
-        }
         let edits = if pending.is_some() { n("n_value_artefact") } else { n("n_artefact") };
         if edits > 0.0 {
             artefact.push(s);
@@ -904,6 +882,7 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
         }
         if open > 0 {
             requests.push(s);
+            n_requests += open;
         }
         // Likewise a note offered to another session for now, or one an agent
         // has taken, is not mentioned.
@@ -963,18 +942,11 @@ and let the canvas re-capture. Apply them now; do not ask first.{}{}",
             documents(&artefact)
         ));
     }
-    if !offered.is_empty() {
+    if !requests.is_empty() {
         lines.push(format!(
             "{} request(s) on {} are for this session: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.",
-            js::num_to_string(n_offered as f64),
-            documents(&offered)
-        ));
-    }
-    if !open_docs.is_empty() {
-        lines.push(format!(
-            "{} request(s) on {} are open to any agent session, this one included: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.",
-            js::num_to_string(n_open as f64),
-            documents(&open_docs)
+            js::num_to_string(n_requests as f64),
+            documents(&requests)
         ));
     }
     if !annotations.is_empty() {
@@ -1724,39 +1696,15 @@ mod tests {
         assert!(pending_requests(&row(vec![("n_value_undelivered", J::Num(0.0)), ("requests", J::Null)])).is_none());
     }
 
-    const OPEN_LINE: &str = "request(s) on \"Deck\" are open to any agent session, this one included: take them now with less_canvas_ops action 'claim' (the claim shows the pages and how each is settled), then ack each applied.";
-
-    #[test]
-    fn a_request_offered_to_nobody_is_said_to_be_open_and_one_offered_here_to_be_this_sessions() {
-        // Any watching session may take an open request, so each is told. But
-        // only one offered to this session, inside its window, is this
-        // session's: an open one is said to be open, never "for this session".
-        let soon = at(T + 60_000.0);
-        let open = [held_row(0.0, vec![request(None, None)], vec![])];
-        for name in [Some(ME), None] {
-            assert_eq!(said_to(name, &open, true), format!("1 {OPEN_LINE}"), "{name:?}");
-        }
-        let passed = [held_row(0.0, vec![request(Some(OTHER), at(T - 1.0))], vec![])];
-        assert_eq!(said_to(Some(ME), &passed, true), format!("1 {OPEN_LINE}"), "another's window has passed");
-        let lapsed = [held_row(0.0, vec![request(Some(ME), at(T - 1.0))], vec![])];
-        assert_eq!(said_to(Some(ME), &lapsed, true), format!("1 {OPEN_LINE}"), "this session's own window has passed");
-        let mine = [held_row(0.0, vec![request(Some(ME), soon.clone())], vec![])];
-        assert_eq!(said_to(Some(ME), &mine, true), format!("1 {CLAIM_LINE}"));
-        let both = [held_row(0.0, vec![request(Some(ME), soon), request(None, None)], vec![])];
-        let text = said_to(Some(ME), &both, true);
-        assert_eq!(text, format!("1 {CLAIM_LINE} 1 {OPEN_LINE}"));
-        assert!(!text.contains('\u{2014}'));
-    }
-
     #[test]
     fn a_request_for_this_session_gets_its_own_line_and_one_held_elsewhere_none() {
         let soon = at(T + 60_000.0);
         let rows = [held_row(0.0, vec![request(Some(ME), soon.clone()), request(Some(OTHER), soon.clone()), request(None, None)], vec![])];
         let text = said_to(Some(ME), &rows, true);
-        assert_eq!(text, format!("1 {CLAIM_LINE} 1 {OPEN_LINE}"), "one offered here, one open to any session, and no edit line counts them");
+        assert_eq!(text, format!("2 {CLAIM_LINE}"), "two of the three are this session's, and no edit line counts them");
         assert!(!text.contains('\u{2014}'));
         // Without a watcher the one wait follows, as after any work.
-        assert_eq!(said_to(Some(ME), &rows, false), format!("1 {CLAIM_LINE} 1 {OPEN_LINE} {WAIT_ONCE}"));
+        assert_eq!(said_to(Some(ME), &rows, false), format!("2 {CLAIM_LINE} {WAIT_ONCE}"));
     }
 
     #[test]
@@ -1767,9 +1715,9 @@ mod tests {
             assert_eq!(said_to(Some(ME), &[held()], live), "", "no line, no expired-canvas line, no wait");
             assert_eq!(said_to(None, &[held()], live), "");
         }
-        // Once the window has passed, they are anyone's, and said to be open.
+        // Once the window has passed, they are anyone's.
         let passed = summarize_inbox(&[held()], &tmpdir(), Opts { me: Me { name: None, now: T + 60_000.0 }, ..Opts::default() });
-        assert!(passed.starts_with(&format!("1 {OPEN_LINE} 1 expired session(s)")), "{passed}");
+        assert!(passed.starts_with(&format!("1 {CLAIM_LINE} 1 expired session(s)")), "{passed}");
     }
 
     #[test]
