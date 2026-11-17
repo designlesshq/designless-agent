@@ -18,6 +18,12 @@ Only what a request needs: your prompt and intent, content you ask to have compo
 
 When a conversation with the agent ends, the plugin says so through the Designless desktop app, naming the conversation by a short hash. The conversation's own id stays on your machine, and nothing else about the conversation is sent with it.
 
+## Your content
+
+**We never train AI models on your content.** Designless does not use your content, prompts, Brand Capsules, documents or code to train or fine-tune any AI model.
+
+**What stays on your computer.** When your agent works with Designless, your code, your folders and the files it reads for a design stay on your computer. Designless stores the documents it makes for you and the Brand Capsules you create, in private storage that only you and the people you share with can open. Under an Enterprise contract, those documents can be kept in your own storage.
+
 ## What never leaves
 
 Credentials. Authentication is held by the Designless desktop app (or a browser OAuth flow); this plugin's files contain no keys, and the bridge never logs or returns tokens.
