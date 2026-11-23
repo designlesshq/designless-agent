@@ -38,6 +38,16 @@ pub enum BridgeError {
         body: String,
     },
 
+    /// The server was busy and said so before any tool ran (a session setup
+    /// that ran out of time, or an answer carrying Retry-After). The bridge
+    /// has already asked once more; `words` are the server's own, so the agent
+    /// reads what the server said, and knows a retry of the call is safe.
+    #[error("{words} (the server answered {status}; nothing ran)")]
+    UpstreamBusy {
+        status: u16,
+        words: String,
+    },
+
     /// JSON-RPC frame parsing or serialization failed.
     #[error("MCP frame protocol error: {0}")]
     Protocol(String),

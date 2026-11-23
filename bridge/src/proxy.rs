@@ -207,14 +207,34 @@ async fn forward(
         res = post_once(client, upstream, auth, integrity, identity, frame).await?;
     }
 
-    let status = res.status();
-    if !status.is_success() {
+    // A busy server that says nothing ran (a session setup out of time, or an
+    // answer carrying Retry-After) is asked once more after a short wait. A
+    // failure that does not say so is never sent again: the tool may have run.
+    let mut retried = false;
+    let res = loop {
+        let status = res.status();
+        if status.is_success() {
+            break res;
+        }
+        let wait = busy_wait(status.as_u16(), res.headers());
         let body = res.text().await.unwrap_or_default();
-        return Err(BridgeError::UpstreamStatus {
-            status: status.as_u16(),
-            body,
-        });
-    }
+        let busy = wait.is_some() || setup_ran_out_of_time(status.as_u16(), &body);
+        if !busy {
+            return Err(BridgeError::UpstreamStatus { status: status.as_u16(), body });
+        }
+        let wait = wait.unwrap_or(Some(BUSY_WAIT));
+        match wait {
+            Some(wait) if !retried => {
+                tracing::warn!(status = status.as_u16(), wait_ms = wait.as_millis() as u64, "upstream busy before any tool ran; retrying once");
+                tokio::time::sleep(wait).await;
+                retried = true;
+                res = post_once(client, upstream, auth, integrity, identity, frame).await?;
+            }
+            _ => {
+                return Err(BridgeError::UpstreamBusy { status: status.as_u16(), words: server_words(&body) });
+            }
+        }
+    };
 
     // The MCP Streamable HTTP transport allows servers to respond either with
     // straight JSON or with an SSE stream. We accept both. Branch on the
@@ -262,6 +282,52 @@ async fn forward(
     }
 }
 
+/// How long the bridge waits before asking a busy server once more, when the
+/// server names no time of its own.
+const BUSY_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+/// The longest Retry-After the bridge waits out itself. Past it the agent is
+/// told, in the server's words, and decides.
+const BUSY_WAIT_MAX: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// A Retry-After on a 429 or 503 says the request was turned away before it
+/// was handled. `None`: no such header. `Some(None)`: a wait longer than the
+/// bridge holds a call. `Some(Some(wait))`: wait, then ask once more.
+fn busy_wait(status: u16, headers: &reqwest::header::HeaderMap) -> Option<Option<std::time::Duration>> {
+    if status != 429 && status != 503 {
+        return None;
+    }
+    let seconds: u64 = headers.get(reqwest::header::RETRY_AFTER)?.to_str().ok()?.trim().parse().ok()?;
+    let wait = std::time::Duration::from_secs(seconds);
+    Some((wait <= BUSY_WAIT_MAX).then_some(wait))
+}
+
+/// The server's own refusal for a session setup that ran out of time: a 503
+/// sent before any tool was reached. Matched by its words, never by the status
+/// alone, because a 503 from elsewhere on the path may follow a tool that ran.
+fn setup_ran_out_of_time(status: u16, body: &str) -> bool {
+    if status != 503 {
+        return false;
+    }
+    let Ok(parsed) = serde_json::from_str::<Value>(body) else { return false };
+    let error = parsed.get("error").and_then(Value::as_str).unwrap_or("");
+    let hint = parsed.get("hint").and_then(Value::as_str).unwrap_or("");
+    error.starts_with("session setup timed out") || hint.contains("during session setup")
+}
+
+/// What a busy server said, in its own words: its hint, else its error.
+fn server_words(body: &str) -> String {
+    let parsed: Option<Value> = serde_json::from_str(body).ok();
+    let field = |k: &str| {
+        parsed.as_ref()
+            .and_then(|p| p.get(k))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    field("hint").or_else(|| field("error")).unwrap_or_else(|| "The Designless server is busy. Retry shortly.".to_string())
+}
+
 /// Build a JSON-RPC error response. Includes a human-readable hint in
 /// `error.data.hint` so the orchestrator skill (or any client reading the
 /// frame) can surface actionable text.
@@ -269,6 +335,7 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
     // A refusal's own hint, read before the match so every arm stays a &str.
     let server_hint = match err {
         BridgeError::UpstreamStatus { status: 428, body } => upstream_hint(body),
+        BridgeError::UpstreamBusy { words, .. } => Some(format!("{words} Nothing ran on the server, so retrying is safe.")),
         _ => None,
     };
     let (code, hint) = match err {
@@ -310,6 +377,10 @@ fn error_response(id: Option<Value>, err: &BridgeError) -> Value {
             -32007,
             server_hint.as_deref().unwrap_or(REFUSAL_WITHOUT_HINT),
         ),
+        // Busy before any tool ran: the server's words lead, then that a
+        // retry is safe. Same code as any upstream failure, so a client that
+        // keys on the code reads it as before.
+        BridgeError::UpstreamBusy { .. } => (-32005, server_hint.as_deref().unwrap_or_default()),
         BridgeError::UpstreamStatus { .. } => (-32005, "Upstream MCP error. Visit https://designless.app/help if persistent."),
         BridgeError::Protocol(_) => (-32700, "MCP protocol error."),
         BridgeError::Io(_) | BridgeError::Http(_) | BridgeError::Json(_) => (
@@ -495,5 +566,104 @@ mod refusal_hint {
         let frame = error_response(None, &BridgeError::UpstreamStatus { status: 500, body: r#"{"hint":"x"}"#.into() });
         assert_eq!(frame["error"]["code"], -32005);
         assert_ne!(frame["error"]["data"]["hint"], "x");
+    }
+}
+
+#[cfg(test)]
+mod busy_answer {
+    //! A busy server answer: the server could not set the session up in time
+    //! and said so before any tool ran. Scripted answers on a real socket.
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct Fixed;
+    #[async_trait::async_trait]
+    impl AuthProvider for Fixed {
+        async fn bearer_or_refresh(&self) -> BridgeResult<String> { Ok("t".into()) }
+    }
+
+    const SETUP_BUSY: &str = r#"{"error":"session setup timed out in phase \"auth\" after 10000ms","hint":"A backend dependency did not answer during session setup. Retry shortly."}"#;
+
+    fn answer(status: &str, extra: &str, body: &str) -> String {
+        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\n{extra}content-length: {}\r\nconnection: close\r\n\r\n{body}", body.len())
+    }
+
+    /// Serves the scripted answers in order, one per connection, and counts
+    /// how many requests arrived.
+    async fn scripted(answers: Vec<String>) -> (String, Arc<AtomicUsize>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let seen = Arc::new(AtomicUsize::new(0));
+        let count = seen.clone();
+        tokio::spawn(async move {
+            for a in answers {
+                let Ok((mut s, _)) = listener.accept().await else { return };
+                let mut buf = vec![0u8; 16384];
+                let _ = s.read(&mut buf).await;
+                count.fetch_add(1, Ordering::SeqCst);
+                let _ = s.write_all(a.as_bytes()).await;
+                let _ = s.shutdown().await;
+            }
+        });
+        (url, seen)
+    }
+
+    async fn call(url: &str) -> BridgeResult<Value> {
+        let identity = crate::identity::Identity { harness: "codex".into(), version: None, actor: "ab12cd34".into(), session: None, host: None };
+        let frame = json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"less_whoami","arguments":{}}});
+        forward(&Client::new(), url, &Fixed, None, &identity, &frame).await
+    }
+
+    #[tokio::test]
+    async fn a_busy_setup_then_an_answer_is_one_retry_and_a_success() {
+        let ok = r#"{"jsonrpc":"2.0","id":3,"result":{"content":[]}}"#;
+        let (url, seen) = scripted(vec![answer("503 Service Unavailable", "", SETUP_BUSY), answer("200 OK", "", ok)]).await;
+        let v = call(&url).await.expect("the retry answers");
+        assert_eq!(v["result"]["content"], json!([]));
+        assert_eq!(seen.load(Ordering::SeqCst), 2, "one retry, no more");
+    }
+
+    #[tokio::test]
+    async fn a_busy_setup_twice_carries_the_servers_words_and_says_a_retry_is_safe() {
+        let (url, seen) = scripted(vec![answer("503 Service Unavailable", "", SETUP_BUSY), answer("503 Service Unavailable", "", SETUP_BUSY), answer("200 OK", "", "{}")]).await;
+        let err = call(&url).await.expect_err("still busy");
+        assert_eq!(seen.load(Ordering::SeqCst), 2, "one retry, no more");
+        let frame = error_response(Some(json!(3)), &err);
+        let message = frame["error"]["message"].as_str().unwrap();
+        let hint = frame["error"]["data"]["hint"].as_str().unwrap();
+        assert!(message.starts_with("A backend dependency did not answer during session setup. Retry shortly."), "{message}");
+        assert!(hint.starts_with("A backend dependency did not answer during session setup. Retry shortly."), "{hint}");
+        assert!(hint.contains("retrying is safe"), "{hint}");
+    }
+
+    #[tokio::test]
+    async fn an_answer_carrying_retry_after_is_retried_once() {
+        let busy = r#"{"error":"Too many tool calls at once. Please retry shortly."}"#;
+        let ok = r#"{"jsonrpc":"2.0","id":3,"result":{"content":[]}}"#;
+        let (url, seen) = scripted(vec![answer("429 Too Many Requests", "retry-after: 1\r\n", busy), answer("200 OK", "", ok)]).await;
+        call(&url).await.expect("the retry answers");
+        assert_eq!(seen.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_wait_longer_than_the_bridge_holds_a_call_goes_to_the_agent() {
+        let busy = r#"{"error":"Too many tool calls at once. Please retry shortly."}"#;
+        let (url, seen) = scripted(vec![answer("429 Too Many Requests", "retry-after: 30\r\n", busy), answer("200 OK", "", "{}")]).await;
+        let err = call(&url).await.expect_err("not waited out");
+        assert_eq!(seen.load(Ordering::SeqCst), 1);
+        let hint = error_response(None, &err)["error"]["data"]["hint"].as_str().unwrap().to_string();
+        assert!(hint.starts_with("Too many tool calls at once. Please retry shortly."), "{hint}");
+    }
+
+    #[tokio::test]
+    async fn a_503_that_does_not_say_nothing_ran_is_never_retried() {
+        // A gateway 503 with no setup words and no Retry-After: the tool may
+        // have run, so the call is not sent again.
+        let (url, seen) = scripted(vec![answer("503 Service Unavailable", "", r#"{"msg":"worker went away"}"#), answer("200 OK", "", "{}")]).await;
+        let err = call(&url).await.expect_err("not retried");
+        assert_eq!(seen.load(Ordering::SeqCst), 1);
+        assert_eq!(error_response(None, &err)["error"]["code"], -32005);
     }
 }
