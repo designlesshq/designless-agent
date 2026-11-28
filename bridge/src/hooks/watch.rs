@@ -120,17 +120,6 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
         .iter()
         .filter_map(|s| {
             let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
-            // A document a conversation holds: the server counts what it holds
-            // for this session, every kind together, and that count is the
-            // work. None of it is this session's when the count is nothing.
-            if let Some(takeable) = probe::held_for(s, me) {
-                if takeable.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
-                    return None;
-                }
-                let id = js::get(Some(s), "session_id");
-                let w = Work { untaken: takeable, notes: 0.0, seq: said(js::get(Some(s), "latest_seq")) };
-                return Some((if js::nullish(id) { String::new() } else { js::to_string(id) }, w));
-            }
             let (untaken, seq) = match probe::pending_requests(s) {
                 // A newer server counts value edits apart from requests. Only
                 // the requests this session may take are its work, and only
@@ -167,7 +156,15 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
                 Some(notes) => notes.iter().filter(|x| probe::note_open_to(x, me)).map(|x| said(js::get(Some(x), "seq"))).fold(seq, newest),
                 None => seq,
             };
-            let w = Work { untaken, notes: probe::notes_for(s, me), seq };
+            // A document a conversation holds: the server counts what it holds
+            // for this session, every kind together, and that count is the
+            // work; the newest number is read as above, so a note another
+            // session took moves nothing here. None of it is this session's
+            // when the count is nothing.
+            let w = match probe::held_for(s, me) {
+                Some(takeable) => Work { untaken: takeable, notes: 0.0, seq },
+                None => Work { untaken, notes: probe::notes_for(s, me), seq },
+            };
             // NaN counts as nothing.
             if (w.untaken + w.notes).partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
                 return None;
@@ -780,6 +777,33 @@ mod tests {
         let (v, st) = step(&held, &as_session(Some(MAKER)), &cwd(), T);
         assert!(wake(&v).is_some_and(|l| l.contains("1 edit(s) are waiting")), "{v:?}");
         assert_eq!(st.seen, vec![("a".into(), Work { untaken: 2.0, notes: 0.0, seq: Some(9.0) })]);
+    }
+
+    #[test]
+    fn a_newer_note_another_member_took_is_no_news_beside_an_edit_already_told() {
+        // One edit, numbered 8, for this member; told once.
+        let row = |latest: u32, notes: &str, n_annotation: u32| {
+            sessions(&format!(
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":{latest},"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":{latest},"latest_edit_seq":8,"requests":[],"n_annotation":{n_annotation},"notes":{notes},"hold":{{"state":"held","may_take":false,"n_waiting":1,"n_takeable":0,"n_takeable_for":{{"{MAKER}":1,"{ME}":1}},"n_takeable_others":0}}}}]"#
+            ))
+        };
+        let (v, st) = step(&row(8, "[]", 0), &as_session(Some(MAKER)), &cwd(), T);
+        assert!(wake(&v).is_some(), "{v:?}");
+        // Another member is sent a note, numbered 10, and takes it before the
+        // next poll: the document's newest number moves, this session's work does not.
+        let (v, st) = step(&row(10, "[]", 1), &st, &cwd(), T + MIN);
+        assert_eq!(v, Voice::Silent, "the same edit again");
+        // A note still waiting for this member is news.
+        let open = r#"[{"seq":11,"offered_to":null,"offered_until":null,"declined_by":[]}]"#;
+        let both = sessions(&js::stringify(&J::Arr(row(11, open, 1).sessions.into_iter().map(|mut r| {
+            if let J::Obj(m) = &mut r {
+                for (k, v) in m.iter_mut() {
+                    if k == "hold" { *v = js::parse(&format!(r#"{{"state":"held","may_take":false,"n_takeable_for":{{"{MAKER}":2}},"n_takeable_others":0}}"#)).unwrap(); }
+                }
+            }
+            r
+        }).collect())));
+        assert!(wake(&step(&both, &st, &cwd(), T + 2.0 * MIN).0).is_some(), "a newer note for it");
     }
 
     #[test]
