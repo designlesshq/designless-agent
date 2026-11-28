@@ -26,6 +26,7 @@ use anyhow::Result;
 use tracing_subscriber::EnvFilter;
 
 mod anchored;
+mod attached_file;
 mod auth;
 mod canvas_open;
 mod error;

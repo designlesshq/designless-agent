@@ -9,6 +9,7 @@
 //! `/mcp` panel surfaces a useful recovery hint rather than a generic stdio
 //! crash.
 
+use crate::attached_file;
 use crate::auth::AuthProvider;
 use crate::canvas_open;
 use crate::error::{BridgeError, BridgeResult};
@@ -73,7 +74,11 @@ pub async fn serve_stdio(auth: Box<dyn AuthProvider + Send + Sync>) -> Result<()
         // A dry run is measured by the app on this machine (measure.rs): the
         // render goes to the app, the numbers go to the server, and the
         // server's second answer is the agent's. Any other frame goes up once.
-        let result = if measure::dry_run_compose(&frame) {
+        // A file the person attached is carried as bytes, and the answer is the
+        // server's (attached_file.rs).
+        let result = if let Some(answer) = attached_file::answer(&client, &editor, &*auth, identity, &frame).await {
+            answer
+        } else if measure::dry_run_compose(&frame) {
             forward_measured(&client, &upstream, &*auth, integrity, identity, &frame).await
         } else {
             forward(&client, &upstream, &*auth, integrity, identity, &frame).await
