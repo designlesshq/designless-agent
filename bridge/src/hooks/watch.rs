@@ -120,6 +120,17 @@ pub fn work_of(sessions: &[J], me: &Me) -> Vec<(String, Work)> {
         .iter()
         .filter_map(|s| {
             let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
+            // A document a conversation holds: the server counts what it holds
+            // for this session, every kind together, and that count is the
+            // work. None of it is this session's when the count is nothing.
+            if let Some(takeable) = probe::held_for(s, me) {
+                if takeable.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+                    return None;
+                }
+                let id = js::get(Some(s), "session_id");
+                let w = Work { untaken: takeable, notes: 0.0, seq: said(js::get(Some(s), "latest_seq")) };
+                return Some((if js::nullish(id) { String::new() } else { js::to_string(id) }, w));
+            }
             let (untaken, seq) = match probe::pending_requests(s) {
                 // A newer server counts value edits apart from requests. Only
                 // the requests this session may take are its work, and only
@@ -686,6 +697,106 @@ mod tests {
         assert_eq!(w, vec![("a".into(), Work { untaken: 4.0, notes: 0.0, seq: Some(5.0) })]);
         assert_eq!(js::stringify(&seen_json(&w)), r#"[["a",4,0,5]]"#);
         assert_eq!(seen_from_json(Some(&seen_json(&w))), w);
+    }
+
+    // ── a document a conversation holds ──
+    // The server keeps every offer null now and puts `hold` on a row a hold
+    // has touched. The desktop's one cached read names no session, so the
+    // hold says per session what the document holds for it: n_takeable_for
+    // keyed by session name, n_takeable_others for any other session.
+    const MAKER: &str = "claude:5e5e5e5e";
+    /// The 28 Nov case: two requests on a document, both offered to nobody,
+    /// with the hold's own counts for each session as the server gives them.
+    fn held_doc(state: &str, takeable_for: &str, others: u32) -> Probe {
+        sessions(&format!(
+            r#"[{{"session_id":"a","title":"Deck","n_artefact":2,"n_undelivered":2,"latest_seq":12,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":null,"latest_edit_seq":null,"n_annotation":0,"notes":[],"requests":[{{"seq":11,"kind":"look_slides","offered_to":null,"offered_until":null}},{{"seq":12,"kind":"fit_slide","offered_to":null,"offered_until":null}}],"hold":{{"state":"{state}","may_take":false,"until":null,"ended":null,"waits_for_person":false,"words":"Another conversation is making this document.","n_waiting":2,"n_takeable":0,"n_takeable_for":{takeable_for},"n_takeable_others":{others}}}}}]"#
+        ))
+    }
+    const TWO_LINE: &str = "2 request(s) on \"Deck\" are for this session";
+
+    #[test]
+    fn a_held_documents_requests_never_wake_a_session_the_hold_does_not_admit() {
+        let p = held_doc("held", &format!(r#"{{"{MAKER}":2}}"#), 0);
+        for name in [Some(ME), None] {
+            let mut st = as_session(name);
+            // The watcher that exits on a wake is restarted from what it saw:
+            // no number of restarts may wake it for work it cannot take.
+            for _ in 0..3 {
+                let (v, next) = step(&p, &st, &cwd(), T);
+                assert_eq!(v, Voice::Silent, "{name:?}");
+                assert_eq!(next.seen, vec![], "neither work nor news: {name:?}");
+                st = next;
+            }
+            assert_eq!(probe::summarize_inbox(&p.sessions, "/tmp", probe::Opts { me: Me { name: name.map(str::to_string), now: T }, ..probe::Opts::default() }), "", "the hook says nothing: {name:?}");
+        }
+    }
+
+    #[test]
+    fn a_held_documents_requests_wake_its_member_once() {
+        let p = held_doc("held", &format!(r#"{{"{MAKER}":2}}"#), 0);
+        let (v, st) = step(&p, &as_session(Some(MAKER)), &cwd(), T);
+        assert!(wake(&v).is_some_and(|l| l.contains(TWO_LINE)), "{v:?}");
+        assert_eq!(st.seen, vec![("a".into(), Work { untaken: 2.0, notes: 0.0, seq: Some(12.0) })]);
+        assert_eq!(step(&p, &st, &cwd(), T).0, Voice::Silent, "the same work again");
+    }
+
+    #[test]
+    fn when_the_hold_ends_its_requests_wake_the_sessions_it_now_admits_once() {
+        // Held for the maker: the opener is silent.
+        let held = held_doc("held", &format!(r#"{{"{MAKER}":2}}"#), 0);
+        let (v, st) = step(&held, &as_session(Some(ME)), &cwd(), T);
+        assert_eq!(v, Voice::Silent);
+        // The hold ends; this session opened the document, so it is admitted now.
+        let ended = held_doc("ended", &format!(r#"{{"{MAKER}":2,"{ME}":2}}"#), 0);
+        let (v, st) = step(&ended, &st, &cwd(), T + 10.0 * MIN);
+        assert!(wake(&v).is_some_and(|l| l.contains(TWO_LINE)), "{v:?}");
+        assert_eq!(step(&ended, &st, &cwd(), T + 11.0 * MIN).0, Voice::Silent, "once");
+        // A session that never opened it is still not admitted after the end.
+        assert_eq!(step(&ended, &as_session(Some(OTHER)), &cwd(), T + 10.0 * MIN).0, Voice::Silent);
+    }
+
+    #[test]
+    fn after_the_persons_retry_the_row_carries_no_hold_and_wakes_any_session_once() {
+        let held = held_doc("held", &format!(r#"{{"{MAKER}":2}}"#), 0);
+        let (_, st) = step(&held, &as_session(Some(OTHER)), &cwd(), T);
+        // Retry: no hold on the row, read exactly as before.
+        let open = sessions(r#"[{"session_id":"a","title":"Deck","n_artefact":2,"n_undelivered":2,"latest_seq":12,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":null,"latest_edit_seq":null,"n_annotation":0,"notes":[],"requests":[{"seq":11,"kind":"look_slides","offered_to":null,"offered_until":null},{"seq":12,"kind":"fit_slide","offered_to":null,"offered_until":null}]}]"#);
+        let (v, st) = step(&open, &st, &cwd(), T + MIN);
+        assert!(wake(&v).is_some_and(|l| l.contains(TWO_LINE)), "{v:?}");
+        assert_eq!(step(&open, &st, &cwd(), T + 2.0 * MIN).0, Voice::Silent);
+    }
+
+    #[test]
+    fn a_held_documents_value_edits_and_notes_follow_its_hold() {
+        // An edit and a note on a held document: the server's count for each
+        // session decides, not the document's totals.
+        let p = |takeable_for: &str| {
+            sessions(&format!(
+                r#"[{{"session_id":"a","title":"Deck","n_artefact":2,"n_undelivered":1,"latest_seq":9,"n_value_artefact":1,"n_value_undelivered":1,"latest_value_seq":8,"latest_edit_seq":8,"requests":[],"n_annotation":1,"notes":[{{"seq":9,"offered_to":null,"offered_until":null}}],"hold":{{"state":"held","may_take":false,"n_waiting":2,"n_takeable":0,"n_takeable_for":{takeable_for},"n_takeable_others":0}}}}]"#
+            ))
+        };
+        let held = p(&format!(r#"{{"{MAKER}":2}}"#));
+        assert_eq!(step(&held, &as_session(Some(ME)), &cwd(), T).0, Voice::Silent);
+        let (v, st) = step(&held, &as_session(Some(MAKER)), &cwd(), T);
+        assert!(wake(&v).is_some_and(|l| l.contains("1 edit(s) are waiting")), "{v:?}");
+        assert_eq!(st.seen, vec![("a".into(), Work { untaken: 2.0, notes: 0.0, seq: Some(9.0) })]);
+    }
+
+    #[test]
+    fn a_hold_the_server_could_not_read_wakes_nobody_and_a_hold_without_counts_is_read_as_before() {
+        // unknown: the server says the work is held for every caller until its next read.
+        let unread = sessions(r#"[{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":7,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":null,"requests":[{"seq":7,"kind":"fit_slide","offered_to":null,"offered_until":null}],"hold":{"state":"unknown","may_take":false,"until":null,"ended":null,"waits_for_person":false,"words":"x"}}]"#);
+        for name in [Some(ME), Some(MAKER), None] {
+            assert_eq!(step(&unread, &as_session(name), &cwd(), T).0, Voice::Silent, "{name:?}");
+        }
+        // A server that sends a hold but no per-session counts: read as it was before them.
+        let uncounted = sessions(r#"[{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":7,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":null,"requests":[{"seq":7,"kind":"fit_slide","offered_to":null,"offered_until":null}],"hold":{"state":"held","may_take":false,"n_takeable":0}}]"#);
+        let me = Me { name: Some(ME.into()), now: T };
+        let bare = sessions(r#"[{"session_id":"a","title":"Deck","n_artefact":1,"n_undelivered":1,"latest_seq":7,"n_value_artefact":0,"n_value_undelivered":0,"latest_value_seq":null,"requests":[{"seq":7,"kind":"fit_slide","offered_to":null,"offered_until":null}]}]"#);
+        assert_eq!(super::work_of(&uncounted.sessions, &me), super::work_of(&bare.sessions, &me));
+        // A count that is not a number counts as nothing for that session.
+        let odd = held_doc("held", &format!(r#"{{"{ME}":"2"}}"#), 0);
+        assert_eq!(step(&odd, &as_session(Some(ME)), &cwd(), T).0, Voice::Silent);
     }
 
     // ── idle backoff ──
