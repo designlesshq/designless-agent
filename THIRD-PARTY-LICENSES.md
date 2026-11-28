@@ -70,7 +70,7 @@ binary (135 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 | (no holder stated upstream) |
 | find-msvc-tools | 0.1.9 | MIT OR Apache-2.0 | Copyright (c) 2014 Alex Crichton |
 | flate2 | 1.1.10 | MIT OR Apache-2.0 | Copyright (c) 2014-2026 Alex Crichton |
-| form_urlencoded | 1.2.2 | MIT OR Apache-2.0 | Copyright (c) 2013-2016 The rust-url developers |
+| form_urlencoded | 1.2.3 | MIT OR Apache-2.0 | Copyright (c) 2013-2016 The rust-url developers |
 | futures-channel | 0.3.32 | MIT OR Apache-2.0 | Copyright (c) 2016 Alex Crichton |
 | futures-core | 0.3.32 | MIT OR Apache-2.0 | Copyright (c) 2016 Alex Crichton |
 | futures-sink | 0.3.32 | MIT OR Apache-2.0 | Copyright (c) 2016 Alex Crichton |
@@ -166,7 +166,7 @@ binary (135 crates). Regenerate it whenever `bridge/Cargo.lock` changes.
 | typenum | 1.20.1 | MIT OR Apache-2.0 | Copyright 2014 Paho Lurie-Gregg |
 | unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | Copyright © 1991-2023 Unicode, Inc. |
 | untrusted | 0.9.0 | ISC | // Copyright 2015-2016 Brian Smith. |
-| url | 2.5.8 | MIT OR Apache-2.0 | Copyright (c) 2013-2025 The rust-url developers |
+| url | 2.5.9 | MIT OR Apache-2.0 | Copyright (c) 2013-2025 The rust-url developers |
 | utf8_iter | 1.0.4 | Apache-2.0 OR MIT | (no holder stated upstream) |
 | version_check | 0.9.5 | MIT/Apache-2.0 | Copyright (c) 2017-2018 Sergio Benitez |
 | want | 0.3.1 | MIT | Copyright (c) 2018-2019 Sean McArthur |
