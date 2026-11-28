@@ -774,6 +774,39 @@ pub fn notes_for(row: &J, me: &Me) -> f64 {
     }
 }
 
+/// What a document a conversation holds holds for this session: the server's
+/// own count of the work on the row this session may take now, or None for a
+/// row the server says nothing new about, read exactly as before. The
+/// desktop's one cached read names no session, so the server puts the count
+/// for each session it admits on the row's `hold`, keyed by name, beside the
+/// count for any other session; this reads the entry for this session's name,
+/// else the other one. It counts every kind of work on the document. A hold
+/// the server could not read holds the work for every caller until its next
+/// read; a hold that gives no per-session count is read as before it did.
+pub fn held_for(row: &J, me: &Me) -> Option<f64> {
+    let hold = js::get(Some(row), "hold");
+    let Some(J::Obj(_)) = hold else { return None };
+    let num = |v: Option<&J>| match v {
+        Some(J::Num(n)) if n.is_finite() => Some(n.max(0.0)),
+        _ => None,
+    };
+    let by_name = js::get(hold, "n_takeable_for");
+    let others = js::get(hold, "n_takeable_others");
+    if matches!(by_name, Some(J::Obj(_))) || matches!(others, Some(J::Num(_))) {
+        let mine = me.name.as_deref().and_then(|name| js::get(by_name, name));
+        return Some(match mine {
+            Some(v) => num(Some(v)).unwrap_or(0.0),
+            None => num(others).unwrap_or(0.0),
+        });
+    }
+    matches!(js::get(hold, "state"), Some(J::Str(s)) if s == "unknown").then_some(0.0)
+}
+
+/// Does the row hold nothing for this session because a conversation holds it?
+pub fn held_elsewhere(row: &J, me: &Me) -> bool {
+    held_for(row, me).is_some_and(|n| n <= 0.0)
+}
+
 /// Options for `summarize_inbox`.
 #[derive(Clone, Debug)]
 pub struct Opts {
@@ -860,6 +893,14 @@ pub fn summarize_inbox(sessions: &[J], cwd: &str, opts: Opts) -> String {
     let (mut requests, mut n_artefact, mut n_requests, mut n_notes) = (vec![], 0.0, 0usize, 0.0);
     for s in sessions {
         let n = |k: &str| js::num_or_zero(js::get(Some(s), k));
+        // A document a conversation holds is said only to a session its hold
+        // admits; for any other it holds nothing to do but the person's own.
+        if held_elsewhere(s, &opts.me) {
+            if n("n_needs_human") > 0.0 {
+                attention.push(s);
+            }
+            continue;
+        }
         // Only page edits an agent could take now: one already in an agent's
         // hands is not this session's to drain, nor the user's to re-route.
         let page = untaken_page(s);

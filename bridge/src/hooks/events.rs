@@ -429,7 +429,7 @@ pub async fn drain_check(raw: &str, _env: &Env) -> Option<String> {
     }
     let cwd = js::nonempty_str(js::get(Some(&data), "cwd"))?.to_string();
     let probe = probe::probe_inbox().await;
-    drain_text(&cwd, &probe)
+    drain_text(&cwd, &probe, &Me::session(js::get(Some(&data), "session_id")))
 }
 
 /// Codex runs this hook too: it reads the plugin's Claude Code hooks file, and
@@ -476,7 +476,7 @@ pub fn own_agent_at_work(input: Option<&J>) -> bool {
 /// turn instead left the line for whatever next woke the session, by when the
 /// edit could be long applied; and the host's continuation flag, which
 /// `drain_check` reads, is what ends the turn it kept going.
-pub fn drain_text(cwd: &str, probe: &Probe) -> Option<String> {
+pub fn drain_text(cwd: &str, probe: &Probe, me: &Me) -> Option<String> {
     if probe.count() == 0 {
         return None;
     }
@@ -487,6 +487,7 @@ pub fn drain_text(cwd: &str, probe: &Probe) -> Option<String> {
         .filter(|s| {
             let r = js::get(Some(s), "repo_remote");
             probe::untaken_page_counted(s).is_some_and(|n| n > 0.0)
+                && !probe::held_elsewhere(s, me)
                 && (js::nullish(r) || probe::is_safe_repo_remote(r))
                 && probe::page_drainable_here(s, &origin, cwd)
         })
@@ -1139,15 +1140,25 @@ mod tests {
     }
 
     #[test]
+    fn the_stop_holds_for_a_held_documents_page_edit_only_in_a_session_its_hold_admits() {
+        let hold = |for_: &str| js::parse(&format!(r#"{{"state":"held","may_take":false,"n_takeable":0,"n_takeable_for":{for_},"n_takeable_others":0}}"#)).unwrap();
+        let named = |n: &str| Me { name: Some(n.into()), now: 0.0 };
+        let held = page(1.0, Some(1.0), vec![("hold", hold(r#"{"claude:5e5e5e5e":1}"#))]);
+        assert_eq!(drain_text("/tmp", &held, &named("claude:0a1b2c3d")), None, "a session the hold does not admit");
+        assert_eq!(drain_text("/tmp", &held, &Me::default()), None, "a session with no name");
+        assert!(drain_text("/tmp", &held, &named("claude:5e5e5e5e")).is_some(), "its member");
+    }
+
+    #[test]
     fn the_stop_holds_only_for_a_page_edit_nobody_has_taken_drainable_here() {
         let artefact_only = Probe { sessions: vec![js::obj(vec![("n_artefact", J::Num(3.0))])], ..Default::default() };
-        assert_eq!(drain_text("/tmp", &artefact_only), None);
+        assert_eq!(drain_text("/tmp", &artefact_only, &Me::default()), None);
         let elsewhere = page(1.0, Some(1.0), vec![("repo_remote", s("https://github.com/o/not-here"))]);
-        assert_eq!(drain_text("/tmp", &elsewhere), None);
-        assert_eq!(drain_text("/tmp", &page(2.0, Some(0.0), vec![])), None, "every one of them in an agent's hands");
-        assert_eq!(drain_text("/tmp", &page(2.0, None, vec![])), None, "a server that cannot say which are untaken: no hold");
+        assert_eq!(drain_text("/tmp", &elsewhere, &Me::default()), None);
+        assert_eq!(drain_text("/tmp", &page(2.0, Some(0.0), vec![]), &Me::default()), None, "every one of them in an agent's hands");
+        assert_eq!(drain_text("/tmp", &page(2.0, None, vec![]), &Me::default()), None, "a server that cannot say which are untaken: no hold");
         let unknown_checkout = page(2.0, Some(2.0), vec![("safety_branch", s("designless/abc")), ("title", s("Store"))]);
-        let out = drain_text("/tmp", &unknown_checkout).unwrap();
+        let out = drain_text("/tmp", &unknown_checkout, &Me::default()).unwrap();
         assert!(out.starts_with(r#"{"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"Designless canvas: 2 page edit(s) on \"Store\" are waiting for an agent"#), "{out}");
         assert!(out.ends_with(r#" Required safety branch(es): designless/abc (server-owned; read from each row's safety_branch, do NOT derive)."}}"#), "{out}");
         assert!(out.contains("the watcher brings the next edit, so do not wait or loop for it."));
@@ -1168,7 +1179,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        let line = ctx(&drain_text("/tmp", &p).unwrap());
+        let line = ctx(&drain_text("/tmp", &p, &Me::default()).unwrap());
         assert!(line.starts_with("Designless canvas: 1 page edit(s) on \"Store\" are waiting"), "{line}");
         assert!(!line.contains("Shop"), "{line}");
     }
